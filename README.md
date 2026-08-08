@@ -34,11 +34,17 @@ so every build — local or CI — installs over the previous one without uninst
 Sync is configured inside the app, not in this repo — there is deliberately no
 `google-services.json` and no `google-services` Gradle plugin. Firebase is
 initialised at runtime from the config you paste into **Settings → Sync**, as
-six comma-separated values in this order:
+comma-separated values:
 
 ```
-apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId
+apiKey, projectId, storageBucket, messagingSenderId, appId
 ```
+
+Values are recognised by shape, so the order doesn't matter and extras are
+tolerated: `authDomain` may be included but is ignored, since it exists only for
+the Auth web SDK and Android's `FirebaseOptions` has no field for it. Only
+apiKey, projectId and appId are genuinely required — storageBucket and
+messagingSenderId are derived from them when absent.
 
 A block copied straight from the Firebase console (`apiKey: "…",` and so on) is
 also accepted — the key names and quotes are stripped. Tap **Connect**; the tag

@@ -79,8 +79,8 @@ class FirestoreSync(private val context: Context) {
             if (configText.isBlank()) report(SyncStatus.OFF)
             else report(
                 SyncStatus.ERROR,
-                "Need 6 comma-separated values: apiKey, authDomain, projectId, " +
-                    "storageBucket, messagingSenderId, appId"
+                "Couldn't read the config. Needs at least apiKey, projectId and appId, " +
+                    "comma-separated."
             )
             return
         }

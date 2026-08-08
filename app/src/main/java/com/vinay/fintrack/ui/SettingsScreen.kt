@@ -190,7 +190,7 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
                 Heading("Sync")
                 PfField(
-                    "Firebase config — apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId",
+                    "Firebase config — apiKey, projectId, storageBucket, messagingSenderId, appId",
                     vm.firebaseConfigText,
                     vm::setFirebaseConfig,
                     placeholder = "paste the six values, separated by commas",
@@ -230,7 +230,8 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                     if (vm.syncConfigLooksValid) {
                         "Config reads OK — ${vm.syncConfigSummary}"
                     } else {
-                        "Config not readable yet — found ${vm.syncConfigPartCount} of 6 values."
+                        "Config not readable — found ${vm.syncConfigPartCount} values, " +
+                            "need at least apiKey, projectId and appId."
                     }
                 )
                 if (vm.syncedAt > 0L) {
