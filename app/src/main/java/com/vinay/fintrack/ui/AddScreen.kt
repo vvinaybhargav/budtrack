@@ -64,7 +64,7 @@ fun AddScreen(vm: FinTrackViewModel) {
                     Muted("What are you adding?", Modifier.padding(bottom = Space.s2))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         ADD_KINDS.forEach { (key, label) ->
-                            Chip(label, vm.addKind == key, { vm.setAddKind(key) }, Modifier.padding(bottom = 6.dp))
+                            Chip(label, vm.addKind == key, { vm.selectAddKind(key) }, Modifier.padding(bottom = 6.dp))
                         }
                     }
                 }

@@ -205,7 +205,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ── add ────────────────────────────────────────────────────────────
-    fun setAddKind(k: String) {
+    fun selectAddKind(k: String) {
         addKind = k
         val p = activeProfile ?: "Me"
         when (k) {
