@@ -31,10 +31,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.monthsToDate
-import com.vinay.fintrack.data.Seed
 
 private const val ALERT_PCT = 0.90f
 
@@ -53,6 +53,91 @@ fun HomeScreen(vm: FinTrackViewModel) {
         item { LoansSection(vm) }
         item { CardsSection(vm) }
         item { CommitmentsSection(vm) }
+        item { AnnualSetAsidesSection(vm) }
+    }
+    ConfirmSheet(vm)
+}
+
+/**
+ * Shown when a confirm needs an account. An expense asks where the money left
+ * from, income where it landed, and a set-aside asks both — debit and credit —
+ * because both sides are yours.
+ */
+@Composable
+private fun ConfirmSheet(vm: FinTrackViewModel) {
+    val pending = vm.pendingConfirm ?: return
+    val accountName = { id: String -> vm.accounts.firstOrNull { it.id == id }?.name.orEmpty() }
+    val options = vm.visibleAccounts.map { it.name }
+    val idFor = { name: String -> vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty() }
+
+    Dialog(onDismissRequest = vm::cancelConfirm) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(Pf.Surface, Radius.Lg)
+                .border(1.dp, Pf.Hairline, Radius.Lg)
+                .padding(Space.s4),
+            verticalArrangement = Arrangement.spacedBy(Space.s3)
+        ) {
+            Text(
+                when (pending.kind) {
+                    "TRANSFER" -> "Move to set-aside"
+                    "INCOME" -> "Confirm income"
+                    else -> "Confirm payment"
+                },
+                color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold
+            )
+            Text(
+                "${pending.title} · ${inr(pending.amount)}",
+                color = Pf.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold
+            )
+            if (pending.kind == "TRANSFER") {
+                Muted("This money stays yours — it just moves between your accounts.")
+            }
+
+            if (pending.needsFrom) {
+                Column {
+                    Muted(if (pending.kind == "TRANSFER") "Debit from" else "Paid from")
+                    PfSelect(
+                        value = accountName(pending.fromAccountId),
+                        options = options,
+                        onSelect = { vm.setConfirmFrom(idFor(it)) }
+                    )
+                }
+            }
+            if (pending.needsTo) {
+                Column {
+                    Muted(if (pending.kind == "TRANSFER") "Credit to" else "Received in")
+                    PfSelect(
+                        value = accountName(pending.toAccountId),
+                        options = options,
+                        onSelect = { vm.setConfirmTo(idFor(it)) }
+                    )
+                }
+            }
+            if (pending.kind == "TRANSFER" &&
+                pending.fromAccountId.isNotEmpty() &&
+                pending.fromAccountId == pending.toAccountId
+            ) {
+                Text(
+                    "Pick two different accounts.",
+                    color = Pf.Accent400, fontSize = 13.sp
+                )
+            }
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                SecondaryButton("Cancel", vm::cancelConfirm, Modifier.weight(1f))
+                PrimaryButton(
+                    if (pending.kind == "TRANSFER") "Transfer" else "Confirm",
+                    vm::commitConfirm,
+                    Modifier.weight(1f),
+                    enabled = pending.isReady
+                )
+            }
+        }
     }
 }
 
@@ -179,7 +264,7 @@ private fun AccountsSection(vm: FinTrackViewModel) {
                                     Muted(a.owner)
                                 }
                             }
-                            Text(inr(a.balance), color = Pf.Text, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(inr(vm.balanceOf(a)), color = Pf.Text, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
                             IconButton(onClick = { vm.startEditAccount(a) }, modifier = Modifier.size(32.dp)) {
                                 Icon(Icons.Default.Edit, "Edit account", Modifier.size(16.dp), tint = Pf.Accent400)
                             }
@@ -231,8 +316,11 @@ private fun BudgetsSection(vm: FinTrackViewModel) {
     Column {
         SectionTitle("Category budgets", Modifier.padding(bottom = Space.s3))
         PfCard(padding = PaddingValues(Space.s4)) {
+            if (vm.budgets.isEmpty()) {
+                Muted("No budgets set. Add one in Settings to track a category here.")
+            }
             Column(verticalArrangement = Arrangement.spacedBy(Space.s4)) {
-                Seed.budgets.forEach { (cat, limit) ->
+                vm.budgets.forEach { (cat, limit) ->
                     val spend = vm.spendFor(cat)
                     val pct = (spend / limit).toFloat().coerceAtMost(1f)
                     Column {
@@ -267,6 +355,15 @@ private fun LoansSection(vm: FinTrackViewModel) {
                             PfField(value = vm.loanDraft.emiText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(emiText = it) }, placeholder = "Monthly EMI", numeric = true)
                             PfField(value = vm.loanDraft.totalMonthsText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(totalMonthsText = it) }, placeholder = "Total months (tenure)", numeric = true)
                             PfField(value = vm.loanDraft.remainingMonthsText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(remainingMonthsText = it) }, placeholder = "Months remaining", numeric = true)
+                            Muted("EMI debited from")
+                            PfSelect(
+                                value = vm.accounts.firstOrNull { it.id == vm.loanDraft.accountId }?.name.orEmpty(),
+                                options = vm.visibleAccounts.map { it.name },
+                                onSelect = { name ->
+                                    val id = vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty()
+                                    vm.loanDraft = vm.loanDraft.copy(accountId = id)
+                                }
+                            )
                             EditorActions({ vm.deleteLoan(l.id) }, vm::cancelEditLoan, vm::saveLoan)
                         }
                     } else {
@@ -287,6 +384,12 @@ private fun LoansSection(vm: FinTrackViewModel) {
                                     Muted(l.person, Modifier.padding(top = 2.dp))
                                 }
                                 Text("${inr(l.monthlyEmi)}/mo", color = Pf.Text, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                                // No account prompt — the loan already knows where the EMI comes from.
+                                if (vm.isLoanConfirmed(l.id)) {
+                                    SecondaryButton("Paid", { vm.confirmLoan(l) })
+                                } else {
+                                    PrimaryButton("Pay EMI", { vm.confirmLoan(l) })
+                                }
                                 IconButton(onClick = { vm.startEditLoan(l) }, modifier = Modifier.size(32.dp)) {
                                     Icon(Icons.Default.Edit, "Edit loan", Modifier.size(16.dp), tint = Pf.Accent400)
                                 }
@@ -395,7 +498,7 @@ private fun CommitmentsSection(vm: FinTrackViewModel) {
         )
         PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s2)) {
             vm.commitments.forEach { e ->
-                val done = e.id in vm.confirmed
+                val done = vm.isConfirmed(e.id)
                 val kind = vm.commitmentKind(e)
                 Row(
                     Modifier
@@ -414,15 +517,85 @@ private fun CommitmentsSection(vm: FinTrackViewModel) {
                         }
                     }
                     if (done) {
-                        SecondaryButton("Confirmed", { vm.toggleCommitment(e.id) })
+                        SecondaryButton("Confirmed", { vm.requestConfirm(e) })
                     } else {
-                        PrimaryButton("Confirm", { vm.toggleCommitment(e.id) })
+                        PrimaryButton("Confirm", { vm.requestConfirm(e) })
                     }
                     IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Default.Delete, "Delete", Modifier.size(16.dp), tint = Pf.Accent400)
                     }
                 }
                 Hairline()
+            }
+        }
+    }
+}
+
+/**
+ * Annual commitments, each shown at amount / 12. Confirming one is a self
+ * transfer, not a spend: the money leaves the spending account and lands in a
+ * set-aside account, so the yearly bill is already funded when it arrives.
+ */
+@Composable
+private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
+    val items = vm.annualSetAsides
+    if (items.isEmpty()) return
+    Column {
+        SectionTitle("Set aside this month", Modifier.padding(bottom = Space.s1))
+        Muted(
+            "Yearly commitments split by 12. Confirming moves the money to your " +
+                "set-aside account — it isn't spent.",
+            Modifier.padding(bottom = Space.s3)
+        )
+        PfCard(padding = PaddingValues(Space.s4)) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = Space.s3),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Column {
+                    Muted("Needed each month")
+                    Text(
+                        inr(vm.annualSetAsideMonthly),
+                        color = Pf.Text, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold
+                    )
+                }
+                Muted("${inr(vm.annualSetAsideDone)} done", size = 13)
+            }
+            ProgressBar(
+                if (vm.annualSetAsideMonthly > 0)
+                    (vm.annualSetAsideDone / vm.annualSetAsideMonthly).toFloat().coerceAtMost(1f)
+                else 0f,
+                Pf.Accent2, height = 6
+            )
+            Column(Modifier.padding(top = Space.s2)) {
+                items.forEach { e ->
+                    val done = vm.isConfirmed(e.id)
+                    Hairline()
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = Space.s3),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                e.note.ifEmpty { e.category },
+                                color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                            )
+                            Muted(
+                                "${inr(e.monthly)}/mo · ${inr(e.amount)} a year",
+                                Modifier.padding(top = 2.dp, bottom = 6.dp)
+                            )
+                            Tag("Set aside", Pf.Accent2_100, Pf.Accent2_800)
+                        }
+                        if (done) SecondaryButton("Set aside", { vm.requestConfirm(e) })
+                        else PrimaryButton("Set aside", { vm.requestConfirm(e) })
+                    }
+                }
             }
         }
     }

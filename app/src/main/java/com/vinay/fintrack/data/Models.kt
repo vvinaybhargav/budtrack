@@ -25,7 +25,9 @@ data class Account(
     val name: String,
     val owner: String,
     val person: String,
-    val balance: Double
+    /** Balance before any recorded transaction. The live balance is derived —
+     *  see [FinTrackViewModel.balanceOf] — so undoing a confirm reverses itself. */
+    val openingBalance: Double
 )
 
 @Serializable
@@ -35,8 +37,32 @@ data class Loan(
     val person: String,
     val monthlyEmi: Double,
     val totalMonths: Int,
-    val remainingMonths: Int
+    val remainingMonths: Int,
+    /** EMI is always paid from here, so confirming a loan needs no prompt. */
+    val accountId: String = ""
 )
+
+/**
+ * An actual movement of money, unlike [Entry] which is only the recurring plan.
+ * EXPENSE debits [fromAccountId]; INCOME credits [toAccountId]; TRANSFER does both
+ * — that is how an annual set-aside keeps the money yours.
+ */
+@Serializable
+data class Txn(
+    val id: String,
+    val date: String,                 // yyyy-MM-dd
+    val kind: String,                 // EXPENSE | INCOME | TRANSFER
+    val amount: Double,
+    val category: String = "",
+    val fromAccountId: String = "",
+    val toAccountId: String = "",
+    val entryId: String = "",         // the commitment this settles, if any
+    val loanId: String = "",
+    val period: String = "",          // yyyy-MM the confirmation belongs to
+    val note: String = ""
+) {
+    val month: String get() = period.ifEmpty { date.take(7) }
+}
 
 @Serializable
 data class Card(
@@ -58,6 +84,24 @@ private val inrFormat: NumberFormat = NumberFormat.getIntegerInstance(Locale("en
 fun inr(n: Double): String = "₹" + inrFormat.format(Math.round(n))
 
 fun ownerLabel(person: String): String = if (person == "Joint") "Joint" else "$person · personal"
+
+private val isoDate = java.text.SimpleDateFormat("yyyy-MM-dd", Locale("en", "IN"))
+private val isoMonth = java.text.SimpleDateFormat("yyyy-MM", Locale("en", "IN"))
+private val prettyFmt = java.text.SimpleDateFormat("d MMM yyyy", Locale("en", "IN"))
+
+fun today(): String = isoDate.format(Calendar.getInstance().time)
+
+fun currentPeriod(): String = isoMonth.format(Calendar.getInstance().time)
+
+/** "2026-08-08" → "8 Aug 2026". Falls back to the raw string if unparseable. */
+fun prettyDate(iso: String): String =
+    runCatching { prettyFmt.format(isoDate.parse(iso)!!) }.getOrDefault(iso)
+
+/** "2026-08" → "Aug 2026". */
+fun prettyMonth(period: String): String =
+    runCatching {
+        java.text.SimpleDateFormat("MMM yyyy", Locale("en", "IN")).format(isoMonth.parse(period)!!)
+    }.getOrDefault(period)
 
 fun monthsToDate(remaining: Int): String {
     val c = Calendar.getInstance()
@@ -92,9 +136,9 @@ object Seed {
     )
 
     val loans = listOf(
-        Loan("l1", "Car loan — Me", "Me", 22000.0, 84, 42),
-        Loan("l2", "Home loan — Me", "Me", 15300.0, 180, 130),
-        Loan("l3", "Car loan — Wife", "Wife", 27500.0, 60, 38)
+        Loan("l1", "Car loan — Me", "Me", 22000.0, 84, 42, "a1"),
+        Loan("l2", "Home loan — Me", "Me", 15300.0, 180, 130, "a1"),
+        Loan("l3", "Car loan — Wife", "Wife", 27500.0, 60, 38, "a3")
     )
 
     val cards = listOf(

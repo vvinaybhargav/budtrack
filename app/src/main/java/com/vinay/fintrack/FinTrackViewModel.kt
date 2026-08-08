@@ -14,7 +14,10 @@ import com.vinay.fintrack.data.Loan
 import com.vinay.fintrack.data.PersistedState
 import com.vinay.fintrack.data.SAVINGS_CATEGORIES
 import com.vinay.fintrack.data.Store
+import com.vinay.fintrack.data.Txn
+import com.vinay.fintrack.data.currentPeriod
 import com.vinay.fintrack.data.inr
+import com.vinay.fintrack.data.today
 import com.vinay.fintrack.data.ownerLabel
 import com.vinay.fintrack.data.parseSmartAdd
 
@@ -32,7 +35,9 @@ data class Draft(
 
 data class NewLoanDraft(
     val name: String = "", val person: String = "Me", val emiText: String = "",
-    val totalMonthsText: String = "", val remainingMonthsText: String = ""
+    val totalMonthsText: String = "", val remainingMonthsText: String = "",
+    /** Account the EMI is debited from — asked once here, never at confirm time. */
+    val accountId: String = ""
 )
 
 data class NewAccountDraft(val name: String = "", val owner: String = "Me", val balanceText: String = "")
@@ -160,8 +165,103 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleLoanDetail(id: String) { expandedLoan = if (expandedLoan == id) null else id }
     fun payCard(id: String) = update { s -> s.copy(cards = s.cards.map { if (it.id == id) it.copy(paid = true) else it }) }
 
-    fun toggleCommitment(key: String) = update { s ->
-        s.copy(confirmed = if (key in s.confirmed) s.confirmed - key else s.confirmed + key)
+    // ── confirming a commitment moves real money ───────────────────────
+    /**
+     * A confirm that still needs an account picked. Loan EMIs never produce one
+     * — the loan already knows its account — while annual set-asides need both
+     * sides, since the money is only moving between your own accounts.
+     */
+    data class PendingConfirm(
+        val title: String,
+        val amount: Double,
+        val kind: String,              // EXPENSE | INCOME | TRANSFER
+        val category: String,
+        val entryId: String = "",
+        val fromAccountId: String = "",
+        val toAccountId: String = ""
+    ) {
+        val needsFrom: Boolean get() = kind == "EXPENSE" || kind == "TRANSFER"
+        val needsTo: Boolean get() = kind == "INCOME" || kind == "TRANSFER"
+        val isReady: Boolean
+            get() = (!needsFrom || fromAccountId.isNotEmpty()) &&
+                (!needsTo || toAccountId.isNotEmpty()) &&
+                (kind != "TRANSFER" || fromAccountId != toAccountId)
+    }
+
+    var pendingConfirm by mutableStateOf<PendingConfirm?>(null); private set
+
+    fun isConfirmed(entryId: String): Boolean =
+        persisted.txns.any { it.entryId == entryId && it.period == currentPeriod() }
+
+    fun isLoanConfirmed(loanId: String): Boolean =
+        persisted.txns.any { it.loanId == loanId && it.period == currentPeriod() }
+
+    private fun accountIdByName(name: String): String =
+        accounts.firstOrNull { it.name == name }?.id ?: accounts.firstOrNull()?.id.orEmpty()
+
+    private fun confirmKindFor(e: Entry): String = when {
+        e.type == "INCOME" -> "INCOME"
+        // Annual provisions and savings stay your money — they move, they aren't spent.
+        e.frequency == "ANNUAL" || e.type == "SAVINGS" -> "TRANSFER"
+        else -> "EXPENSE"
+    }
+
+    /** Tapping confirm: undo if already confirmed this month, otherwise open the sheet. */
+    fun requestConfirm(e: Entry) {
+        if (isConfirmed(e.id)) {
+            update { s -> s.copy(txns = s.txns.filterNot { it.entryId == e.id && it.period == currentPeriod() }) }
+            return
+        }
+        val kind = confirmKindFor(e)
+        pendingConfirm = PendingConfirm(
+            title = e.note.ifEmpty { e.category },
+            amount = e.monthly,
+            kind = kind,
+            category = e.category,
+            entryId = e.id,
+            fromAccountId = if (kind == "INCOME") "" else accountIdByName(defaultAccount)
+        )
+    }
+
+    /** Loan EMIs are paid from the account stored on the loan, so no sheet appears. */
+    fun confirmLoan(l: Loan) {
+        if (isLoanConfirmed(l.id)) {
+            update { s -> s.copy(txns = s.txns.filterNot { it.loanId == l.id && it.period == currentPeriod() }) }
+            return
+        }
+        val from = l.accountId.ifEmpty { accountIdByName(defaultAccount) }
+        update { s ->
+            s.copy(
+                txns = s.txns + Txn(
+                    id = "t${s.nextTxnSeq}", date = today(), kind = "EXPENSE", amount = l.monthlyEmi,
+                    category = "EMI", fromAccountId = from, loanId = l.id,
+                    period = currentPeriod(), note = l.name
+                ),
+                nextTxnSeq = s.nextTxnSeq + 1
+            )
+        }
+    }
+
+    fun setConfirmFrom(id: String) { pendingConfirm = pendingConfirm?.copy(fromAccountId = id) }
+    fun setConfirmTo(id: String) { pendingConfirm = pendingConfirm?.copy(toAccountId = id) }
+    fun cancelConfirm() { pendingConfirm = null }
+
+    fun commitConfirm() {
+        val p = pendingConfirm ?: return
+        if (!p.isReady) return
+        update { s ->
+            s.copy(
+                txns = s.txns + Txn(
+                    id = "t${s.nextTxnSeq}", date = today(), kind = p.kind, amount = p.amount,
+                    category = p.category,
+                    fromAccountId = if (p.needsFrom) p.fromAccountId else "",
+                    toAccountId = if (p.needsTo) p.toAccountId else "",
+                    entryId = p.entryId, period = currentPeriod(), note = p.title
+                ),
+                nextTxnSeq = s.nextTxnSeq + 1
+            )
+        }
+        pendingConfirm = null
     }
 
     fun quickAddFromHome() {
@@ -263,7 +363,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val remaining = newLoanDraft.remainingMonthsText.toIntOrNull() ?: total
         update { s ->
             s.copy(
-                loans = s.loans + Loan("l${s.nextLoanSeq}", newLoanDraft.name, newLoanDraft.person, emi, total, remaining),
+                loans = s.loans + Loan(
+                    "l${s.nextLoanSeq}", newLoanDraft.name, newLoanDraft.person, emi, total, remaining,
+                    newLoanDraft.accountId.ifEmpty { accountIdByName(defaultAccount) }
+                ),
                 nextLoanSeq = s.nextLoanSeq + 1
             )
         }
@@ -307,7 +410,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // ── inline editors ─────────────────────────────────────────────────
     fun startEditAccount(a: Account) {
         editingAccountId = a.id
-        accountDraft = NewAccountDraft(a.name, a.owner, a.balance.toLong().toString())
+        accountDraft = NewAccountDraft(a.name, a.owner, a.openingBalance.toLong().toString())
     }
 
     fun cancelEditAccount() { editingAccountId = null }
@@ -318,7 +421,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             s.copy(accounts = s.accounts.map {
                 if (it.id == id) it.copy(
                     name = accountDraft.name, owner = accountDraft.owner,
-                    balance = accountDraft.balanceText.toDoubleOrNull() ?: 0.0
+                    openingBalance = accountDraft.balanceText.toDoubleOrNull() ?: 0.0
                 ) else it
             })
         }
@@ -334,7 +437,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         editingLoanId = l.id
         loanDraft = NewLoanDraft(
             l.name, l.person, l.monthlyEmi.toLong().toString(),
-            l.totalMonths.toString(), l.remainingMonths.toString()
+            l.totalMonths.toString(), l.remainingMonths.toString(), l.accountId
         )
     }
 
@@ -348,7 +451,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     name = loanDraft.name, person = loanDraft.person,
                     monthlyEmi = loanDraft.emiText.toDoubleOrNull() ?: 0.0,
                     totalMonths = loanDraft.totalMonthsText.toIntOrNull() ?: 1,
-                    remainingMonths = loanDraft.remainingMonthsText.toIntOrNull() ?: 0
+                    remainingMonths = loanDraft.remainingMonthsText.toIntOrNull() ?: 0,
+                    accountId = loanDraft.accountId
                 ) else it
             })
         }
@@ -426,6 +530,27 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         editingCategory = null; categoryDraftText = ""
     }
 
+    val budgets: Map<String, Double> get() = persisted.budgets
+
+    var budgetDraftCategory by mutableStateOf("")
+    var budgetDraftAmount by mutableStateOf("")
+
+    fun setBudget(cat: String, amount: Double) =
+        update { s -> s.copy(budgets = s.budgets + (cat to amount)) }
+
+    fun removeBudget(cat: String) = update { s -> s.copy(budgets = s.budgets - cat) }
+
+    fun addBudgetFromDraft() {
+        val cat = budgetDraftCategory.ifBlank { return }
+        val amt = budgetDraftAmount.toDoubleOrNull() ?: return
+        if (amt <= 0) return
+        setBudget(cat, amt)
+        budgetDraftCategory = ""; budgetDraftAmount = ""
+    }
+
+    /** Categories that don't have a budget yet — the only ones worth offering. */
+    val budgetableCategories: List<String> get() = categories.filterNot { it in budgets }
+
     fun setDefaultAccount(v: String) = update { it.copy(defaultAccount = v) }
     fun setFirebaseConfig(v: String) = update { it.copy(firebaseConfigText = v) }
     fun setOpenaiKey(v: String) = update { it.copy(openaiKeyText = v) }
@@ -438,7 +563,31 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     val visibleLoans: List<Loan> get() = loans.filter { visible(it.person) }
     val visibleCards: List<Card> get() = cards.filter { visible(it.owner) }
 
-    val totalBalance: Double get() = visibleAccounts.sumOf { it.balance }
+    /** Opening balance plus every movement in or out — so undoing a confirm
+     *  restores the old number without any inverse bookkeeping. */
+    fun balanceOf(a: Account): Double {
+        var b = a.openingBalance
+        for (t in persisted.txns) {
+            if (t.fromAccountId == a.id) b -= t.amount
+            if (t.toAccountId == a.id) b += t.amount
+        }
+        return b
+    }
+
+    val totalBalance: Double get() = visibleAccounts.sumOf { balanceOf(it) }
+
+    val txns: List<Txn> get() = persisted.txns
+    val recentTxns: List<Txn> get() = persisted.txns.sortedByDescending { it.date + it.id }.take(30)
+
+    /** "ICICI Joint → Sinking Fund" for a transfer, a single account name otherwise. */
+    fun txnAccountLabel(t: Txn): String {
+        val name = { id: String -> accounts.firstOrNull { it.id == id }?.name.orEmpty() }
+        return when (t.kind) {
+            "TRANSFER" -> "${name(t.fromAccountId)} → ${name(t.toAccountId)}"
+            "INCOME" -> name(t.toAccountId)
+            else -> name(t.fromAccountId)
+        }
+    }
 
     val monthlyIncome: Double get() = visibleEntries.filter { it.type == "INCOME" }.sumOf { it.monthly }
     val monthlyExpense: Double get() = visibleEntries.filter { it.type == "EXPENSE" }.sumOf { it.monthly }
@@ -447,12 +596,35 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     val monthlySavings: Double
         get() = visibleEntries.filter { it.type == "SAVINGS" && it.category !in INVEST_CATEGORIES }.sumOf { it.monthly }
 
-    fun spendFor(category: String): Double =
-        visibleEntries.filter { it.type == "EXPENSE" && it.category == category }.sumOf { it.monthly }
+    /** Actual money out for this category this month — confirmed transactions only,
+     *  not the plan. A budget bar you can't move by planning is the point. */
+    fun spendFor(category: String): Double {
+        val period = currentPeriod()
+        val mine = visibleAccounts.map { it.id }.toSet()
+        return persisted.txns
+            .filter { it.category == category && it.month == period && it.fromAccountId in mine }
+            .sumOf { it.amount }
+    }
 
+    /** Regular monthly outgoings — everything except EMIs (own section) and annuals. */
     val commitments: List<Entry>
-        get() = visibleEntries.filter { it.type == "EXPENSE" && it.category != "EMI" } +
-            visibleEntries.filter { it.type == "SAVINGS" }
+        get() = visibleEntries.filter {
+            it.frequency != "ANNUAL" &&
+                ((it.type == "EXPENSE" && it.category != "EMI") || it.type == "SAVINGS")
+        }
+
+    /**
+     * Annual items shown at their monthly-equivalent (amount / 12). Confirming one
+     * doesn't spend the money — it transfers it to a set-aside account, so the cash
+     * is waiting when the yearly bill actually lands.
+     */
+    val annualSetAsides: List<Entry>
+        get() = visibleEntries.filter { it.frequency == "ANNUAL" && it.type != "INCOME" }
+
+    val annualSetAsideMonthly: Double get() = annualSetAsides.sumOf { it.monthly }
+
+    val annualSetAsideDone: Double
+        get() = annualSetAsides.filter { isConfirmed(it.id) }.sumOf { it.monthly }
 
     fun commitmentKind(e: Entry): String = when (e.category) {
         in INVEST_CATEGORIES -> "Investment"

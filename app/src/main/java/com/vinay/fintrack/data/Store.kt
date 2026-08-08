@@ -10,12 +10,16 @@ data class PersistedState(
     val accounts: List<Account> = Seed.accounts,
     val loans: List<Loan> = Seed.loans,
     val cards: List<Card> = Seed.cards,
-    val confirmed: Set<String> = emptySet(),
+    /** Actual money movements. Confirmation state is derived from these, not stored
+     *  separately — so un-confirming is just deleting the transaction. */
+    val txns: List<Txn> = emptyList(),
+    val budgets: Map<String, Double> = Seed.budgets,
     val profiles: Map<String, String> = mapOf("Me" to "1234", "Wife" to "1234"),
     val categories: List<String> = Seed.categoriesMedium,
     val defaultAccount: String = "ICICI Joint",
     val firebaseConfigText: String = "",
     val openaiKeyText: String = "",
+    val nextTxnSeq: Int = 1,
     val nextEntrySeq: Int = 16,
     val nextLoanSeq: Int = 4,
     val nextAccountSeq: Int = 5,
@@ -36,6 +40,7 @@ class Store(context: Context) {
     }
 
     private companion object {
-        const val KEY = "state_v1"
+        // v2: account balances became opening balances, confirmations became txns.
+        const val KEY = "state_v2"
     }
 }

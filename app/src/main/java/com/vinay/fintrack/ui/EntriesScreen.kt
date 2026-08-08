@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.inr
+import com.vinay.fintrack.data.prettyDate
 
 @Composable
 fun EntriesScreen(vm: FinTrackViewModel) {
@@ -118,6 +119,43 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                         IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(36.dp)) {
                             Icon(Icons.Default.Delete, "Delete", Modifier.size(18.dp), tint = Pf.Accent400)
                         }
+                    }
+                }
+            }
+        }
+
+        // Entries above are the plan; these are the movements that actually happened.
+        if (vm.recentTxns.isNotEmpty()) {
+            item {
+                SectionTitle("Recent activity", Modifier.padding(top = Space.s4, bottom = Space.s2))
+            }
+            items(vm.recentTxns, key = { it.id }) { t ->
+                PfCard {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                t.note.ifEmpty { t.category },
+                                color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                            )
+                            Muted("${prettyDate(t.date)} · ${vm.txnAccountLabel(t)}")
+                        }
+                        Text(
+                            when (t.kind) {
+                                "INCOME" -> "+${inr(t.amount)}"
+                                "TRANSFER" -> "↔ ${inr(t.amount)}"
+                                else -> "−${inr(t.amount)}"
+                            },
+                            color = when (t.kind) {
+                                "INCOME" -> Pf.Accent2
+                                "TRANSFER" -> Pf.Muted
+                                else -> Pf.Text
+                            },
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
                     }
                 }
             }

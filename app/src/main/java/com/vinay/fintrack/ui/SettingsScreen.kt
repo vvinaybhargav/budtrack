@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -102,6 +103,67 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                         modifier = Modifier.weight(1f)
                     )
                     PrimaryButton("Add", vm::addCategory, enabled = vm.newCategoryText.isNotBlank())
+                }
+            }
+        }
+
+        item { Hairline() }
+
+        item {
+            Column {
+                Heading("Category budgets")
+                Muted("A monthly limit per category. The Home bars measure real confirmed spend against these.")
+                Column(
+                    Modifier.padding(top = Space.s3),
+                    verticalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    vm.budgets.forEach { (cat, limit) ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                        ) {
+                            Text(cat, Modifier.weight(1f), color = Pf.Text, fontSize = 14.sp)
+                            PfField(
+                                value = limit.toLong().toString(),
+                                onValueChange = { v ->
+                                    vm.setBudget(cat, v.toDoubleOrNull() ?: 0.0)
+                                },
+                                numeric = true,
+                                modifier = Modifier.width(110.dp)
+                            )
+                            SmallIcon(Icons.Default.Delete, "Remove budget", true) { vm.removeBudget(cat) }
+                        }
+                    }
+                }
+                if (vm.budgetableCategories.isNotEmpty()) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = Space.s3),
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            PfSelect(
+                                value = vm.budgetDraftCategory,
+                                options = vm.budgetableCategories,
+                                onSelect = { vm.budgetDraftCategory = it }
+                            )
+                        }
+                        PfField(
+                            value = vm.budgetDraftAmount,
+                            onValueChange = { vm.budgetDraftAmount = it },
+                            placeholder = "Limit",
+                            numeric = true,
+                            modifier = Modifier.width(110.dp)
+                        )
+                        PrimaryButton(
+                            "Add",
+                            vm::addBudgetFromDraft,
+                            enabled = vm.budgetDraftCategory.isNotBlank() && vm.budgetDraftAmount.isNotBlank()
+                        )
+                    }
                 }
             }
         }
