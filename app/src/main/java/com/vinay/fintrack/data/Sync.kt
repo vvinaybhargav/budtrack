@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
@@ -34,7 +35,13 @@ class FirestoreSync(private val context: Context) {
 
     private var app: FirebaseApp? = null
     private var db: FirebaseFirestore? = null
+    private var auth: FirebaseAuth? = null
     private var listener: ListenerRegistration? = null
+
+    /** This device's anonymous user id — paste it into the members doc to
+     *  authorise the device without opening the database to everyone. */
+    var uid: String = ""
+        private set
 
     var status: SyncStatus = SyncStatus.OFF
         private set
@@ -109,6 +116,47 @@ class FirestoreSync(private val context: Context) {
         app = instance
         db = FirebaseFirestore.getInstance(instance)
 
+        // Sign in before touching Firestore, so rules can require an
+        // authenticated user instead of being left open to the world.
+        val authInstance = FirebaseAuth.getInstance(instance)
+        auth = authInstance
+        val existing = authInstance.currentUser
+        if (existing != null) {
+            uid = existing.uid
+            attachListener(onRemote, onEmptyRemote)
+        } else {
+            authInstance.signInAnonymously()
+                .addOnSuccessListener { result ->
+                    uid = result.user?.uid.orEmpty()
+                    attachListener(onRemote, onEmptyRemote)
+                }
+                .addOnFailureListener { e ->
+                    report(SyncStatus.ERROR, authHint(e))
+                    Log.w(TAG, "anonymous sign-in failed", e)
+                }
+        }
+    }
+
+    /** Anonymous sign-in is off by default in a new project, and the raw error
+     *  for that is not something anyone should have to decode. */
+    private fun authHint(e: Exception): String {
+        val msg = e.message.orEmpty()
+        return when {
+            msg.contains("CONFIGURATION_NOT_FOUND", true) ||
+                msg.contains("ADMIN_ONLY_OPERATION", true) ||
+                msg.contains("OPERATION_NOT_ALLOWED", true) ->
+                "Turn on Anonymous sign-in: Firebase console → Authentication → " +
+                    "Sign-in method → Anonymous → Enable."
+            msg.contains("API key not valid", true) ->
+                "That apiKey isn't valid for this project."
+            else -> msg.ifEmpty { "Sign-in failed" }
+        }
+    }
+
+    private fun attachListener(
+        onRemote: (PersistedState) -> Unit,
+        onEmptyRemote: () -> Unit
+    ) {
         listener = db!!.collection(COLLECTION).document(DOCUMENT)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -141,6 +189,8 @@ class FirestoreSync(private val context: Context) {
         listener?.remove()
         listener = null
         db = null
+        auth = null
+        uid = ""
         runCatching { app?.delete() }
         app = null
         report(SyncStatus.OFF)

@@ -84,6 +84,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     var syncedAt by mutableStateOf(0L); private set
 
+    /** Anonymous user id of this device, for the members list in the rules. */
+    val syncDeviceId: String get() = sync.uid
+
     fun pushNow() {
         sync.push(persisted.copy(firebaseConfigText = "", openaiKeyText = ""), activeProfile ?: "")
         syncedAt = System.currentTimeMillis()

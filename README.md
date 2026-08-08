@@ -55,9 +55,46 @@ maps and arrays so the data is browsable in the Firestore console. Sync is
 last-write-wins. The config text and the OpenAI key are never uploaded — they
 stay in the device's own storage.
 
+### Sign-in
+
+The app signs in anonymously before touching Firestore, so the rules can require
+an authenticated user. Enable it once per project:
+
+**Firebase console → Authentication → Sign-in method → Anonymous → Enable.**
+
+Without this, sign-in fails and Settings says so.
+
 ### Security rules
 
-The app does not sign in to Firebase, so **the default test rules leave the
-household document readable and writable by anyone who has the project ID.**
-That is real financial data. Before putting anything genuine in it, either turn
-on Firebase Auth and require it in the rules, or restrict access another way.
+This document holds salaries, balances and loans, so don't leave it open. The
+weak version — any signed-in user, and *anyone* can create an anonymous account
+in your project — is:
+
+```
+match /fintrack/{doc} {
+  allow read, write: if request.auth != null;   // not enough on its own
+}
+```
+
+Better: allow only the devices you name. Settings shows **This device's ID**
+once connected; create a `fintrack/members` document with a `uids` array holding
+each phone's ID, then:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /fintrack/members {
+      allow read: if request.auth != null;
+      allow write: if false;                    // edit in the console only
+    }
+    match /fintrack/household {
+      allow read, write: if request.auth != null
+        && request.auth.uid in get(/databases/$(database)/documents/fintrack/members).data.uids;
+    }
+  }
+}
+```
+
+Anonymous IDs are per-install: reinstalling or clearing app data mints a new one,
+which then has to be added to `uids` again.

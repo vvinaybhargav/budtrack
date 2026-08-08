@@ -20,6 +20,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -236,6 +238,19 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                 )
                 if (vm.syncedAt > 0L) {
                     Muted("Last sent ${prettyDate(today())} at ${vm.syncedAtClock}")
+                }
+                if (vm.syncDeviceId.isNotEmpty()) {
+                    Column(Modifier.padding(top = Space.s2)) {
+                        Muted("This device's ID — add it to the members doc in your rules")
+                        SelectionContainer {
+                            Text(
+                                vm.syncDeviceId,
+                                color = Pf.Text,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
                 }
                 Muted(
                     "Both profiles share one household document. The config and API key " +
