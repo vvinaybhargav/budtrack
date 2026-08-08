@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.SyncStatus
+import com.vinay.fintrack.data.prettyDate
+import com.vinay.fintrack.data.today
 
 @Composable
 fun SettingsScreen(vm: FinTrackViewModel) {
@@ -210,15 +212,29 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                 if (vm.syncError.isNotEmpty()) {
                     Text(vm.syncError, color = Pf.Accent400, fontSize = 12.sp)
                 }
+                // Always enabled: a dead button explains nothing, whereas trying
+                // and reporting the reason does.
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                     PrimaryButton(
                         if (vm.syncStatus == SyncStatus.LIVE) "Reconnect" else "Connect",
-                        vm::applyFirebaseConfig,
-                        enabled = vm.syncConfigLooksValid
+                        vm::applyFirebaseConfig
                     )
+                    if (vm.syncStatus == SyncStatus.LIVE) {
+                        SecondaryButton("Push now", vm::pushNow)
+                    }
                     if (vm.syncStatus != SyncStatus.OFF) {
                         SecondaryButton("Disconnect", vm::disconnectSync)
                     }
+                }
+                Muted(
+                    if (vm.syncConfigLooksValid) {
+                        "Config reads OK — ${vm.syncConfigSummary}"
+                    } else {
+                        "Config not readable yet — found ${vm.syncConfigPartCount} of 6 values."
+                    }
+                )
+                if (vm.syncedAt > 0L) {
+                    Muted("Last sent ${prettyDate(today())} at ${vm.syncedAtClock}")
                 }
                 Muted(
                     "Both profiles share one household document. The config and API key " +

@@ -66,13 +66,27 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun connectSync() {
-        sync.connect(persisted.firebaseConfigText) { remote ->
-            // Keep this device's own secrets — they're per-device, not household data.
-            persisted = remote.copy(
-                firebaseConfigText = persisted.firebaseConfigText,
-                openaiKeyText = persisted.openaiKeyText
-            ).also { store.save(it) }
-        }
+        sync.connect(
+            persisted.firebaseConfigText,
+            onRemote = { remote ->
+                // Keep this device's own secrets — they're per-device, not household data.
+                persisted = remote.copy(
+                    firebaseConfigText = persisted.firebaseConfigText,
+                    openaiKeyText = persisted.openaiKeyText
+                ).also { store.save(it) }
+                syncedAt = System.currentTimeMillis()
+            },
+            // Nothing up there yet — seed it from this device so the console
+            // isn't empty after a first connect.
+            onEmptyRemote = { pushNow() }
+        )
+    }
+
+    var syncedAt by mutableStateOf(0L); private set
+
+    fun pushNow() {
+        sync.push(persisted.copy(firebaseConfigText = "", openaiKeyText = ""), activeProfile ?: "")
+        syncedAt = System.currentTimeMillis()
     }
 
     override fun onCleared() {
@@ -592,6 +606,22 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     val syncConfigLooksValid: Boolean
         get() = parseFirebaseConfig(persisted.firebaseConfigText) != null
+
+    /** How many comma-separated values are actually there — the fastest way to
+     *  see a paste that lost a line or gained a stray comma. */
+    val syncConfigPartCount: Int
+        get() = persisted.firebaseConfigText
+            .replace("{", "").replace("}", "")
+            .split(",").count { it.isNotBlank() }
+
+    /** Echoes back the project it parsed, so a wrong paste is obvious. */
+    val syncConfigSummary: String
+        get() = parseFirebaseConfig(persisted.firebaseConfigText)
+            ?.let { "project ${it.projectId}" } ?: ""
+
+    val syncedAtClock: String
+        get() = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale("en", "IN"))
+            .format(java.util.Date(syncedAt))
     fun setOpenaiKey(v: String) = update { it.copy(openaiKeyText = v) }
 
     // ── derived ────────────────────────────────────────────────────────

@@ -41,6 +41,10 @@ class FirestoreSync(private val context: Context) {
     var lastError: String = ""
         private set
 
+    /** Epoch millis of the last successful write, 0 if none this session. */
+    var lastPushedAt: Long = 0L
+        private set
+
     /** Set by the ViewModel so a status change can drive recomposition. */
     var onStatusChange: ((SyncStatus, String) -> Unit)? = null
 
@@ -60,8 +64,14 @@ class FirestoreSync(private val context: Context) {
      *
      * @param onRemote invoked on the main thread whenever the household document
      *   changes, including the first read.
+     * @param onEmptyRemote invoked when the document doesn't exist yet, so the
+     *   caller can seed it from this device.
      */
-    fun connect(configText: String, onRemote: (PersistedState) -> Unit) {
+    fun connect(
+        configText: String,
+        onRemote: (PersistedState) -> Unit,
+        onEmptyRemote: () -> Unit
+    ) {
         disconnect()
 
         val cfg = parseFirebaseConfig(configText)
@@ -107,8 +117,15 @@ class FirestoreSync(private val context: Context) {
                     return@addSnapshotListener
                 }
                 report(SyncStatus.LIVE)
-                val data = snapshot?.data ?: return@addSnapshotListener
+                // First connect against a fresh project: the document doesn't exist
+                // yet, so seed it from this device instead of sitting there empty.
+                val data = snapshot?.data
+                if (snapshot == null || !snapshot.exists() || data == null) {
+                    onEmptyRemote()
+                    return@addSnapshotListener
+                }
                 val state = runCatching { decodeState(data) }.getOrElse { e ->
+                    report(SyncStatus.ERROR, "Remote data didn't match this app's format")
                     Log.w(TAG, "could not decode remote state", e); return@addSnapshotListener
                 }
                 applyingRemote = true
@@ -138,6 +155,10 @@ class FirestoreSync(private val context: Context) {
         payload["updatedBy"] = byProfile
         target.collection(COLLECTION).document(DOCUMENT)
             .set(payload, SetOptions.merge())
+            .addOnSuccessListener {
+                lastPushedAt = System.currentTimeMillis()
+                report(SyncStatus.LIVE)
+            }
             .addOnFailureListener { e ->
                 report(SyncStatus.ERROR, e.message ?: "Write failed")
                 Log.w(TAG, "push failed", e)
