@@ -28,3 +28,30 @@ gradle wrapper --gradle-version 8.7 && ./gradlew assembleDebug
 
 The app is signed with the checked-in `app/keystore/fintrack.jks` (password `fintrack`)
 so every build — local or CI — installs over the previous one without uninstalling.
+
+## Firestore sync
+
+Sync is configured inside the app, not in this repo — there is deliberately no
+`google-services.json` and no `google-services` Gradle plugin. Firebase is
+initialised at runtime from the config you paste into **Settings → Sync**, as
+six comma-separated values in this order:
+
+```
+apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId
+```
+
+A block copied straight from the Firebase console (`apiKey: "…",` and so on) is
+also accepted — the key names and quotes are stripped. Tap **Connect**; the tag
+turns *Live* once the listener is attached.
+
+Both profiles share one document, `fintrack/household`, written as real nested
+maps and arrays so the data is browsable in the Firestore console. Sync is
+last-write-wins. The config text and the OpenAI key are never uploaded — they
+stay in the device's own storage.
+
+### Security rules
+
+The app does not sign in to Firebase, so **the default test rules leave the
+household document readable and writable by anyone who has the project ID.**
+That is real financial data. Before putting anything genuine in it, either turn
+on Firebase Auth and require it in the rules, or restrict access another way.

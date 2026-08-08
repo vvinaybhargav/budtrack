@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
+import com.vinay.fintrack.data.SyncStatus
 
 @Composable
 fun SettingsScreen(vm: FinTrackViewModel) {
@@ -190,17 +191,39 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                     "Firebase config — apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId",
                     vm.firebaseConfigText,
                     vm::setFirebaseConfig,
-                    placeholder = "paste comma-separated values here"
+                    placeholder = "paste the six values, separated by commas",
+                    singleLine = false
                 )
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Muted("Firebase")
-                    if (vm.firebaseConfigText.isNotBlank()) Tag("Configured", Pf.Accent100, Pf.Accent800)
-                    else OutlineTag("Not connected")
+                    Muted("Firestore")
+                    when (vm.syncStatus) {
+                        SyncStatus.LIVE -> Tag("Live", Pf.Accent2_100, Pf.Accent2_800)
+                        SyncStatus.CONNECTING -> Tag("Connecting…", Pf.Neutral100, Pf.Neutral800)
+                        SyncStatus.ERROR -> Tag("Error", Pf.Accent100, Pf.Accent800)
+                        SyncStatus.OFF -> OutlineTag("Not connected")
+                    }
                 }
+                if (vm.syncError.isNotEmpty()) {
+                    Text(vm.syncError, color = Pf.Accent400, fontSize = 12.sp)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                    PrimaryButton(
+                        if (vm.syncStatus == SyncStatus.LIVE) "Reconnect" else "Connect",
+                        vm::applyFirebaseConfig,
+                        enabled = vm.syncConfigLooksValid
+                    )
+                    if (vm.syncStatus != SyncStatus.OFF) {
+                        SecondaryButton("Disconnect", vm::disconnectSync)
+                    }
+                }
+                Muted(
+                    "Both profiles share one household document. The config and API key " +
+                        "stay on this device — they are never uploaded."
+                )
                 PfField(
                     "OpenAI API key — for Smart Add",
                     vm.openaiKeyText,

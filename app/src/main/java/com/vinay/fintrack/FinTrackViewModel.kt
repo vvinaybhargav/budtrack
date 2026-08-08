@@ -9,11 +9,14 @@ import com.vinay.fintrack.data.Account
 import com.vinay.fintrack.data.Card
 import com.vinay.fintrack.data.ChatMessage
 import com.vinay.fintrack.data.Entry
+import com.vinay.fintrack.data.FirestoreSync
 import com.vinay.fintrack.data.INVEST_CATEGORIES
 import com.vinay.fintrack.data.Loan
 import com.vinay.fintrack.data.PersistedState
 import com.vinay.fintrack.data.SAVINGS_CATEGORIES
 import com.vinay.fintrack.data.Store
+import com.vinay.fintrack.data.SyncStatus
+import com.vinay.fintrack.data.parseFirebaseConfig
 import com.vinay.fintrack.data.Txn
 import com.vinay.fintrack.data.currentPeriod
 import com.vinay.fintrack.data.inr
@@ -52,8 +55,35 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     private val store = Store(app)
     private var persisted by mutableStateOf(store.load())
 
+    private val sync = FirestoreSync(app.applicationContext)
+
+    var syncStatus by mutableStateOf(SyncStatus.OFF); private set
+    var syncError by mutableStateOf(""); private set
+
+    init {
+        sync.onStatusChange = { s, e -> syncStatus = s; syncError = e }
+        if (persisted.firebaseConfigText.isNotBlank()) connectSync()
+    }
+
+    private fun connectSync() {
+        sync.connect(persisted.firebaseConfigText) { remote ->
+            // Keep this device's own secrets — they're per-device, not household data.
+            persisted = remote.copy(
+                firebaseConfigText = persisted.firebaseConfigText,
+                openaiKeyText = persisted.openaiKeyText
+            ).also { store.save(it) }
+        }
+    }
+
+    override fun onCleared() {
+        sync.disconnect()
+        super.onCleared()
+    }
+
     private fun update(block: (PersistedState) -> PersistedState) {
         persisted = block(persisted).also { store.save(it) }
+        // The API keys are this device's own, not household data — never upload them.
+        sync.push(persisted.copy(firebaseConfigText = "", openaiKeyText = ""), activeProfile ?: "")
     }
 
     // ── persisted views ────────────────────────────────────────────────
@@ -552,6 +582,16 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setDefaultAccount(v: String) = update { it.copy(defaultAccount = v) }
     fun setFirebaseConfig(v: String) = update { it.copy(firebaseConfigText = v) }
+
+    /** Explicit, so typing the config doesn't reconnect on every keystroke. */
+    fun applyFirebaseConfig() {
+        if (persisted.firebaseConfigText.isBlank()) sync.disconnect() else connectSync()
+    }
+
+    fun disconnectSync() = sync.disconnect()
+
+    val syncConfigLooksValid: Boolean
+        get() = parseFirebaseConfig(persisted.firebaseConfigText) != null
     fun setOpenaiKey(v: String) = update { it.copy(openaiKeyText = v) }
 
     // ── derived ────────────────────────────────────────────────────────
