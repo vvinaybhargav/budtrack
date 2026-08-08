@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.FinTrack" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#0F0B16</item>
+        <item name="android:navigationBarColor">#1D1727</item>
+        <item name="android:windowBackground">#0F0B16</item>
+    </style>
+</resources>
