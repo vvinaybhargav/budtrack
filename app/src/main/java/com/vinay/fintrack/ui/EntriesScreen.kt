@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.item
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -70,9 +69,9 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(Space.s2)
             ) {
-                Chip("All", vm.entriesCategoryFilter == null) { vm.setCategoryFilter(null) }
+                Chip("All", vm.entriesCategoryFilter == null, onClick = { vm.setCategoryFilter(null) })
                 vm.availableChips.forEach { c ->
-                    Chip(c, vm.entriesCategoryFilter == c) { vm.setCategoryFilter(c) }
+                    Chip(c, vm.entriesCategoryFilter == c, onClick = { vm.setCategoryFilter(c) })
                 }
             }
         }
