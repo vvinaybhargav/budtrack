@@ -62,7 +62,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     val loans: List<Loan> get() = persisted.loans
     val cards: List<Card> get() = persisted.cards
     val categories: List<String> get() = persisted.categories
-    val confirmed: Set<String> get() = persisted.confirmed
     val defaultAccount: String get() = persisted.defaultAccount
     val firebaseConfigText: String get() = persisted.firebaseConfigText
     val openaiKeyText: String get() = persisted.openaiKeyText
