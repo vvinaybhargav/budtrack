@@ -87,6 +87,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** Anonymous user id of this device, for the members list in the rules. */
     val syncDeviceId: String get() = sync.uid
 
+    /** Why anonymous sign-in didn't happen — informational, not a failure. */
+    val syncAuthNote: String get() = sync.authNote
+
     fun pushNow() {
         sync.push(persisted.copy(firebaseConfigText = "", openaiKeyText = ""), activeProfile ?: "")
         syncedAt = System.currentTimeMillis()

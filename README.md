@@ -50,51 +50,70 @@ A block copied straight from the Firebase console (`apiKey: "…",` and so on) i
 also accepted — the key names and quotes are stripped. Tap **Connect**; the tag
 turns *Live* once the listener is attached.
 
-Both profiles share one document, `fintrack/household`, written as real nested
-maps and arrays so the data is browsable in the Firestore console. Sync is
-last-write-wins. The config text and the OpenAI key are never uploaded — they
-stay in the device's own storage.
+Both profiles share one document, written as real nested maps and arrays so the
+data is browsable in the Firestore console. Sync is last-write-wins. The config
+text and the OpenAI key are never uploaded — they stay in the device's own
+storage.
+
+### Where the data lives
+
+```
+workspaces/household/budtrack/state
+```
+
+This deliberately sits under `workspaces/household/**`, the path the existing
+[vvinaybhargav/fintrack](https://github.com/vvinaybhargav/fintrack) household
+app already authorises, so its published `firestore.rules` cover this app with
+no change. The `budtrack` section keeps it clear of that app's `entries`,
+`accounts`, `loans`, `goals`, `bills` and `meta` collections — the two apps
+share a project and a rule, not documents.
+
+If a write is rejected with a missing-permissions error, the path is almost
+always the reason: rules scoped to one workspace deny everything outside it.
 
 ### Sign-in
 
-The app signs in anonymously before touching Firestore, so the rules can require
-an authenticated user. Enable it once per project:
+The app signs in anonymously when it can, so rules that require an
+authenticated user work. It is best-effort — if the Anonymous provider is
+disabled, sync carries on unauthenticated rather than failing, because the
+household rules authorise by path rather than by user. Settings says which
+happened.
 
-**Firebase console → Authentication → Sign-in method → Anonymous → Enable.**
-
-Without this, sign-in fails and Settings says so.
+To require auth instead, enable it in **Firebase console → Authentication →
+Sign-in method → Anonymous**, then use the UID-restricted rules below.
 
 ### Security rules
 
-This document holds salaries, balances and loans, so don't leave it open. The
-weak version — any signed-in user, and *anyone* can create an anonymous account
-in your project — is:
+The household workspace is currently open by path — anyone who knows the
+project ID and the path can read it. That is the existing app's tradeoff, and
+this app inherits it:
 
 ```
-match /fintrack/{doc} {
-  allow read, write: if request.auth != null;   // not enough on its own
+match /workspaces/household/{document=**} {
+  allow read, write: if true;
 }
 ```
 
-Better: allow only the devices you name. Settings shows **This device's ID**
-once connected; create a `fintrack/members` document with a `uids` array holding
-each phone's ID, then:
+To tighten it, enable anonymous sign-in, take the **This device's ID** value
+Settings shows on each phone, put them in a `uids` array on
+`workspaces/household/members`, and require membership:
 
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /fintrack/members {
+    match /workspaces/household/members {
       allow read: if request.auth != null;
-      allow write: if false;                    // edit in the console only
+      allow write: if false;
     }
-    match /fintrack/household {
+    match /workspaces/household/{document=**} {
       allow read, write: if request.auth != null
-        && request.auth.uid in get(/databases/$(database)/documents/fintrack/members).data.uids;
+        && request.auth.uid in get(/databases/$(database)/documents/workspaces/household/members).data.uids;
     }
   }
 }
 ```
 
-Anonymous IDs are per-install: reinstalling or clearing app data mints a new one,
-which then has to be added to `uids` again.
+Anonymous IDs are per-install: reinstalling or clearing app data mints a new
+one, which then has to be added to `uids` again. Note this rule also governs
+the other household app, so roll it out to both phones together.

@@ -239,6 +239,10 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                 if (vm.syncedAt > 0L) {
                     Muted("Last sent ${prettyDate(today())} at ${vm.syncedAtClock}")
                 }
+                Muted("Syncing to workspaces/household/budtrack/state")
+                if (vm.syncDeviceId.isEmpty() && vm.syncAuthNote.isNotEmpty()) {
+                    Muted("Not signed in — fine if your rules allow this path. ${vm.syncAuthNote}")
+                }
                 if (vm.syncDeviceId.isNotEmpty()) {
                     Column(Modifier.padding(top = Space.s2)) {
                         Muted("This device's ID — add it to the members doc in your rules")

@@ -39,8 +39,14 @@ class FirestoreSync(private val context: Context) {
     private var listener: ListenerRegistration? = null
 
     /** This device's anonymous user id — paste it into the members doc to
-     *  authorise the device without opening the database to everyone. */
+     *  authorise the device without opening the database to everyone.
+     *  Empty when signed-in anonymously wasn't possible, which is fine for
+     *  rules that authorise by path instead. */
     var uid: String = ""
+        private set
+
+    /** Why sign-in didn't happen, if it didn't. Not an error on its own. */
+    var authNote: String = ""
         private set
 
     var status: SyncStatus = SyncStatus.OFF
@@ -116,23 +122,29 @@ class FirestoreSync(private val context: Context) {
         app = instance
         db = FirebaseFirestore.getInstance(instance)
 
-        // Sign in before touching Firestore, so rules can require an
-        // authenticated user instead of being left open to the world.
-        val authInstance = FirebaseAuth.getInstance(instance)
+        // Best-effort sign-in: rules that require auth will then work, but rules
+        // that don't (the household workspace is open by path) must not be
+        // blocked just because the Anonymous provider is switched off.
+        val authInstance = runCatching { FirebaseAuth.getInstance(instance) }.getOrNull()
         auth = authInstance
-        val existing = authInstance.currentUser
-        if (existing != null) {
-            uid = existing.uid
-            attachListener(onRemote, onEmptyRemote)
-        } else {
-            authInstance.signInAnonymously()
+        val existing = authInstance?.currentUser
+        when {
+            authInstance == null -> attachListener(onRemote, onEmptyRemote)
+            existing != null -> {
+                uid = existing.uid
+                attachListener(onRemote, onEmptyRemote)
+            }
+            else -> authInstance.signInAnonymously()
                 .addOnSuccessListener { result ->
                     uid = result.user?.uid.orEmpty()
                     attachListener(onRemote, onEmptyRemote)
                 }
                 .addOnFailureListener { e ->
-                    report(SyncStatus.ERROR, authHint(e))
-                    Log.w(TAG, "anonymous sign-in failed", e)
+                    // Carry on unauthenticated — Firestore will say if the rules
+                    // actually needed a user, and that error is the useful one.
+                    authNote = authHint(e)
+                    Log.w(TAG, "anonymous sign-in unavailable, continuing without it", e)
+                    attachListener(onRemote, onEmptyRemote)
                 }
         }
     }
@@ -157,7 +169,7 @@ class FirestoreSync(private val context: Context) {
         onRemote: (PersistedState) -> Unit,
         onEmptyRemote: () -> Unit
     ) {
-        listener = db!!.collection(COLLECTION).document(DOCUMENT)
+        listener = stateDoc(db!!)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     report(SyncStatus.ERROR, error.message ?: "Firestore listen failed")
@@ -191,6 +203,7 @@ class FirestoreSync(private val context: Context) {
         db = null
         auth = null
         uid = ""
+        authNote = ""
         runCatching { app?.delete() }
         app = null
         report(SyncStatus.OFF)
@@ -203,7 +216,7 @@ class FirestoreSync(private val context: Context) {
         val payload = encodeState(state).toMutableMap()
         payload["updatedAt"] = System.currentTimeMillis()
         payload["updatedBy"] = byProfile
-        target.collection(COLLECTION).document(DOCUMENT)
+        stateDoc(target)
             .set(payload, SetOptions.merge())
             .addOnSuccessListener {
                 lastPushedAt = System.currentTimeMillis()
@@ -251,10 +264,20 @@ class FirestoreSync(private val context: Context) {
         else -> JsonPrimitive(value.toString())
     }
 
+    private fun stateDoc(db: FirebaseFirestore) =
+        db.collection(WORKSPACES).document(WORKSPACE_ID)
+            .collection(APP_SECTION).document(STATE_DOC)
+
     private companion object {
         const val TAG = "FinTrackSync"
         const val APP_NAME = "fintrack-sync"
-        const val COLLECTION = "fintrack"
-        const val DOCUMENT = "household"
+
+        // Sits under workspaces/household/** so the existing household-finance
+        // rules already cover it, in its own section so it cannot disturb that
+        // app's entries / accounts / loans collections.
+        const val WORKSPACES = "workspaces"
+        const val WORKSPACE_ID = "household"
+        const val APP_SECTION = "budtrack"
+        const val STATE_DOC = "state"
     }
 }
