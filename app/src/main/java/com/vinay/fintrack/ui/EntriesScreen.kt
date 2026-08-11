@@ -208,9 +208,12 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                     value = vm.accounts.firstOrNull {
                         it.id == txn.fromAccountId.ifEmpty { txn.toAccountId }
                     }?.name.orEmpty(),
-                    options = vm.accounts.map { it.name },
+                    // Only yours and the joint ones: listing every account named
+                    // the other profile's private accounts and let you move
+                    // money onto them.
+                    options = vm.visibleAccounts.map { it.name },
                     onSelect = { name ->
-                        vm.setTxnAccount(vm.accounts.firstOrNull { it.name == name }?.id.orEmpty())
+                        vm.setTxnAccount(vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty())
                     }
                 )
             }

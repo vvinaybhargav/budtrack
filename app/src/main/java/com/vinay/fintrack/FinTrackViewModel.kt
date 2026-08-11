@@ -402,6 +402,43 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         pinMsg = "PIN updated."; pinMsgIsError = false; pinNew = ""; pinConfirm = ""
     }
 
+    // ── profiles ───────────────────────────────────────────────────────
+    // Profiles hold PINs, which are deliberately never synced, so this list is
+    // per device: a new profile has to be added on each phone that will use it.
+    var newProfileName by mutableStateOf("")
+    var newProfilePin by mutableStateOf("")
+    var profileMsg by mutableStateOf(""); private set
+
+    fun setNewProfileName(v: String) { newProfileName = v.take(20); profileMsg = "" }
+    fun setNewProfilePin(v: String) { newProfilePin = v.filter { it.isDigit() }.take(4); profileMsg = "" }
+
+    fun addProfile() {
+        val name = newProfileName.trim()
+        when {
+            name.isEmpty() -> profileMsg = "Give the profile a name."
+            name.equals("Joint", true) ->
+                profileMsg = "\"Joint\" is the shared side, not a profile."
+            name in persisted.profiles.keys -> profileMsg = "That profile already exists."
+            newProfilePin.length != 4 -> profileMsg = "PIN must be 4 digits."
+            else -> {
+                update { it.copy(profiles = it.profiles + (name to newProfilePin)) }
+                newProfileName = ""; newProfilePin = ""
+                profileMsg = "Added $name. Add it on the other phone too — PINs never sync."
+            }
+        }
+    }
+
+    fun removeProfile(name: String) {
+        when {
+            name == activeProfile -> profileMsg = "Can't remove the profile you're using."
+            persisted.profiles.size <= 1 -> profileMsg = "Keep at least one profile."
+            else -> {
+                update { it.copy(profiles = it.profiles - name) }
+                profileMsg = "Removed $name. Their entries and accounts are untouched."
+            }
+        }
+    }
+
     fun setPinField(isNew: Boolean, v: String) {
         val clean = v.filter { it.isDigit() }.take(4)
         if (isNew) pinNew = clean else pinConfirm = clean

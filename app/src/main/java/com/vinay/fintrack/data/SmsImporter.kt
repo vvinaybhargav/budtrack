@@ -165,7 +165,12 @@ class SmsImporter(private val context: Context) {
      * the buckets untrustworthy.
      */
     private fun accountFor(state: PersistedState, tail: String, log: MutableList<String>): String {
-        val fallback = state.accounts.firstOrNull { it.name == state.defaultAccount }?.id
+        // A joint account first. The default is household-wide, so if one person
+        // sets their own account as the default the other's unmatched messages
+        // would land in it — and "first account in the list" is worse still.
+        val fallback = state.accounts.firstOrNull { it.person == "Joint" }?.id
+            ?: state.accounts.firstOrNull { it.person == state.lastProfile }?.id
+            ?: state.accounts.firstOrNull { it.name == state.defaultAccount }?.id
             ?: state.accounts.firstOrNull()?.id.orEmpty()
         return when (val m = matchAccountByTail(state.accounts, tail)) {
             is AccountMatch.One -> m.accountId
@@ -173,7 +178,12 @@ class SmsImporter(private val context: Context) {
                 log += "…$tail matches ${m.count} accounts — add a digit to tell them apart"
                 fallback
             }
-            AccountMatch.None -> fallback
+            AccountMatch.None -> {
+                if (tail.isNotEmpty()) {
+                    log += "…$tail matches no account — filed to the shared one"
+                }
+                fallback
+            }
         }
     }
 

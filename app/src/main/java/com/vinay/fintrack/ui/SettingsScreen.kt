@@ -65,6 +65,60 @@ fun SettingsScreen(vm: FinTrackViewModel) {
 
         item {
             Column {
+                Heading("Profiles")
+                Muted(
+                    "Each profile sees only its own accounts, cards, loans, " +
+                        "investments and set-asides. Joint is shared by everyone."
+                )
+                Column(
+                    Modifier.padding(top = Space.s3),
+                    verticalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    vm.profileNames.forEach { name ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(name, Modifier.weight(1f), color = Pf.Text, fontSize = 14.sp)
+                            if (name == vm.activeProfile) Tag("You", Pf.Accent100, Pf.Accent800)
+                            else SmallIcon(Icons.Default.Delete, "Remove profile", true) {
+                                vm.removeProfile(name)
+                            }
+                        }
+                    }
+                }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = Space.s3),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    PfField(
+                        value = vm.newProfileName,
+                        onValueChange = vm::setNewProfileName,
+                        placeholder = "New profile",
+                        modifier = Modifier.weight(1f)
+                    )
+                    PfField(
+                        value = vm.newProfilePin,
+                        onValueChange = vm::setNewProfilePin,
+                        placeholder = "PIN",
+                        numeric = true,
+                        modifier = Modifier.width(90.dp)
+                    )
+                    PrimaryButton("Add", vm::addProfile)
+                }
+                if (vm.profileMsg.isNotEmpty()) {
+                    Muted(vm.profileMsg, Modifier.padding(top = Space.s2))
+                }
+            }
+        }
+
+        item { Hairline() }
+
+        item {
+            Column {
                 Heading("Lock")
                 Row(
                     Modifier.fillMaxWidth(),
