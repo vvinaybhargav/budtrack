@@ -640,19 +640,31 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             homeQuickConfirm = "Couldn't find an amount — try e.g. '22k EMI'."
             return
         }
+        // Files to whichever side the switch is on, not to whoever the text
+        // mentions: on Joint it was landing in Personal and vanishing from the
+        // screen it was typed on, and it could file an entry against the other
+        // profile, which this device isn't meant to create.
+        val person = scopePerson
+        val bucket = if (person == "Joint") "JOINT" else "PERSONAL"
         update { s ->
             s.copy(
                 entries = s.entries + Entry(
-                    newId("e"), parsed.person, parsed.type, parsed.bucket,
-                    parsed.category, parsed.amount, parsed.frequency, parsed.note,
-                    defaultAccountFor(parsed.person, parsed.bucket)
+                    id = newId("e"),
+                    person = person,
+                    type = parsed.type,
+                    bucket = bucket,
+                    category = parsed.category,
+                    amount = parsed.amount,
+                    frequency = parsed.frequency,
+                    note = parsed.note,
+                    accountId = defaultAccountFor(person, bucket),
+                    periodMonths = if (parsed.frequency == "ANNUAL") 12 else 1
                 )
             )
         }
         homeQuickText = ""
         val per = if (parsed.frequency == "ANNUAL") "a year" else "a month"
-        homeQuickConfirm =
-            "Added ${inr(parsed.amount)} $per · ${parsed.category} · ${parsed.person}"
+        homeQuickConfirm = "Added ${inr(parsed.amount)} $per · ${parsed.category} · $person"
     }
 
     // ── entries ────────────────────────────────────────────────────────
@@ -695,16 +707,24 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val text = smartText
         if (text.isEmpty()) return
         val parsed = parseSmartAdd(text, categories)
+        // Named, not positional: this passed bucket into a Draft that no longer
+        // has one, shifting every field after it — the category became "JOINT"
+        // and the amount became the category name — and it still compiled,
+        // because they are all Strings.
         draft = Draft(
-            parsed.person, parsed.type, parsed.bucket, parsed.category,
-            if (parsed.amount > 0) parsed.amount.toLong().toString() else "",
-            parsed.frequency, parsed.note
+            person = scopePerson,
+            type = parsed.type,
+            category = parsed.category,
+            amountText = if (parsed.amount > 0) parsed.amount.toLong().toString() else "",
+            frequency = parsed.frequency,
+            note = parsed.note,
+            periodMonths = if (parsed.frequency == "ANNUAL") 12 else 1
         )
         smartText = ""
         chatMessages = chatMessages + ChatMessage("user", text) + ChatMessage(
             "assistant",
             "Got it — ${inr(parsed.amount)} for ${parsed.category}, ${parsed.frequency.lowercase()}, " +
-                "under ${parsed.person}. Check the form below and tap Save."
+                "under $scopePerson. Check the form below and tap Save."
         )
     }
 
@@ -776,13 +796,17 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val editingId = editingEntryId
         update { s ->
             val entry = Entry(
-                editingId ?: newId("e"), draft.person, draft.type, draft.bucket,
-                draft.category, amount,
+                id = editingId ?: newId("e"),
+                person = draft.person,
+                type = draft.type,
+                bucket = draft.bucket,
+                category = draft.category,
+                amount = amount,
                 // Kept for older readers; the period is what actually counts.
-                if (draft.periodMonths >= 12) "ANNUAL" else "MONTHLY",
-                draft.note,
-                draft.accountId.ifEmpty { defaultAccountFor(draft.person, draft.bucket) },
-                draft.periodMonths
+                frequency = if (draft.periodMonths >= 12) "ANNUAL" else "MONTHLY",
+                note = draft.note,
+                accountId = draft.accountId.ifEmpty { defaultAccountFor(draft.person, draft.bucket) },
+                periodMonths = draft.periodMonths
             )
             if (editingId != null) {
                 s.copy(entries = s.entries.map { if (it.id == entry.id) entry else it })
