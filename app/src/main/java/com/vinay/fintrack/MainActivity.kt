@@ -63,6 +63,13 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /** The SMS receiver records payments while the app is closed, so pick up
+     *  whatever it wrote rather than showing stale state. */
+    override fun onResume() {
+        super.onResume()
+        vm.refreshFromDisk()
+    }
 }
 
 @Composable

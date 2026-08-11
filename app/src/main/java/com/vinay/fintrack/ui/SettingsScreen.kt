@@ -1,10 +1,7 @@
 package com.vinay.fintrack.ui
 
 import android.Manifest
-import android.app.Activity
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,6 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.font.FontFamily
@@ -37,11 +36,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
-import com.vinay.fintrack.data.ScreenshotMover
 import com.vinay.fintrack.data.SyncStatus
 import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.today
-import com.vinay.fintrack.work.ScreenshotWorker
 
 @Composable
 fun SettingsScreen(vm: FinTrackViewModel) {
@@ -201,7 +198,7 @@ fun SettingsScreen(vm: FinTrackViewModel) {
 
         item { Hairline() }
 
-        item { ScreenshotImportSection(vm) }
+        item { SmsImportSection(vm) }
 
         item { Hairline() }
 
@@ -320,39 +317,28 @@ private fun SmallIcon(
 }
 
 /**
- * PhonePe screenshot import. Two system prompts are involved and neither can be
- * avoided: reading images at all, and — on Android 11+ — moving files the app
- * didn't create. The move consent is asked once per batch, not per file.
+ * Bank SMS import. Unlike reading a receipt image, the message states which
+ * account moved the money, so a transaction lands on the right one rather than
+ * a guess — and it covers card, ATM and EMI debits too, not just UPI.
  */
 @Composable
-private fun ScreenshotImportSection(vm: FinTrackViewModel) {
+private fun SmsImportSection(vm: FinTrackViewModel) {
     val context = LocalContext.current
-    var hasPermission by remember { mutableStateOf(ScreenshotWorker.hasMediaPermission(context)) }
+    var hasPermission by remember { mutableStateOf(hasSmsPermission(context)) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasPermission = granted
-        if (granted) vm.setScreenshotImport(true)
-    }
-
-    // The system carries out the delete itself once approved.
-    val deleteLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartIntentSenderForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val count = vm.pendingMoveCount
-            vm.clearPendingMoves()
-            vm.noteMoved(count)
-        }
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        hasPermission = grants.values.all { it }
+        if (hasPermission) vm.setSmsImport(true)
     }
 
     Column {
-        Heading("PhonePe screenshots")
+        Heading("Bank SMS")
         Muted(
-            "Take a screenshot of a PhonePe receipt with your phone's own gesture " +
-                "— three or four fingers down, whatever you have set. It's read " +
-                "on-device, added as a transaction, and copied to Pictures/PhonePe."
+            "Records payments from your bank's alerts as they arrive — UPI, card, " +
+                "ATM and EMI alike. Messages are read on this phone and only the " +
+                "parsed amount, payee and reference are kept."
         )
 
         Row(
@@ -362,8 +348,8 @@ private fun ScreenshotImportSection(vm: FinTrackViewModel) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Muted("Automatic scan")
-            if (vm.screenshotImportOn) Tag("On", Pf.Accent2_100, Pf.Accent2_800)
+            Muted("Automatic import")
+            if (vm.smsImportOn && hasPermission) Tag("On", Pf.Accent2_100, Pf.Accent2_800)
             else OutlineTag("Off")
         }
 
@@ -372,24 +358,20 @@ private fun ScreenshotImportSection(vm: FinTrackViewModel) {
             horizontalArrangement = Arrangement.spacedBy(Space.s2)
         ) {
             if (!hasPermission) {
-                PrimaryButton("Allow access") {
+                PrimaryButton("Allow SMS access") {
                     permissionLauncher.launch(
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            Manifest.permission.READ_MEDIA_IMAGES
-                        } else {
-                            Manifest.permission.READ_EXTERNAL_STORAGE
-                        }
+                        arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS)
                     )
                 }
-            } else if (vm.screenshotImportOn) {
-                SecondaryButton("Turn off", { vm.setScreenshotImport(false) })
+            } else if (vm.smsImportOn) {
+                SecondaryButton("Turn off", { vm.setSmsImport(false) })
             } else {
-                PrimaryButton("Turn on", { vm.setScreenshotImport(true) })
+                PrimaryButton("Turn on", { vm.setSmsImport(true) })
             }
-            if (hasPermission) {
+            if (hasPermission && vm.smsImportOn) {
                 SecondaryButton(
-                    if (vm.scanning) "Scanning…" else "Scan now",
-                    vm::scanScreenshotsNow,
+                    if (vm.scanning) "Reading…" else "Import past 60 days",
+                    { vm.backfillSms() },
                     enabled = !vm.scanning
                 )
             }
@@ -398,32 +380,17 @@ private fun ScreenshotImportSection(vm: FinTrackViewModel) {
         if (vm.scanNote.isNotEmpty()) {
             Muted(vm.scanNote, Modifier.padding(top = Space.s2))
         }
+        Muted("${vm.importedCount} imported from SMS", Modifier.padding(top = Space.s1))
         Muted(
-            "${vm.importedCount} imported so far" +
-                if (vm.lastScanAt > 0L) " · last scan ${vm.lastScanClock}" else "",
-            Modifier.padding(top = Space.s1)
+            "Set each account's last digits in its editor on Home — that's how a " +
+                "message finds the right account. Without it everything lands on " +
+                "your default account.",
+            Modifier.padding(top = Space.s2)
         )
-
-        // Android will not relocate another app's images silently, so this is a
-        // deliberate button rather than something that happens behind your back.
-        if (vm.pendingMoveCount > 0) {
-            Column(Modifier.padding(top = Space.s3)) {
-                Muted(
-                    "${vm.pendingMoveCount} already copied to Pictures/PhonePe. " +
-                        "Removing the originals from Screenshots needs one confirmation."
-                )
-                PrimaryButton("Remove originals") {
-                    val mover = ScreenshotMover(context)
-                    val sender = mover.deleteRequest(vm.pendingMoveUris())
-                    if (sender != null) {
-                        deleteLauncher.launch(IntentSenderRequest.Builder(sender).build())
-                    } else {
-                        val gone = mover.deleteDirectly(vm.pendingMoveUris())
-                        vm.clearPendingMoves()
-                        vm.noteMoved(gone)
-                    }
-                }
-            }
-        }
     }
 }
+
+private fun hasSmsPermission(context: android.content.Context): Boolean =
+    listOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS).all {
+        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+    }

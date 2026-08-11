@@ -29,6 +29,29 @@ gradle wrapper --gradle-version 8.7 && ./gradlew assembleDebug
 The app is signed with the checked-in `app/keystore/fintrack.jks` (password `fintrack`)
 so every build — local or CI — installs over the previous one without uninstalling.
 
+## Bank SMS import
+
+Transactions come from your bank's own alerts rather than from anything you
+type. Settings → Bank SMS → allow access → turn on, and each debit or credit
+message is parsed as it arrives and recorded, whether or not the app is open.
+"Import past 60 days" reads the existing inbox once so history isn't lost.
+
+Bank SMS is used in preference to reading a payment app's receipts because it
+is the authoritative record: it states which account moved the money, and it
+covers card, ATM, NEFT and EMI debits, not only UPI.
+
+**Set each account's last digits** in its editor on the Home screen — the field
+matching `A/c XX1234` in the message. Without it, imports fall back to the
+default account.
+
+Messages are parsed on the device. Only the parsed amount, payee, reference and
+date are stored; nothing raw is uploaded. `READ_SMS`/`RECEIVE_SMS` mean this
+build cannot be published on Play, which is fine for a sideloaded app.
+
+The parser skips OTPs, adverts, failed payments and due-date reminders, and
+takes the transacted amount rather than the "Avl Bal" that banks append. Every
+import keeps its reference, so re-reading the inbox cannot double-count.
+
 ## Firestore sync
 
 Sync is configured inside the app, not in this repo — there is deliberately no

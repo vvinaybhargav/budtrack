@@ -238,6 +238,8 @@ private fun AccountsSection(vm: FinTrackViewModel) {
                             PfField(value = vm.accountDraft.name, onValueChange = { vm.accountDraft = vm.accountDraft.copy(name = it) }, placeholder = "Account name")
                             PfField(value = vm.accountDraft.owner, onValueChange = { vm.accountDraft = vm.accountDraft.copy(owner = it) }, placeholder = "Owner")
                             PfField(value = vm.accountDraft.balanceText, onValueChange = { vm.accountDraft = vm.accountDraft.copy(balanceText = it) }, placeholder = "Balance", numeric = true)
+                            // Lets a bank SMS land on this account instead of the default.
+                            PfField(value = vm.accountDraft.numberTail, onValueChange = { vm.accountDraft = vm.accountDraft.copy(numberTail = it) }, placeholder = "Last digits, as the bank's SMS shows", numeric = true)
                             EditorActions({ vm.deleteAccount(a.id) }, vm::cancelEditAccount, vm::saveAccount)
                         }
                     } else {

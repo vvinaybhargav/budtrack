@@ -27,7 +27,10 @@ data class Account(
     val person: String,
     /** Balance before any recorded transaction. The live balance is derived —
      *  see [FinTrackViewModel.balanceOf] — so undoing a confirm reverses itself. */
-    val openingBalance: Double
+    val openingBalance: Double,
+    /** Last digits as the bank writes them in its SMS ("A/c XX1234" → "1234").
+     *  This is how an imported message lands on the right account. */
+    val numberTail: String = ""
 )
 
 @Serializable
@@ -60,11 +63,12 @@ data class Txn(
     val loanId: String = "",
     val period: String = "",          // yyyy-MM the confirmation belongs to
     val note: String = "",
-    /** UPI reference (UTR) for imported ones — what stops a rescan duplicating. */
+    /** Bank reference (UTR/RRN) for imported ones — what stops a re-read
+     *  recording the same payment twice. */
     val ref: String = "",
-    /** "phonepe" when OCR'd from a screenshot, empty when entered by hand. */
+    /** "sms" when read from a bank alert, empty when entered by hand. */
     val source: String = "",
-    /** Exactly what OCR read, so a misread amount can be traced back. */
+    /** The message it came from, so a misparsed amount can be traced back. */
     val rawAmountText: String = ""
 ) {
     val month: String get() = period.ifEmpty { date.take(7) }

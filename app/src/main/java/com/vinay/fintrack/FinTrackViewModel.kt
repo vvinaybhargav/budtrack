@@ -14,7 +14,7 @@ import com.vinay.fintrack.data.INVEST_CATEGORIES
 import com.vinay.fintrack.data.Loan
 import com.vinay.fintrack.data.PersistedState
 import com.vinay.fintrack.data.SAVINGS_CATEGORIES
-import com.vinay.fintrack.data.ScreenshotImporter
+import com.vinay.fintrack.data.SmsImporter
 import com.vinay.fintrack.data.Store
 import com.vinay.fintrack.data.SyncStatus
 import com.vinay.fintrack.data.parseFirebaseConfig
@@ -24,8 +24,6 @@ import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.today
 import com.vinay.fintrack.data.ownerLabel
 import com.vinay.fintrack.data.parseSmartAdd
-import com.vinay.fintrack.work.ScreenshotTriggerJob
-import com.vinay.fintrack.work.ScreenshotWorker
 
 enum class Tab { HOME, ENTRIES, ADD, SETTINGS }
 
@@ -46,7 +44,11 @@ data class NewLoanDraft(
     val accountId: String = ""
 )
 
-data class NewAccountDraft(val name: String = "", val owner: String = "Me", val balanceText: String = "")
+data class NewAccountDraft(
+    val name: String = "", val owner: String = "Me", val balanceText: String = "",
+    /** Last digits as the bank's SMS writes them, for matching imports. */
+    val numberTail: String = ""
+)
 
 data class NewCardDraft(
     val name: String = "", val owner: String = "Me", val limitText: String = "",
@@ -67,7 +69,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     init {
         sync.onStatusChange = { s, e -> syncStatus = s; syncError = e }
         sync.onTxns = { remote ->
-            persisted = persisted.copy(txns = remote).also { store.save(it) }
+            // Anything local the server hasn't seen — recorded by the SMS
+            // receiver while offline, say — is pushed rather than dropped.
+            val remoteIds = remote.map { it.id }.toSet()
+            val localOnly = persisted.txns.filterNot { it.id in remoteIds }
+            persisted = persisted.copy(txns = remote + localOnly).also { store.save(it) }
+            localOnly.forEach { sync.upsertTxn(it) }
             syncedAt = System.currentTimeMillis()
         }
         sync.onTxnsMissing = { sync.pushAllTxns(persisted.txns) }
@@ -101,78 +108,63 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** Why anonymous sign-in didn't happen — informational, not a failure. */
     val syncAuthNote: String get() = sync.authNote
 
-    // ── screenshot import ──────────────────────────────────────────────
-    private val importer = ScreenshotImporter(app.applicationContext)
+    // ── SMS import ─────────────────────────────────────────────────────
+    private val smsImporter = SmsImporter(app.applicationContext)
 
     var scanning by mutableStateOf(false); private set
     var scanNote by mutableStateOf(""); private set
 
-    val screenshotImportOn: Boolean get() = persisted.screenshotImportOn
-    val importedCount: Int get() = persisted.txns.count { it.source == "phonepe" }
-    val pendingMoveCount: Int get() = persisted.pendingMoves.size
-    val lastScanAt: Long get() = persisted.lastScreenshotScan
+    val smsImportOn: Boolean get() = persisted.smsImportOn
+    val importedCount: Int get() = persisted.txns.count { it.source == "sms" }
 
-    fun setScreenshotImport(on: Boolean) {
-        update { it.copy(screenshotImportOn = on) }
-        if (on) {
-            // Content trigger catches the screenshot within a second or two;
-            // the periodic worker is the safety net if the system skips one.
-            ScreenshotTriggerJob.schedule(appContext)
-            ScreenshotWorker.schedule(appContext)
-        } else {
-            ScreenshotTriggerJob.cancel(appContext)
-            ScreenshotWorker.cancel(appContext)
-        }
+    fun setSmsImport(on: Boolean) {
+        update { it.copy(smsImportOn = on) }
         scanNote = if (on) {
-            "On. Take a screenshot with your phone's gesture and it'll be added."
+            "On. Bank alerts will be recorded as they arrive."
         } else {
-            "Automatic capture off."
+            "SMS import off."
         }
     }
 
     /**
-     * Runs a scan off the main thread, then reloads what the importer wrote and
-     * pushes the new transactions up.
+     * Reads the inbox for older messages. Runs off the main thread, then picks
+     * up whatever the importer wrote and sends the new transactions up.
      */
-    fun scanScreenshotsNow() {
+    fun backfillSms(days: Int = 60) {
         if (scanning) return
         scanning = true
-        scanNote = "Scanning…"
+        scanNote = "Reading bank messages…"
         Thread {
-            val result = runCatching { importer.run() }.getOrNull()
-            val before = persisted.txns.map { it.id }.toSet()
+            val count = runCatching { smsImporter.backfill(days) }.getOrNull()
             val reloaded = store.load()
             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                persisted = reloaded.copy(
-                    firebaseConfigText = persisted.firebaseConfigText,
-                    openaiKeyText = persisted.openaiKeyText
-                )
-                reloaded.txns.filterNot { it.id in before }.forEach { sync.upsertTxn(it) }
+                adoptFromDisk(reloaded)
                 scanning = false
                 scanNote = when {
-                    result == null -> "Scan failed — check the media permission."
-                    result.imported == 0 -> "No new PhonePe receipts found."
-                    else -> "Added ${result.imported} transaction(s)."
+                    count == null -> "Couldn't read messages — check the SMS permission."
+                    count == 0 -> "No new bank messages found."
+                    else -> "Added $count transaction(s)."
                 }
             }
         }.start()
     }
 
-    /** URIs waiting to be moved into Pictures/PhonePe. */
-    fun pendingMoveUris(): List<android.net.Uri> =
-        persisted.pendingMoves.mapNotNull { runCatching { android.net.Uri.parse(it) }.getOrNull() }
-
-    fun clearPendingMoves() = update { it.copy(pendingMoves = emptyList()) }
-
-    fun noteMoved(count: Int) {
-        scanNote = if (count > 0) "Removed $count original(s) from Screenshots."
-        else "Nothing was removed."
+    /**
+     * Takes on state written behind the app's back — by the SMS receiver while
+     * closed, or a backfill on another thread — and syncs anything new.
+     */
+    private fun adoptFromDisk(disk: PersistedState) {
+        val known = persisted.txns.map { it.id }.toSet()
+        persisted = disk.copy(
+            firebaseConfigText = persisted.firebaseConfigText,
+            openaiKeyText = persisted.openaiKeyText
+        )
+        disk.txns.filterNot { it.id in known }.forEach { sync.upsertTxn(it) }
     }
 
-    val lastScanClock: String
-        get() = if (lastScanAt == 0L) "" else
-            java.text.SimpleDateFormat("HH:mm", java.util.Locale("en", "IN"))
-                .format(java.util.Date(lastScanAt))
+    /** Called when the app returns to the foreground, since the receiver may
+     *  have recorded payments while it was closed. */
+    fun refreshFromDisk() = adoptFromDisk(store.load())
 
     fun pushNow() {
         sync.push(sharable(persisted), activeProfile ?: "")
@@ -526,7 +518,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             s.copy(
                 accounts = s.accounts + Account(
                     "a${s.nextAccountSeq}", newAccountDraft.name, ownerLabel(newAccountDraft.owner),
-                    newAccountDraft.owner, newAccountDraft.balanceText.toDoubleOrNull() ?: 0.0
+                    newAccountDraft.owner, newAccountDraft.balanceText.toDoubleOrNull() ?: 0.0,
+                    newAccountDraft.numberTail
                 ),
                 nextAccountSeq = s.nextAccountSeq + 1
             )
@@ -556,7 +549,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // ── inline editors ─────────────────────────────────────────────────
     fun startEditAccount(a: Account) {
         editingAccountId = a.id
-        accountDraft = NewAccountDraft(a.name, a.owner, a.openingBalance.toLong().toString())
+        accountDraft = NewAccountDraft(
+            a.name, a.owner, a.openingBalance.toLong().toString(), a.numberTail
+        )
     }
 
     fun cancelEditAccount() { editingAccountId = null }
@@ -567,7 +562,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             s.copy(accounts = s.accounts.map {
                 if (it.id == id) it.copy(
                     name = accountDraft.name, owner = accountDraft.owner,
-                    openingBalance = accountDraft.balanceText.toDoubleOrNull() ?: 0.0
+                    openingBalance = accountDraft.balanceText.toDoubleOrNull() ?: 0.0,
+                    numberTail = accountDraft.numberTail
                 ) else it
             })
         }

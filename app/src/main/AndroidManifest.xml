@@ -4,11 +4,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Reading the Screenshots folder to find PhonePe receipts. -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission
-        android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
+    <!-- Bank alerts are the transaction source. Nothing is sent anywhere: the
+         message is parsed on the device and only the parsed fields are kept. -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
 
     <application
         android:allowBackup="true"
@@ -28,12 +27,16 @@
             </intent-filter>
         </activity>
 
-        <!-- Wakes on new images so a screenshot becomes a transaction at once,
-             without a foreground service or a permanent notification. -->
-        <service
-            android:name=".work.ScreenshotTriggerJob"
-            android:exported="false"
-            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- Fires on each incoming bank alert, so a payment is recorded without
+             the app being opened. -->
+        <receiver
+            android:name=".sms.SmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter android:priority="999">
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

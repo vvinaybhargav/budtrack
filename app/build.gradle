@@ -79,10 +79,5 @@ dependencies {
     // user rather than leaving the household document world-readable.
     implementation 'com.google.firebase:firebase-auth-ktx'
 
-    // On-device OCR for PhonePe receipts — the model ships in the APK, so no
-    // network call and no API key.
-    implementation 'com.google.mlkit:text-recognition:16.0.0'
-    implementation 'androidx.work:work-runtime-ktx:2.9.0'
-
     debugImplementation 'androidx.compose.ui:ui-tooling'
 }
