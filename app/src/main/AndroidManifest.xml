@@ -27,6 +27,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Wakes on new images so a screenshot becomes a transaction at once,
+             without a foreground service or a permanent notification. -->
+        <service
+            android:name=".work.ScreenshotTriggerJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
     </application>
 
 </manifest>

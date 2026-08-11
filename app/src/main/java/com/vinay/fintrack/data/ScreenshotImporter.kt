@@ -15,6 +15,7 @@ class ScreenshotImporter(private val context: Context) {
 
     private val store = Store(context)
     private val scanner = ScreenshotScanner(context)
+    private val mover = ScreenshotMover(context)
 
     data class Result(val imported: Int, val scannedFrom: Long)
 
@@ -51,6 +52,11 @@ class ScreenshotImporter(private val context: Context) {
             )
         }
 
+        // Filing happens here and needs no prompt, because the copy is a file
+        // this app creates. Only removing the original would need consent, and
+        // that stays an explicit choice in Settings.
+        val filed = hits.count { mover.copyToPhonePe(it.uri) }
+
         store.save(
             state.copy(
                 txns = state.txns + added,
@@ -60,6 +66,7 @@ class ScreenshotImporter(private val context: Context) {
                 lastScreenshotScan = now
             )
         )
+        Log.i(TAG, "filed $filed copies into Pictures/PhonePe")
         Log.i(TAG, "imported ${added.size} PhonePe screenshots")
         return Result(added.size, since)
     }

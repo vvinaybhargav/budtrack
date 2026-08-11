@@ -24,6 +24,7 @@ import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.today
 import com.vinay.fintrack.data.ownerLabel
 import com.vinay.fintrack.data.parseSmartAdd
+import com.vinay.fintrack.work.ScreenshotTriggerJob
 import com.vinay.fintrack.work.ScreenshotWorker
 
 enum class Tab { HOME, ENTRIES, ADD, SETTINGS }
@@ -113,8 +114,20 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setScreenshotImport(on: Boolean) {
         update { it.copy(screenshotImportOn = on) }
-        if (on) ScreenshotWorker.schedule(appContext) else ScreenshotWorker.cancel(appContext)
-        scanNote = if (on) "Scanning every 15 minutes." else "Automatic scanning off."
+        if (on) {
+            // Content trigger catches the screenshot within a second or two;
+            // the periodic worker is the safety net if the system skips one.
+            ScreenshotTriggerJob.schedule(appContext)
+            ScreenshotWorker.schedule(appContext)
+        } else {
+            ScreenshotTriggerJob.cancel(appContext)
+            ScreenshotWorker.cancel(appContext)
+        }
+        scanNote = if (on) {
+            "On. Take a screenshot with your phone's gesture and it'll be added."
+        } else {
+            "Automatic capture off."
+        }
     }
 
     /**
@@ -152,8 +165,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun clearPendingMoves() = update { it.copy(pendingMoves = emptyList()) }
 
     fun noteMoved(count: Int) {
-        scanNote = if (count > 0) "Moved $count screenshot(s) to Pictures/PhonePe."
-        else "Couldn't move those files."
+        scanNote = if (count > 0) "Removed $count original(s) from Screenshots."
+        else "Nothing was removed."
     }
 
     val lastScanClock: String

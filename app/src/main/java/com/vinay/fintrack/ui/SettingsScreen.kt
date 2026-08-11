@@ -336,21 +336,23 @@ private fun ScreenshotImportSection(vm: FinTrackViewModel) {
         if (granted) vm.setScreenshotImport(true)
     }
 
-    val moveLauncher = rememberLauncherForActivityResult(
+    // The system carries out the delete itself once approved.
+    val deleteLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            val moved = ScreenshotMover(context).move(vm.pendingMoveUris())
+            val count = vm.pendingMoveCount
             vm.clearPendingMoves()
-            vm.noteMoved(moved)
+            vm.noteMoved(count)
         }
     }
 
     Column {
         Heading("PhonePe screenshots")
         Muted(
-            "Reads receipts from your Screenshots folder with on-device OCR and " +
-                "adds them as transactions automatically."
+            "Take a screenshot of a PhonePe receipt with your phone's own gesture " +
+                "— three or four fingers down, whatever you have set. It's read " +
+                "on-device, added as a transaction, and copied to Pictures/PhonePe."
         )
 
         Row(
@@ -406,15 +408,19 @@ private fun ScreenshotImportSection(vm: FinTrackViewModel) {
         // deliberate button rather than something that happens behind your back.
         if (vm.pendingMoveCount > 0) {
             Column(Modifier.padding(top = Space.s3)) {
-                Muted("${vm.pendingMoveCount} screenshot(s) ready to move into Pictures/PhonePe")
-                PrimaryButton("Move to PhonePe folder") {
-                    val sender = ScreenshotMover(context).consentRequest(vm.pendingMoveUris())
+                Muted(
+                    "${vm.pendingMoveCount} already copied to Pictures/PhonePe. " +
+                        "Removing the originals from Screenshots needs one confirmation."
+                )
+                PrimaryButton("Remove originals") {
+                    val mover = ScreenshotMover(context)
+                    val sender = mover.deleteRequest(vm.pendingMoveUris())
                     if (sender != null) {
-                        moveLauncher.launch(IntentSenderRequest.Builder(sender).build())
+                        deleteLauncher.launch(IntentSenderRequest.Builder(sender).build())
                     } else {
-                        val moved = ScreenshotMover(context).move(vm.pendingMoveUris())
+                        val gone = mover.deleteDirectly(vm.pendingMoveUris())
                         vm.clearPendingMoves()
-                        vm.noteMoved(moved)
+                        vm.noteMoved(gone)
                     }
                 }
             }
