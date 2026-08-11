@@ -575,9 +575,45 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    var oneOffAccountId by mutableStateOf("")
+    var oneOffIsCredit by mutableStateOf(false)
+
+    fun setOneOffAccount(id: String) { oneOffAccountId = id }
+
+    /**
+     * A one-off is a payment that already happened, so it becomes a transaction
+     * rather than an entry. As an entry it sat on Home asking to be confirmed
+     * every month, and never appeared in Transactions at all.
+     */
+    private fun saveOneOff(amount: Double) {
+        val account = oneOffAccountId.ifEmpty { accountIdByName(defaultAccount) }
+        addTxn { id ->
+            Txn(
+                id = id,
+                date = today(),
+                kind = if (oneOffIsCredit) "INCOME" else "EXPENSE",
+                amount = amount,
+                category = draft.category,
+                fromAccountId = if (oneOffIsCredit) "" else account,
+                toAccountId = if (oneOffIsCredit) account else "",
+                period = currentPeriod(),
+                note = draft.note.ifEmpty { draft.category }
+            )
+        }
+        draft = Draft(person = activeProfile ?: "Me")
+        oneOffAccountId = ""
+        oneOffIsCredit = false
+        smartText = ""
+        tab = Tab.ENTRIES
+    }
+
     fun saveDraft() {
         val amount = draft.amountText.toDoubleOrNull() ?: return
         if (amount <= 0) return
+        if (editingEntryId == null && addKind == "ONE_TIME") {
+            saveOneOff(amount)
+            return
+        }
         val editingId = editingEntryId
         update { s ->
             val entry = Entry(
@@ -933,7 +969,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** Regular monthly outgoings — everything except EMIs (own section) and annuals. */
     val commitments: List<Entry>
         get() = visibleEntries.filter {
-            it.frequency != "ANNUAL" &&
+            // ONE_TIME excluded: older builds saved one-off payments as entries,
+            // which then asked to be confirmed again every month.
+            it.frequency != "ANNUAL" && it.frequency != "ONE_TIME" &&
                 ((it.type == "EXPENSE" && it.category != "EMI") || it.type == "SAVINGS")
         }
 

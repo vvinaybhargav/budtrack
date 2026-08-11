@@ -213,15 +213,39 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
         }
         PfSelect("Category", vm.draft.category, categoryOptions, { vm.draft = vm.draft.copy(category = it) })
         PfField("Amount (₹)", vm.draft.amountText, { vm.draft = vm.draft.copy(amountText = it) }, placeholder = "e.g. 5000", numeric = true)
-        if (isEditing || vm.addKind != "ONE_TIME") {
+        val oneOff = !isEditing && vm.addKind == "ONE_TIME"
+        if (!oneOff) {
             PfSelect("Frequency", vm.draft.frequency, listOf("MONTHLY", "ANNUAL"), { vm.draft = vm.draft.copy(frequency = it) })
+        } else {
+            // A one-off is money that already moved, so it needs an account and
+            // a direction — it becomes a transaction, not something to confirm
+            // again every month.
+            PfSelect(
+                "Account",
+                vm.accounts.firstOrNull { it.id == vm.oneOffAccountId }?.name.orEmpty(),
+                vm.visibleAccounts.map { it.name },
+                { name -> vm.setOneOffAccount(vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty()) }
+            )
+            PfSelect(
+                "Direction",
+                if (vm.oneOffIsCredit) "Money in" else "Money out",
+                listOf("Money out", "Money in"),
+                { vm.oneOffIsCredit = it == "Money in" }
+            )
         }
         PfField("Note (optional)", vm.draft.note, { vm.draft = vm.draft.copy(note = it) }, placeholder = notePlaceholder)
         PrimaryButton(
-            if (isEditing) "Save changes" else "Save entry",
+            when {
+                isEditing -> "Save changes"
+                oneOff -> "Record payment"
+                else -> "Save entry"
+            },
             vm::saveDraft,
             Modifier.fillMaxWidth(),
             enabled = (vm.draft.amountText.toDoubleOrNull() ?: 0.0) > 0
         )
+        if (oneOff) {
+            Muted("Goes straight to Transactions and moves the account balance.")
+        }
     }
 }
