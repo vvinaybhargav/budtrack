@@ -1,0 +1,146 @@
+package com.vinay.fintrack.data
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * The parser turns free text into financial records, so a mistake here writes a
+ * wrong number into someone's balances silently. These cover the shapes real
+ * Indian bank alerts come in, and — more importantly — the messages that must
+ * NOT become transactions.
+ */
+class SmsParserTest {
+
+    @Test
+    fun `reads a UPI debit`() {
+        val p = parseBankSms(
+            "Rs.450.00 debited from a/c XX1234 on 09-08-26 to VPA swiggy@ybl. UPI Ref 423456789012",
+            "AD-HDFCBK"
+        )
+        assertNotNull(p)
+        assertEquals(450.0, p!!.amount, 0.001)
+        assertFalse(p.isCredit)
+        assertEquals("1234", p.accountTail)
+        assertEquals("423456789012", p.ref)
+        assertEquals("2026-08-09", p.date)
+    }
+
+    @Test
+    fun `reads a credit`() {
+        val p = parseBankSms(
+            "INR 25,000.00 credited to A/c XX9876 on 01-08-26 from ACME PAYROLL. Ref No 998877665544",
+            "VM-ICICIB"
+        )
+        assertNotNull(p)
+        assertEquals(25000.0, p!!.amount, 0.001)
+        assertTrue(p.isCredit)
+        assertEquals("9876", p.accountTail)
+    }
+
+    /** The classic silent corruption: taking the balance as the amount. */
+    @Test
+    fun `takes the transacted amount not the available balance`() {
+        val p = parseBankSms(
+            "Rs.1,200.00 debited from A/c XX4321 on 05-08-26. Avl Bal Rs.53,120.55. UPI Ref 112233445566",
+            "AD-SBIUPI"
+        )
+        assertNotNull(p)
+        assertEquals(1200.0, p!!.amount, 0.001)
+    }
+
+    @Test
+    fun `handles amount written before the balance without a rupee prefix on one`() {
+        val p = parseBankSms(
+            "Your A/c XX1111 is debited by Rs 99.50 on 11-08-26. Available balance is Rs 4,000.00. RRN 445566778899",
+            "AX-AXISBK"
+        )
+        assertEquals(99.50, p!!.amount, 0.001)
+    }
+
+    @Test
+    fun `ignores an OTP`() {
+        assertNull(
+            parseBankSms(
+                "123456 is your OTP to transfer Rs.5000 from A/c XX1234. Do not share.",
+                "AD-HDFCBK"
+            )
+        )
+    }
+
+    @Test
+    fun `ignores a future or scheduled debit`() {
+        assertNull(
+            parseBankSms(
+                "Your EMI of Rs.22,000 will be debited from A/c XX1234 on 05-09-26.",
+                "AD-HDFCBK"
+            )
+        )
+    }
+
+    @Test
+    fun `ignores a failed payment`() {
+        assertNull(
+            parseBankSms(
+                "Your payment of Rs.750 to VPA test@ybl has failed. Ref 121212121212",
+                "AD-HDFCBK"
+            )
+        )
+    }
+
+    @Test
+    fun `ignores marketing that mentions an amount`() {
+        assertNull(
+            parseBankSms(
+                "You are pre-approved for a personal loan of Rs.5,00,000. Apply now!",
+                "VM-HDFCBK"
+            )
+        )
+    }
+
+    /** Without a reference or an account, it is not identifiable enough to trust. */
+    @Test
+    fun `rejects a debit with neither reference nor account`() {
+        assertNull(parseBankSms("Rs.500 debited successfully", "AD-HDFCBK"))
+    }
+
+    @Test
+    fun `named-month dates parse`() {
+        val p = parseBankSms(
+            "ICICI Bank Acct XX123 debited for Rs 450.00 on 09-Aug-26; SWIGGY credited. UPI:423456789012",
+            "VM-ICICIB"
+        )
+        assertEquals("2026-08-09", p!!.date)
+    }
+
+    @Test
+    fun `dedupe key falls back to details when there is no reference`() {
+        val a = ParsedSms(450.0, false, "Swiggy", "", "1234", "2026-08-09", "x")
+        val b = ParsedSms(450.0, false, "Swiggy", "", "1234", "2026-08-09", "y")
+        assertEquals(a.dedupeKey, b.dedupeKey)
+    }
+
+    @Test
+    fun `reference wins as the dedupe key`() {
+        val p = ParsedSms(450.0, false, "Swiggy", "42345", "1234", "2026-08-09", "x")
+        assertEquals("42345", p.dedupeKey)
+    }
+
+    @Test
+    fun `bank senders are recognised and mobile numbers are not`() {
+        assertTrue(looksLikeBankSender("AD-HDFCBK"))
+        assertTrue(looksLikeBankSender("VM-ICICIB"))
+        assertFalse(looksLikeBankSender("9876543210"))
+    }
+
+    @Test
+    fun `withinDays bounds the confirm-versus-SMS match`() {
+        assertTrue(withinDays("2026-08-09", "2026-08-11", 4))
+        assertTrue(withinDays("2026-08-11", "2026-08-09", 4))
+        assertFalse(withinDays("2026-08-01", "2026-08-09", 4))
+        assertTrue(withinDays("2026-07-31", "2026-08-02", 4))   // across a month end
+    }
+}

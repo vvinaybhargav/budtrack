@@ -381,6 +381,23 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
             Muted(vm.scanNote, Modifier.padding(top = Space.s2))
         }
         Muted("${vm.importedCount} imported from SMS", Modifier.padding(top = Space.s1))
+
+        // Without this, a message that didn't import is indistinguishable from
+        // one that never arrived.
+        if (vm.smsLog.isNotEmpty()) {
+            Column(Modifier.padding(top = Space.s3)) {
+                Muted("Recent messages")
+                vm.smsLog.take(8).forEach { line ->
+                    Text(
+                        line,
+                        Modifier.padding(top = 2.dp),
+                        color = Pf.Muted,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        }
         Muted(
             "Set each account's last digits in its editor on Home — that's how a " +
                 "message finds the right account. Without it everything lands on " +

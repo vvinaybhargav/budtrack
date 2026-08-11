@@ -159,6 +159,25 @@ private val BANK_CODES = listOf(
     "PNB", "BOB", "CANBNK", "UNION", "FEDBNK", "RBL", "AUBANK", "BANK", "UPI"
 )
 
+/** True when two yyyy-MM-dd dates are at most [days] apart. */
+fun withinDays(a: String, b: String, days: Int): Boolean {
+    val d1 = epochDay(a) ?: return false
+    val d2 = epochDay(b) ?: return false
+    return kotlin.math.abs(d1 - d2) <= days
+}
+
+private fun epochDay(iso: String): Long? {
+    val parts = iso.split("-")
+    if (parts.size != 3) return null
+    val y = parts[0].toIntOrNull() ?: return null
+    val m = parts[1].toIntOrNull() ?: return null
+    val d = parts[2].toIntOrNull() ?: return null
+    val c = Calendar.getInstance()
+    c.clear()
+    c.set(y, m - 1, d)
+    return c.timeInMillis / 86_400_000L
+}
+
 /** Midnight today, for bounding an inbox backfill. */
 fun daysAgoMillis(days: Int): Long {
     val c = Calendar.getInstance()

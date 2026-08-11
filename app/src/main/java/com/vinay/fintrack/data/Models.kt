@@ -89,6 +89,15 @@ data class Card(
 @Serializable
 data class ChatMessage(val role: String, val text: String)
 
+/**
+ * Ids must be unique across devices, not just within one. A counter like
+ * "t12" collides when two phones both add a transaction offline, and since
+ * each transaction is its own Firestore document, the collision silently
+ * overwrites one of them.
+ */
+fun newId(prefix: String): String =
+    prefix + java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+
 private val inrFormat: NumberFormat = NumberFormat.getIntegerInstance(Locale("en", "IN"))
 
 fun inr(n: Double): String = "₹" + inrFormat.format(Math.round(n))

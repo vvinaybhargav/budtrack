@@ -66,6 +66,18 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     var syncStatus by mutableStateOf(SyncStatus.OFF); private set
     var syncError by mutableStateOf(""); private set
 
+    /** Revision this ViewModel last wrote, so its own saves don't look like
+     *  someone else's and cause a pointless reload. */
+    private var ownRevision = store.revision()
+
+    private val storeWatcher = store.observe {
+        // The SMS receiver writes on its own thread while the app may be open.
+        // Without this its import is lost the next time the ViewModel saves.
+        if (store.revision() != ownRevision) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post { refreshFromDisk() }
+        }
+    }
+
     init {
         sync.onStatusChange = { s, e -> syncStatus = s; syncError = e }
         sync.onTxns = { remote ->
@@ -73,7 +85,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             // receiver while offline, say — is pushed rather than dropped.
             val remoteIds = remote.map { it.id }.toSet()
             val localOnly = persisted.txns.filterNot { it.id in remoteIds }
-            persisted = persisted.copy(txns = remote + localOnly).also { store.save(it) }
+            persisted = persisted.copy(txns = remote + localOnly).also { ownRevision = store.save(it) }
             localOnly.forEach { sync.upsertTxn(it) }
             syncedAt = System.currentTimeMillis()
         }
@@ -98,7 +110,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                         localUpdatedAt = persisted.localUpdatedAt,
                         firebaseConfigText = persisted.firebaseConfigText,
                         openaiKeyText = persisted.openaiKeyText
-                    ).also { store.save(it) }
+                    ).also { ownRevision = store.save(it) }
                 }
                 syncedAt = System.currentTimeMillis()
             },
@@ -123,7 +135,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     var scanNote by mutableStateOf(""); private set
 
     val smsImportOn: Boolean get() = persisted.smsImportOn
-    val importedCount: Int get() = persisted.txns.count { it.source == "sms" }
+    val importedCount: Int get() = persisted.txns.count { it.source.startsWith("sms") }
+
+    /** Newest first: what the importer did with each recent message. */
+    val smsLog: List<String> get() = persisted.smsLog
 
     fun setSmsImport(on: Boolean) {
         update { it.copy(smsImportOn = on) }
@@ -186,6 +201,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         s.copy(txns = emptyList(), firebaseConfigText = "", openaiKeyText = "")
 
     override fun onCleared() {
+        store.stopObserving(storeWatcher)
         sync.disconnect()
         super.onCleared()
     }
@@ -195,7 +211,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         // stale server copy when the two meet.
         persisted = block(persisted)
             .copy(localUpdatedAt = System.currentTimeMillis())
-            .also { store.save(it) }
+            .also { ownRevision = store.save(it) }
         sync.push(sharable(persisted), activeProfile ?: "")
     }
 
@@ -383,8 +399,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Adds a transaction locally and as its own Firestore document. */
     private fun addTxn(build: (id: String) -> Txn) {
-        val txn = build("t${persisted.nextTxnSeq}")
-        update { s -> s.copy(txns = s.txns + txn, nextTxnSeq = s.nextTxnSeq + 1) }
+        val txn = build(newId("t"))
+        update { s -> s.copy(txns = s.txns + txn) }
         sync.upsertTxn(txn)
     }
 
@@ -425,10 +441,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s ->
             s.copy(
                 entries = s.entries + Entry(
-                    "e${s.nextEntrySeq}", parsed.person, parsed.type, parsed.bucket,
+                    newId("e"), parsed.person, parsed.type, parsed.bucket,
                     parsed.category, parsed.amount, parsed.frequency, parsed.note
-                ),
-                nextEntrySeq = s.nextEntrySeq + 1
+                )
             )
         }
         homeQuickText = ""
@@ -491,13 +506,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val editingId = editingEntryId
         update { s ->
             val entry = Entry(
-                editingId ?: "e${s.nextEntrySeq}", draft.person, draft.type, draft.bucket,
+                editingId ?: newId("e"), draft.person, draft.type, draft.bucket,
                 draft.category, amount, draft.frequency, draft.note
             )
             if (editingId != null) {
                 s.copy(entries = s.entries.map { if (it.id == entry.id) entry else it })
             } else {
-                s.copy(entries = s.entries + entry, nextEntrySeq = s.nextEntrySeq + 1)
+                s.copy(entries = s.entries + entry)
             }
         }
         editingEntryId = null
@@ -516,10 +531,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s ->
             s.copy(
                 loans = s.loans + Loan(
-                    "l${s.nextLoanSeq}", newLoanDraft.name, newLoanDraft.person, emi, total, remaining,
+                    newId("l"), newLoanDraft.name, newLoanDraft.person, emi, total, remaining,
                     newLoanDraft.accountId.ifEmpty { accountIdByName(defaultAccount) }
-                ),
-                nextLoanSeq = s.nextLoanSeq + 1
+                )
             )
         }
         newLoanDraft = NewLoanDraft(person = activeProfile ?: "Me")
@@ -531,11 +545,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s ->
             s.copy(
                 accounts = s.accounts + Account(
-                    "a${s.nextAccountSeq}", newAccountDraft.name, ownerLabel(newAccountDraft.owner),
+                    newId("a"), newAccountDraft.name, ownerLabel(newAccountDraft.owner),
                     newAccountDraft.owner, newAccountDraft.balanceText.toDoubleOrNull() ?: 0.0,
                     newAccountDraft.numberTail
-                ),
-                nextAccountSeq = s.nextAccountSeq + 1
+                )
             )
         }
         newAccountDraft = NewAccountDraft(owner = activeProfile ?: "Me")
@@ -548,12 +561,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s ->
             s.copy(
                 cards = s.cards + Card(
-                    "cc${s.nextCardSeq}", newCardDraft.name, newCardDraft.owner, limit,
+                    newId("cc"), newCardDraft.name, newCardDraft.owner, limit,
                     newCardDraft.balanceText.toDoubleOrNull() ?: 0.0,
                     newCardDraft.minDueText.toDoubleOrNull() ?: 0.0,
                     newCardDraft.due
-                ),
-                nextCardSeq = s.nextCardSeq + 1
+                )
             )
         }
         newCardDraft = NewCardDraft(owner = activeProfile ?: "Me")
@@ -745,16 +757,29 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     val visibleLoans: List<Loan> get() = loans.filter { visible(it.person) }
     val visibleCards: List<Card> get() = cards.filter { visible(it.owner) }
 
+    /**
+     * Balances for every account in one pass, cached against the transaction
+     * list it was built from. Recomputing per account per recomposition was
+     * accounts × transactions of work on every frame.
+     */
+    private var balanceCache: Pair<List<Txn>, Map<String, Double>>? = null
+
+    private fun balances(): Map<String, Double> {
+        val txns = persisted.txns
+        balanceCache?.let { (source, cached) -> if (source === txns) return cached }
+        val map = HashMap<String, Double>(persisted.accounts.size)
+        persisted.accounts.forEach { map[it.id] = it.openingBalance }
+        for (t in txns) {
+            if (t.fromAccountId.isNotEmpty()) map[t.fromAccountId]?.let { map[t.fromAccountId] = it - t.amount }
+            if (t.toAccountId.isNotEmpty()) map[t.toAccountId]?.let { map[t.toAccountId] = it + t.amount }
+        }
+        balanceCache = txns to map
+        return map
+    }
+
     /** Opening balance plus every movement in or out — so undoing a confirm
      *  restores the old number without any inverse bookkeeping. */
-    fun balanceOf(a: Account): Double {
-        var b = a.openingBalance
-        for (t in persisted.txns) {
-            if (t.fromAccountId == a.id) b -= t.amount
-            if (t.toAccountId == a.id) b += t.amount
-        }
-        return b
-    }
+    fun balanceOf(a: Account): Double = balances()[a.id] ?: a.openingBalance
 
     val totalBalance: Double get() = visibleAccounts.sumOf { balanceOf(it) }
 
@@ -780,12 +805,25 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Actual money out for this category this month — confirmed transactions only,
      *  not the plan. A budget bar you can't move by planning is the point. */
+    // Keyed on the profile as well as the transactions: which accounts count as
+    // "mine" changes when you switch profile, and the totals change with it.
+    private var spendCache: Triple<List<Txn>, String?, Map<String, Double>>? = null
+
     fun spendFor(category: String): Double {
+        val txns = persisted.txns
+        spendCache?.let { (source, profile, cached) ->
+            if (source === txns && profile == activeProfile) return cached[category] ?: 0.0
+        }
         val period = currentPeriod()
         val mine = visibleAccounts.map { it.id }.toSet()
-        return persisted.txns
-            .filter { it.category == category && it.month == period && it.fromAccountId in mine }
-            .sumOf { it.amount }
+        val map = HashMap<String, Double>()
+        for (t in txns) {
+            if (t.month == period && t.fromAccountId in mine) {
+                map[t.category] = (map[t.category] ?: 0.0) + t.amount
+            }
+        }
+        spendCache = Triple(txns, activeProfile, map)
+        return map[category] ?: 0.0
     }
 
     /** Regular monthly outgoings — everything except EMIs (own section) and annuals. */

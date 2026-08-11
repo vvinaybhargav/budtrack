@@ -1,6 +1,7 @@
 package com.vinay.fintrack.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -29,11 +30,9 @@ data class PersistedState(
      *  and against the same payment arriving twice from different senders. */
     val importedRefs: Set<String> = emptySet(),
     val smsImportOn: Boolean = false,
-    val nextTxnSeq: Int = 1,
-    val nextEntrySeq: Int = 16,
-    val nextLoanSeq: Int = 4,
-    val nextAccountSeq: Int = 5,
-    val nextCardSeq: Int = 3
+    /** Recent import decisions, newest first, capped — the only way to see why
+     *  a bank message didn't become a transaction. */
+    val smsLog: List<String> = emptyList()
 )
 
 class Store(context: Context) {
@@ -45,12 +44,41 @@ class Store(context: Context) {
         return runCatching { json.decodeFromString<PersistedState>(raw) }.getOrElse { PersistedState() }
     }
 
-    fun save(state: PersistedState) {
-        prefs.edit().putString(KEY, json.encodeToString(PersistedState.serializer(), state)).apply()
+    /** @return the revision this write produced, so a caller can recognise
+     *  its own writes and ignore them when the change listener fires. */
+    fun save(state: PersistedState): Int {
+        val next = revision() + 1
+        prefs.edit()
+            .putString(KEY, json.encodeToString(PersistedState.serializer(), state))
+            .putInt(REV, next)
+            .apply()
+        return next
+    }
+
+    fun revision(): Int = prefs.getInt(REV, 0)
+
+    /**
+     * Notifies when anything writes state — the SMS receiver runs on its own
+     * thread while the app may be open, and without this the ViewModel's older
+     * in-memory copy overwrites the import on its next save.
+     *
+     * Keep a reference to the returned listener: preferences hold it weakly.
+     */
+    fun observe(onChanged: () -> Unit): SharedPreferences.OnSharedPreferenceChangeListener {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == REV) onChanged()
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        return listener
+    }
+
+    fun stopObserving(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
     }
 
     private companion object {
         // v2: account balances became opening balances, confirmations became txns.
         const val KEY = "state_v2"
+        const val REV = "state_rev"
     }
 }

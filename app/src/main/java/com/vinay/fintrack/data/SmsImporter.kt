@@ -21,11 +21,24 @@ class SmsImporter(private val context: Context) {
     fun importOne(body: String, sender: String, receivedAt: Long): Boolean {
         val state = store.load()
         if (!state.smsImportOn) return false
-        val parsed = parseBankSms(body, sender) ?: return false
-        if (parsed.dedupeKey in state.importedRefs) return false
+
+        val parsed = parseBankSms(body, sender)
+        if (parsed == null) {
+            // Recorded rather than dropped silently: without this there is no way
+            // to tell a wrongly-worded alert from one that never arrived.
+            store.save(state.copy(smsLog = note(state, "skipped $sender: ${body.take(50)}")))
+            return false
+        }
+        if (parsed.dedupeKey in state.importedRefs) {
+            store.save(state.copy(smsLog = note(state, "already had ${inr(parsed.amount)} ${parsed.party}")))
+            return false
+        }
         store.save(apply(state, listOf(parsed), maxOf(state.lastSmsScan, receivedAt)))
         return true
     }
+
+    private fun note(state: PersistedState, line: String): List<String> =
+        (listOf(line) + state.smsLog).take(MAX_LOG)
 
     /**
      * Reads the SMS inbox for the last [days] days. Used once when the feature
@@ -72,13 +85,33 @@ class SmsImporter(private val context: Context) {
         return fresh.size
     }
 
-    /** Writes the parsed messages into state as transactions. */
+    /**
+     * Writes the parsed messages into state as transactions.
+     *
+     * A payment you already confirmed by hand — an EMI, say — will also be
+     * texted about by the bank. Rather than recording it twice, the existing
+     * transaction is annotated with the bank's reference.
+     */
     private fun apply(state: PersistedState, items: List<ParsedSms>, newest: Long): PersistedState {
-        var seq = state.nextTxnSeq
-        val added = items.map { p ->
+        val txns = state.txns.toMutableList()
+        var matched = 0
+        var added = 0
+        val log = mutableListOf<String>()
+
+        for (p in items) {
+            val existing = matchingConfirmed(txns, p)
+            if (existing != null) {
+                txns[txns.indexOf(existing)] = existing.copy(
+                    ref = p.ref.ifEmpty { existing.ref },
+                    source = "sms+confirm"
+                )
+                matched++
+                log += "matched ${inr(p.amount)} ${p.party} to an existing confirmation"
+                continue
+            }
             val accountId = accountFor(state, p.accountTail)
-            Txn(
-                id = "t${seq++}",
+            txns += Txn(
+                id = newId("t"),
                 date = p.date,
                 kind = if (p.isCredit) "INCOME" else "EXPENSE",
                 amount = p.amount,
@@ -91,15 +124,39 @@ class SmsImporter(private val context: Context) {
                 source = "sms",
                 rawAmountText = p.body
             )
+            added++
+            log += "added ${inr(p.amount)} ${p.party}"
         }
-        Log.i(TAG, "imported ${added.size} transactions from SMS")
+
+        Log.i(TAG, "SMS import: $added added, $matched matched to existing confirmations")
         return state.copy(
-            txns = state.txns + added,
-            nextTxnSeq = seq,
-            importedRefs = state.importedRefs + items.map { it.dedupeKey },
+            txns = txns,
+            importedRefs = capRefs(state.importedRefs + items.map { it.dedupeKey }),
+            smsLog = (log.asReversed() + state.smsLog).take(MAX_LOG),
             lastSmsScan = maxOf(newest, state.lastSmsScan)
         )
     }
+
+    /**
+     * An existing hand-confirmed transaction for the same payment: same
+     * direction, same amount, within a few days, and carrying no bank
+     * reference of its own yet.
+     */
+    private fun matchingConfirmed(txns: List<Txn>, p: ParsedSms): Txn? {
+        val wanted = if (p.isCredit) "INCOME" else "EXPENSE"
+        return txns.firstOrNull { t ->
+            t.ref.isEmpty() &&
+                t.source.isEmpty() &&
+                (t.kind == wanted || t.kind == "TRANSFER") &&
+                kotlin.math.abs(t.amount - p.amount) < 0.5 &&
+                withinDays(t.date, p.date, 4)
+        }
+    }
+
+    /** Unbounded growth in SharedPreferences helps nobody; recent keys are
+     *  enough to stop a re-read duplicating. */
+    private fun capRefs(refs: Set<String>): Set<String> =
+        if (refs.size <= MAX_REFS) refs else refs.toList().takeLast(MAX_REFS).toSet()
 
     /** Matches the account by its last digits, falling back to the default. */
     private fun accountFor(state: PersistedState, tail: String): String {
@@ -128,5 +185,7 @@ class SmsImporter(private val context: Context) {
 
     private companion object {
         const val TAG = "SmsImporter"
+        const val MAX_REFS = 500
+        const val MAX_LOG = 25
     }
 }
