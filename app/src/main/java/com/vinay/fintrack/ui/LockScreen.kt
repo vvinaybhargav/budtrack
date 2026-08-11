@@ -82,6 +82,24 @@ fun LockScreen(vm: FinTrackViewModel) {
             ) {
                 Muted("Enter PIN for ${vm.activeProfile}", size = 14)
 
+                // Asked here, once, rather than living as a setting: after this
+                // the app opens straight to this profile.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                    modifier = Modifier.clickable { vm.toggleRememberMe() }
+                ) {
+                    Box(
+                        Modifier
+                            .size(18.dp)
+                            .background(
+                                if (vm.rememberMe) Pf.Accent else Pf.Neutral700,
+                                Radius.Sm
+                            )
+                    )
+                    Muted("Remember me on this phone", size = 13)
+                }
+
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
                     repeat(4) { i ->
                         Box(

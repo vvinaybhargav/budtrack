@@ -34,9 +34,6 @@ data class PersistedState(
     /** Profile this device signs in as, so the picker is skipped on launch.
      *  Device-local: the other phone belongs to the other person. */
     val lastProfile: String = "",
-    /** Whether the PIN is still asked for once a profile is remembered. Off by
-     *  default: on a phone that belongs to one person it was pure friction. */
-    val askPinOnLaunch: Boolean = false,
     val smsImportOn: Boolean = false,
     /** Whether SMS access has ever been requested. Android only reveals that a
      *  permission is permanently denied after a first attempt, so without

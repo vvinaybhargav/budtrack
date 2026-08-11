@@ -16,6 +16,8 @@ import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.Loan
 import com.vinay.fintrack.data.PersistedState
 import com.vinay.fintrack.data.SAVINGS_CATEGORIES
+import com.vinay.fintrack.data.hashPin
+import com.vinay.fintrack.data.looksLikePlainPin
 import com.vinay.fintrack.data.Seed
 import com.vinay.fintrack.data.SmsImporter
 import com.vinay.fintrack.data.Store
@@ -273,7 +275,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         txns = emptyList(),
         firebaseConfigText = "",
         openaiKeyText = "",
-        profiles = emptyMap(),
         smsLog = emptyList(),
         importedRefs = emptySet(),
         lastSmsScan = 0L,
@@ -288,7 +289,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         localUpdatedAt = persisted.localUpdatedAt,
         firebaseConfigText = persisted.firebaseConfigText,
         openaiKeyText = persisted.openaiKeyText,
-        profiles = persisted.profiles,
         smsLog = persisted.smsLog,
         importedRefs = persisted.importedRefs,
         lastSmsScan = persisted.lastSmsScan,
@@ -335,7 +335,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     // Straight in when this phone already knows whose it is, unless the PIN has
     // been asked for explicitly in Settings.
-    var isLocked by mutableStateOf(rememberedProfile == null || persisted.askPinOnLaunch); private set
+    var isLocked by mutableStateOf(rememberedProfile == null); private set
     var pinStep by mutableStateOf(if (rememberedProfile != null) "enter" else "pick"); private set
     var activeProfile by mutableStateOf(rememberedProfile); private set
     var pinInput by mutableStateOf(""); private set
@@ -384,17 +384,36 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         pinStep = "pick"; pinInput = ""; pinError = false
     }
 
+    /** Accepts a stored hash, and a plain PIN from before hashing existed. */
+    private fun pinMatches(profile: String, pin: String): Boolean {
+        val stored = persisted.profiles[profile] ?: return false
+        return stored == hashPin(pin) || stored == pin
+    }
+
+    /** Turns any plain PIN into a hash, once, so nothing readable is synced. */
+    private fun migratePlainPins() {
+        val plain = persisted.profiles.filterValues { looksLikePlainPin(it) }
+        if (plain.isEmpty()) return
+        update { s ->
+            s.copy(profiles = s.profiles.mapValues { (name, value) ->
+                if (looksLikePlainPin(value)) hashPin(value) else value
+            })
+        }
+    }
+
     fun pressDigit(d: String) {
         if (pinInput.length >= 4) return
         pinInput += d
         pinError = false
         if (pinInput.length == 4) {
-            if (pinInput == persisted.profiles[activeProfile]) {
+            if (pinMatches(activeProfile.orEmpty(), pinInput)) {
                 isLocked = false
                 draft = Draft(person = activeProfile ?: "Me")
-                // Remembered only after a correct PIN, so a mistaken pick on the
-                // shared picker doesn't stick.
-                activeProfile?.let { p -> update { it.copy(lastProfile = p) } }
+                // Only if asked for, and only after a correct PIN so a mistaken
+                // pick on the shared picker cannot stick.
+                activeProfile?.let { p ->
+                    update { it.copy(lastProfile = if (rememberMe) p else "") }
+                }
             } else {
                 pinInput = ""; pinError = true
             }
@@ -415,7 +434,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         if (pinNew.length != 4) { pinMsg = "PIN must be 4 digits."; pinMsgIsError = true; return }
         if (pinNew != pinConfirm) { pinMsg = "PINs don't match."; pinMsgIsError = true; return }
         val p = activeProfile ?: return
-        update { it.copy(profiles = it.profiles + (p to pinNew)) }
+        update { it.copy(profiles = it.profiles + (p to hashPin(pinNew))) }
         pinMsg = "PIN updated."; pinMsgIsError = false; pinNew = ""; pinConfirm = ""
     }
 
@@ -424,28 +443,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // per device: a new profile has to be added on each phone that will use it.
     // Not named setNewProfileName: a var already generates a setter with that
     // JVM signature, and the two collide.
-    var newProfileName by mutableStateOf(""); private set
-    var newProfilePin by mutableStateOf(""); private set
     var profileMsg by mutableStateOf(""); private set
-
-    fun editProfileName(v: String) { newProfileName = v.take(20); profileMsg = "" }
-    fun editProfilePin(v: String) { newProfilePin = v.filter { it.isDigit() }.take(4); profileMsg = "" }
-
-    fun addProfile() {
-        val name = newProfileName.trim()
-        when {
-            name.isEmpty() -> profileMsg = "Give the profile a name."
-            name.equals("Joint", true) ->
-                profileMsg = "Joint is the shared side you switch to on Home, not a sign-in."
-            name in persisted.profiles.keys -> profileMsg = "That profile already exists."
-            newProfilePin.length != 4 -> profileMsg = "PIN must be 4 digits."
-            else -> {
-                update { it.copy(profiles = it.profiles + (name to newProfilePin)) }
-                newProfileName = ""; newProfilePin = ""
-                profileMsg = "Added $name. Add it on the other phone too — PINs never sync."
-            }
-        }
-    }
 
     var renamingProfile by mutableStateOf<String?>(null); private set
     var renameText by mutableStateOf(""); private set
@@ -1081,22 +1079,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     val syncConfigLooksValid: Boolean
         get() = parseFirebaseConfig(persisted.firebaseConfigText) != null
 
-    /** How many comma-separated values are actually there — the fastest way to
-     *  see a paste that lost a line or gained a stray comma. */
-    val syncConfigPartCount: Int
-        get() = persisted.firebaseConfigText
-            .replace("{", "").replace("}", "")
-            .split(",").count { it.isNotBlank() }
-
     /** Echoes back the project it parsed, so a wrong paste is obvious. */
     val syncConfigSummary: String
         get() = parseFirebaseConfig(persisted.firebaseConfigText)
             ?.let { "project ${it.projectId}" } ?: ""
-
-    val syncedAtClock: String
-        get() = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale("en", "IN"))
-            .format(java.util.Date(syncedAt))
-    fun setOpenaiKey(v: String) = update { it.copy(openaiKeyText = v) }
 
     // ── derived ────────────────────────────────────────────────────────
     private fun visible(person: String) = person == activeProfile || person == "Joint"
@@ -1421,12 +1407,15 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         if (!isLocked) draft = Draft(person = activeProfile ?: "Me")
         migrateOneTimeEntries()
         migrateDuplicateEmiEntries()
+        migratePlainPins()
         if (persisted.firebaseConfigText.isNotBlank()) connectSync()
     }
 
-    val askPinOnLaunch: Boolean get() = persisted.askPinOnLaunch
+    /** Ticked on the lock screen, applied when the PIN is accepted. Replaces a
+     *  setting nobody would have gone looking for. */
+    var rememberMe by mutableStateOf(true); private set
 
-    fun setAskPinOnLaunch(on: Boolean) = update { it.copy(askPinOnLaunch = on) }
+    fun toggleRememberMe() { rememberMe = !rememberMe }
 
     /** Lock by hand — the only way back to the keypad when it's skipped. */
     fun lockNow() {

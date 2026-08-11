@@ -39,15 +39,12 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.SyncStatus
-import com.vinay.fintrack.data.prettyDate
-import com.vinay.fintrack.data.today
 
 @Composable
 fun SettingsScreen(vm: FinTrackViewModel) {
@@ -103,28 +100,6 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                         }
                     }
                 }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(top = Space.s3),
-                    horizontalArrangement = Arrangement.spacedBy(Space.s2),
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    PfField(
-                        value = vm.newProfileName,
-                        onValueChange = vm::editProfileName,
-                        placeholder = "New profile",
-                        modifier = Modifier.weight(1f)
-                    )
-                    PfField(
-                        value = vm.newProfilePin,
-                        onValueChange = vm::editProfilePin,
-                        placeholder = "PIN",
-                        numeric = true,
-                        modifier = Modifier.width(90.dp)
-                    )
-                    PrimaryButton("Add", vm::addProfile)
-                }
                 if (vm.profileMsg.isNotEmpty()) {
                     Muted(vm.profileMsg, Modifier.padding(top = Space.s2))
                 }
@@ -135,27 +110,19 @@ fun SettingsScreen(vm: FinTrackViewModel) {
 
         item {
             Column {
-                Heading("Lock")
+                // No PIN toggle: the app opens where it left off, and the
+                // choice to remember is made once on the lock screen.
                 Row(
-                    Modifier.fillMaxWidth(),
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = Space.s2),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Muted(
-                        if (vm.askPinOnLaunch) "PIN asked every launch"
-                        else "Opens straight to ${vm.activeProfile.orEmpty()}"
-                    )
-                    if (vm.askPinOnLaunch) SecondaryButton("Skip PIN", { vm.setAskPinOnLaunch(false) })
-                    else SecondaryButton("Ask for PIN", { vm.setAskPinOnLaunch(true) })
+                    Heading("Lock")
+                    GhostButton("Lock now", vm::lockNow)
                 }
-                GhostButton("Lock now", vm::lockNow, Modifier.padding(top = Space.s2))
-
-                // Changing the PIN belongs with the lock, not in a section of
-                // its own two headings away.
-                Column(
-                    Modifier.padding(top = Space.s4),
-                    verticalArrangement = Arrangement.spacedBy(Space.s2)
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
                     Muted("Change PIN for ${vm.activeProfile.orEmpty()}")
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                         PfField(
@@ -232,11 +199,12 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             }
         }
 
+        item { Hairline() }
+
         item {
-            // Budgets are per category, so they sit with the categories rather
-            // than behind their own heading.
-            Column(Modifier.padding(top = Space.s4)) {
-                Muted("Monthly limits. The Home bars measure real recorded spend against these.")
+            Column {
+                Heading("Budgets")
+                Muted("A monthly limit per category.")
                 Column(
                     Modifier.padding(top = Space.s3),
                     verticalArrangement = Arrangement.spacedBy(Space.s2)
@@ -341,49 +309,11 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                 if (vm.syncError.isNotEmpty()) {
                     Text(vm.syncError, color = Pf.Accent400, fontSize = 12.sp)
                 }
-                // Always enabled: a dead button explains nothing, whereas trying
-                // and reporting the reason does.
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                    PrimaryButton(
-                        if (vm.syncStatus == SyncStatus.LIVE) "Reconnect" else "Connect",
-                        vm::applyFirebaseConfig
-                    )
-                    if (vm.syncStatus == SyncStatus.LIVE) {
-                        SecondaryButton("Push now", vm::pushNow)
-                    }
-                    if (vm.syncStatus != SyncStatus.OFF) {
-                        SecondaryButton("Disconnect", vm::disconnectSync)
-                    }
-                }
+                PrimaryButton("Connect", vm::applyFirebaseConfig)
                 Muted(
-                    if (vm.syncConfigLooksValid) {
-                        "Config reads OK — ${vm.syncConfigSummary}"
-                    } else {
-                        "Config not readable — found ${vm.syncConfigPartCount} values, " +
-                            "need at least apiKey, projectId and appId."
-                    }
+                    if (vm.syncConfigLooksValid) "Reads OK — ${vm.syncConfigSummary}"
+                    else "Need at least apiKey, projectId and appId."
                 )
-                if (vm.syncedAt > 0L) {
-                    Muted("Last sent ${prettyDate(today())} at ${vm.syncedAtClock}")
-                }
-                Muted("Syncing to workspaces/household/budtrack/state")
-                if (vm.syncDeviceId.isEmpty() && vm.syncAuthNote.isNotEmpty()) {
-                    Muted("Not signed in — fine if your rules allow this path. ${vm.syncAuthNote}")
-                }
-                if (vm.syncDeviceId.isNotEmpty()) {
-                    Column(Modifier.padding(top = Space.s2)) {
-                        Muted("This device's ID — add it to the members doc in your rules")
-                        SelectionContainer {
-                            Text(
-                                vm.syncDeviceId,
-                                color = Pf.Text,
-                                fontSize = 12.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-                }
-                Muted("Both phones share one document. Keys stay on this device.")
                 DebouncedField(
                     label = "OpenAI API key — for Smart Add",
                     value = vm.openaiKeyText,

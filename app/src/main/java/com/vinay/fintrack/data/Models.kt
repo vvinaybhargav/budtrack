@@ -132,6 +132,26 @@ data class ChatMessage(val role: String, val text: String)
 fun newId(prefix: String): String =
     prefix + java.util.UUID.randomUUID().toString().replace("-", "").take(16)
 
+/**
+ * Stores a PIN as a hash so the profile list can be shared between phones
+ * without the actual digits travelling with it.
+ *
+ * A four-digit PIN has ten thousand possibilities, so this is no defence
+ * against someone determined who has the database — it stops the PIN being
+ * readable at a glance, which is the realistic risk.
+ */
+fun hashPin(pin: String): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    // Not salted with the profile name: renaming a profile would otherwise
+    // invalidate its PIN, and the plaintext isn't available to re-hash with.
+    val bytes = digest.digest("fintrack:$pin".toByteArray())
+    return bytes.joinToString("") { "%02x".format(it) }
+}
+
+/** Plain four digits, as everything before hashing stored them. */
+fun looksLikePlainPin(value: String): Boolean =
+    value.length in 4..6 && value.all { it.isDigit() }
+
 private val inrFormat: NumberFormat = NumberFormat.getIntegerInstance(Locale("en", "IN"))
 
 fun inr(n: Double): String = "₹" + inrFormat.format(Math.round(n))
