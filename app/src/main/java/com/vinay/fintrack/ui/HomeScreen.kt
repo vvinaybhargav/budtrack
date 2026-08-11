@@ -509,7 +509,13 @@ private fun CommitmentsSection(vm: FinTrackViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(Modifier.weight(1f)) {
+                    // Entries are edited from here now that the Transactions
+                    // screen shows only recorded movements.
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clickable { vm.openEditEntry(e) }
+                    ) {
                         Text(e.category, color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         Muted("${e.person} · ${inr(e.monthly)}/mo", Modifier.padding(top = 2.dp, bottom = 6.dp))
                         when (kind) {
@@ -583,7 +589,11 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(Modifier.weight(1f)) {
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .clickable { vm.openEditEntry(e) }
+                        ) {
                             Text(
                                 e.note.ifEmpty { e.category },
                                 color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold

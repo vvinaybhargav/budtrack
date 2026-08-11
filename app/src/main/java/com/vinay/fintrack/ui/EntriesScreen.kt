@@ -59,7 +59,7 @@ fun EntriesScreen(vm: FinTrackViewModel) {
             PfField(
                 value = vm.entriesSearch,
                 onValueChange = { vm.entriesSearch = it },
-                placeholder = "Search category or note…"
+                placeholder = "Search payee, category or reference…"
             )
         }
 
@@ -71,76 +71,60 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(Space.s2)
             ) {
                 Chip("All", vm.entriesCategoryFilter == null, onClick = { vm.setCategoryFilter(null) })
-                vm.availableChips.forEach { c ->
+                vm.txnChips.forEach { c ->
                     Chip(c, vm.entriesCategoryFilter == c, onClick = { vm.setCategoryFilter(c) })
                 }
             }
         }
 
-        val rows = vm.filteredEntries
+        // Only recorded movements — confirmed commitments and imported bank
+        // alerts. The recurring plan lives on Home, not here.
+        val rows = vm.filteredTxns
         if (rows.isEmpty()) {
             item {
-                Text(
-                    "No entries match.",
+                Column(
                     Modifier
                         .fillMaxWidth()
                         .padding(vertical = Space.s6),
-                    color = Pf.Muted,
-                    textAlign = TextAlign.Center
-                )
-            }
-        } else {
-            items(rows, key = { it.id }) { e ->
-                PfCard {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .clickable { vm.openEditEntry(e) }
-                        ) {
-                            Text(
-                                if (vm.bucketView == "JOINT") "${e.category} — ${e.person}" else e.category,
-                                color = Pf.Text,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Muted("${e.type} · ${e.frequency}" + if (e.note.isNotEmpty()) " · ${e.note}" else "")
-                            Text(
-                                inr(e.amount) + if (e.frequency == "ANNUAL") "/yr" else "/mo",
-                                Modifier.padding(top = 2.dp),
-                                color = Pf.Text,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        }
-                        IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.Delete, "Delete", Modifier.size(18.dp), tint = Pf.Accent400)
-                        }
-                    }
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Nothing recorded yet.",
+                        color = Pf.Muted,
+                        textAlign = TextAlign.Center
+                    )
+                    Muted(
+                        "Confirm a commitment on Home, or turn on bank SMS in Settings.",
+                        Modifier.padding(top = Space.s2)
+                    )
                 }
             }
-        }
-
-        // Entries above are the plan; these are the movements that actually happened.
-        if (vm.recentTxns.isNotEmpty()) {
-            item {
-                SectionTitle("Recent activity", Modifier.padding(top = Space.s4, bottom = Space.s2))
-            }
-            items(vm.recentTxns, key = { it.id }) { t ->
+        } else {
+            items(rows, key = { it.id }) { t ->
                 PfCard {
                     Row(
                         Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text(
-                                t.note.ifEmpty { t.category },
-                                color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                            ) {
+                                Text(
+                                    t.note.ifEmpty { t.category },
+                                    color = Pf.Text,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                if (t.source == "sms") OutlineTag("SMS")
+                            }
+                            Muted(
+                                "${prettyDate(t.date)} · ${t.category}",
+                                Modifier.padding(top = 2.dp)
                             )
-                            Muted("${prettyDate(t.date)} · ${vm.txnAccountLabel(t)}")
+                            Muted(vm.txnAccountLabel(t))
+                            if (t.ref.isNotEmpty()) Muted("Ref ${t.ref}")
                         }
                         Text(
                             when (t.kind) {
@@ -156,6 +140,9 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                             fontSize = 15.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
+                        IconButton(onClick = { vm.deleteTxn(t.id) }, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Delete, "Delete", Modifier.size(18.dp), tint = Pf.Accent400)
+                        }
                     }
                 }
             }

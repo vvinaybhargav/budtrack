@@ -814,6 +814,41 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
+    /** Which side of the household a transaction belongs to, taken from the
+     *  account it moved through — transactions have no bucket of their own. */
+    private fun txnPerson(t: Txn): String {
+        val id = t.fromAccountId.ifEmpty { t.toAccountId }
+        return accounts.firstOrNull { it.id == id }?.person.orEmpty()
+    }
+
+    /** The Transactions screen shows these and nothing else: real recorded
+     *  movements, not the recurring plan. */
+    val filteredTxns: List<Txn>
+        get() = txns
+            .filter { t ->
+                if (bucketView == "PERSONAL") txnPerson(t) == activeProfile
+                else txnPerson(t) == "Joint"
+            }
+            .filter { t ->
+                (entriesCategoryFilter == null || t.category == entriesCategoryFilter) &&
+                    (entriesSearch.isEmpty() ||
+                        t.category.contains(entriesSearch, true) ||
+                        t.note.contains(entriesSearch, true) ||
+                        t.ref.contains(entriesSearch, true))
+            }
+            .sortedByDescending { it.date + it.id }
+
+    val txnChips: List<String>
+        get() = txns
+            .filter { t ->
+                if (bucketView == "PERSONAL") txnPerson(t) == activeProfile
+                else txnPerson(t) == "Joint"
+            }
+            .map { it.category }.distinct()
+
+    /** Removes it here and in Firestore, and the balance follows. */
+    fun deleteTxn(id: String) = removeTxns { it.id == id }
+
     val availableChips: List<String>
         get() = entries.filter {
             if (bucketView == "PERSONAL") it.bucket == "PERSONAL" && it.person == activeProfile
