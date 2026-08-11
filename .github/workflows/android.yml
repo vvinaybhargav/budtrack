@@ -46,7 +46,7 @@ jobs:
     - name: Generate IST Timestamped APK Name
       run: |
         export TZ='Asia/Kolkata'
-        TIMESTAMP=$(date +'%b%d-%I%M%p-IST')
+        TIMESTAMP=$(date +'%b%d-%H%M-IST')
         cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/FinTrack-${TIMESTAMP}.apk
         echo "BUILD_TIMESTAMP=${TIMESTAMP}" >> $GITHUB_ENV
 

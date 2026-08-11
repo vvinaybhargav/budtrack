@@ -25,12 +25,14 @@ import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.INVEST_PICKABLE
 
+// "Expense" read as "money I just spent" and produced a monthly plan instead,
+// so the recurring ones now say so and the one-off leads.
 private val ADD_KINDS = listOf(
-    "EXPENSE" to "Expense",
-    "BILL" to "Bill",
+    "ONE_TIME" to "Paid now",
+    "EXPENSE" to "Monthly expense",
+    "BILL" to "Monthly bill",
     "EMI_LOAN" to "EMI / Loan",
-    "INVESTMENT" to "Investment",
-    "ONE_TIME" to "One-time",
+    "INVESTMENT" to "Monthly investment",
     "BANK_ACCOUNT" to "Bank Account",
     "CREDIT_CARD" to "Credit Card"
 )
@@ -67,6 +69,16 @@ fun AddScreen(vm: FinTrackViewModel) {
                             Chip(label, vm.addKind == key, { vm.selectAddKind(key) }, Modifier.padding(bottom = 6.dp))
                         }
                     }
+                    // The difference that keeps catching people out.
+                    Muted(
+                        if (vm.addKind == "ONE_TIME") {
+                            "Money that has already gone. Recorded in Transactions straight away."
+                        } else {
+                            "A commitment that repeats. It waits on Home and only reaches " +
+                                "Transactions when you confirm it each month."
+                        },
+                        Modifier.padding(top = Space.s2)
+                    )
                 }
             }
         }

@@ -301,7 +301,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     private val rememberedProfile: String? =
         persisted.lastProfile.takeIf { it.isNotEmpty() && it in persisted.profiles.keys }
 
-    var isLocked by mutableStateOf(true); private set
+    // Straight in when this phone already knows whose it is, unless the PIN has
+    // been asked for explicitly in Settings.
+    var isLocked by mutableStateOf(rememberedProfile == null || persisted.askPinOnLaunch); private set
     var pinStep by mutableStateOf(if (rememberedProfile != null) "enter" else "pick"); private set
     var activeProfile by mutableStateOf(rememberedProfile); private set
     var pinInput by mutableStateOf(""); private set
@@ -320,7 +322,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     var editingEntryId by mutableStateOf<String?>(null); private set
     var draft by mutableStateOf(Draft())
-    var addKind by mutableStateOf("EXPENSE"); private set
+    var addKind by mutableStateOf("ONE_TIME"); private set
     var smartText by mutableStateOf("")
     var chatMessages by mutableStateOf(
         listOf(ChatMessage("assistant", "Hi! Tell me what to add — e.g. \"22k EMI\" or \"4500 wife music class\"."))
@@ -617,7 +619,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelEdit() {
         editingEntryId = null
         draft = Draft(person = activeProfile ?: "Me")
-        addKind = "EXPENSE"
+        addKind = "ONE_TIME"
     }
 
     fun setCategoryFilter(c: String?) {
@@ -1186,8 +1188,22 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * were created.
      */
     init {
+        // Unlocked without the keypad, so the draft never got its owner.
+        if (!isLocked) draft = Draft(person = activeProfile ?: "Me")
         migrateOneTimeEntries()
         if (persisted.firebaseConfigText.isNotBlank()) connectSync()
+    }
+
+    val askPinOnLaunch: Boolean get() = persisted.askPinOnLaunch
+
+    fun setAskPinOnLaunch(on: Boolean) = update { it.copy(askPinOnLaunch = on) }
+
+    /** Lock by hand — the only way back to the keypad when it's skipped. */
+    fun lockNow() {
+        isLocked = true
+        pinInput = ""
+        pinError = false
+        pinStep = if (activeProfile != null) "enter" else "pick"
     }
 
     val draftPersonOptions: List<String> get() = listOfNotNull(activeProfile, "Joint")

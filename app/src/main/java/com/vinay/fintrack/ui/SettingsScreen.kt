@@ -64,6 +64,27 @@ fun SettingsScreen(vm: FinTrackViewModel) {
         item { Hairline() }
 
         item {
+            Column {
+                Heading("Lock")
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Muted(
+                        if (vm.askPinOnLaunch) "PIN asked every launch"
+                        else "Opens straight to ${vm.activeProfile.orEmpty()}"
+                    )
+                    if (vm.askPinOnLaunch) SecondaryButton("Skip PIN", { vm.setAskPinOnLaunch(false) })
+                    else SecondaryButton("Ask for PIN", { vm.setAskPinOnLaunch(true) })
+                }
+                GhostButton("Lock now", vm::lockNow, Modifier.padding(top = Space.s2))
+            }
+        }
+
+        item { Hairline() }
+
+        item {
             Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
                 Heading("Change PIN")
                 PfField("New 4-digit PIN", vm.pinNew, { vm.setPinField(true, it) }, numeric = true)
