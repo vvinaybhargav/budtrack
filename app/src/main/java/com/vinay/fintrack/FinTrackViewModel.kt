@@ -1449,11 +1449,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      *  and their results, is kept separately in [assistantHistory]. */
     var chat by mutableStateOf(listOf<ChatMessage>()); private set
     var chatBusy by mutableStateOf(false); private set
+    // Assigned directly by the screen. A setChatInput function would collide
+    // with the setter this var already generates.
     var chatInput by mutableStateOf("")
 
     private var assistantHistory: kotlinx.serialization.json.JsonArray? = null
-
-    fun setChatInput(v: String) { chatInput = v }
 
     val chatReady: Boolean get() = persisted.openaiKeyText.isNotBlank()
 

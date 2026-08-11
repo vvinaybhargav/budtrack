@@ -102,7 +102,7 @@ fun ChatScreen(vm: FinTrackViewModel) {
         ) {
             PfField(
                 value = vm.chatInput,
-                onValueChange = vm::setChatInput,
+                onValueChange = { vm.chatInput = it },
                 placeholder = if (vm.chatReady) "Ask or tell me anything…"
                 else "Add an OpenAI key in Settings",
                 modifier = Modifier.weight(1f),
