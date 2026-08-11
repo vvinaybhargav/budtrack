@@ -163,7 +163,10 @@ private fun QuickAdd(vm: FinTrackViewModel) {
                 cursorBrush = androidx.compose.ui.graphics.SolidColor(Pf.Accent),
                 decorationBox = { inner ->
                     if (vm.homeQuickText.isEmpty()) {
-                        Text("Add a transaction… e.g. 22k EMI", color = Pf.Muted, fontSize = 14.sp)
+                        // It creates a recurring entry, not a one-off payment —
+                        // saying "transaction" made people add ₹500/month by
+                        // accident. Actual payments arrive from bank SMS.
+                        Text("Add a monthly commitment… e.g. 22k EMI", color = Pf.Muted, fontSize = 14.sp)
                     }
                     inner()
                 }
@@ -324,7 +327,7 @@ private fun BudgetsSection(vm: FinTrackViewModel) {
             Column(verticalArrangement = Arrangement.spacedBy(Space.s4)) {
                 vm.budgets.forEach { (cat, limit) ->
                     val spend = vm.spendFor(cat)
-                    val pct = (spend / limit).toFloat().coerceAtMost(1f)
+                    val pct = safeFraction(spend, limit)
                     Column {
                         Row(
                             Modifier
@@ -400,7 +403,7 @@ private fun LoansSection(vm: FinTrackViewModel) {
                                 val paid = l.totalMonths - l.remainingMonths
                                 Column(Modifier.padding(top = Space.s3)) {
                                     Muted("$paid of ${l.totalMonths} months paid", Modifier.padding(bottom = Space.s2))
-                                    ProgressBar(paid.toFloat() / l.totalMonths, Pf.Text, height = 6)
+                                    ProgressBar(safeFraction(paid, l.totalMonths), Pf.Text, height = 6)
                                     Row(
                                         Modifier
                                             .fillMaxWidth()
@@ -444,7 +447,7 @@ private fun CardsSection(vm: FinTrackViewModel) {
                             EditorActions({ vm.deleteCard(c.id) }, vm::cancelEditCard, vm::saveCard)
                         }
                     } else {
-                        val pct = (c.balance / c.limit).toFloat().coerceAtMost(1f)
+                        val pct = safeFraction(c.balance, c.limit)
                         Column {
                             Row(
                                 Modifier
@@ -476,10 +479,10 @@ private fun CardsSection(vm: FinTrackViewModel) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Muted("Min due ${inr(c.minDue)}")
+                                // Enabled when paid too — tapping again undoes it.
                                 SecondaryButton(
                                     if (c.paid) "Paid" else "Pay bill",
-                                    { vm.payCard(c.id) },
-                                    enabled = !c.paid
+                                    { vm.requestCardPayment(c) }
                                 )
                             }
                         }

@@ -321,7 +321,34 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // ── home ───────────────────────────────────────────────────────────
     fun toggleBalanceVisible() { balanceHidden = !balanceHidden }
     fun toggleLoanDetail(id: String) { expandedLoan = if (expandedLoan == id) null else id }
-    fun payCard(id: String) = update { s -> s.copy(cards = s.cards.map { if (it.id == id) it.copy(paid = true) else it }) }
+    /**
+     * Paying a card is a real payment: it asks which account, records the
+     * transaction and clears the card's outstanding balance. Previously it only
+     * set a flag, so the money never moved and the card never un-paid.
+     */
+    fun requestCardPayment(c: Card) {
+        if (c.paid) {
+            // Undo: drop the payment and restore what it cleared.
+            val paidTxn = persisted.txns.firstOrNull { it.cardId == c.id }
+            removeTxns { it.cardId == c.id }
+            update { s ->
+                s.copy(cards = s.cards.map {
+                    if (it.id == c.id) it.copy(paid = false, balance = paidTxn?.amount ?: it.balance)
+                    else it
+                })
+            }
+            return
+        }
+        if (c.balance <= 0) return
+        pendingConfirm = PendingConfirm(
+            title = c.name,
+            amount = c.balance,
+            kind = "EXPENSE",
+            category = "Credit Card",
+            cardId = c.id,
+            fromAccountId = accountIdByName(defaultAccount)
+        )
+    }
 
     // ── confirming a commitment moves real money ───────────────────────
     /**
@@ -335,6 +362,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val kind: String,              // EXPENSE | INCOME | TRANSFER
         val category: String,
         val entryId: String = "",
+        val cardId: String = "",
         val fromAccountId: String = "",
         val toAccountId: String = ""
     ) {
@@ -385,6 +413,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun confirmLoan(l: Loan) {
         if (isLoanConfirmed(l.id)) {
             removeTxns { it.loanId == l.id && it.period == currentPeriod() }
+            // Paying advanced the tenure, so undoing has to put the month back.
+            update { s ->
+                s.copy(loans = s.loans.map {
+                    if (it.id == l.id) it.copy(
+                        remainingMonths = minOf(it.totalMonths, it.remainingMonths + 1)
+                    ) else it
+                })
+            }
             return
         }
         val from = l.accountId.ifEmpty { accountIdByName(defaultAccount) }
@@ -394,6 +430,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 category = "EMI", fromAccountId = from, loanId = l.id,
                 period = currentPeriod(), note = l.name
             )
+        }
+        // Otherwise "42 of 84 months paid" never moved however often you paid.
+        update { s ->
+            s.copy(loans = s.loans.map {
+                if (it.id == l.id) it.copy(remainingMonths = maxOf(0, it.remainingMonths - 1)) else it
+            })
         }
     }
 
@@ -424,8 +466,16 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 category = p.category,
                 fromAccountId = if (p.needsFrom) p.fromAccountId else "",
                 toAccountId = if (p.needsTo) p.toAccountId else "",
-                entryId = p.entryId, period = currentPeriod(), note = p.title
+                entryId = p.entryId, cardId = p.cardId,
+                period = currentPeriod(), note = p.title
             )
+        }
+        if (p.cardId.isNotEmpty()) {
+            update { s ->
+                s.copy(cards = s.cards.map {
+                    if (it.id == p.cardId) it.copy(paid = true, balance = 0.0) else it
+                })
+            }
         }
         pendingConfirm = null
     }
@@ -447,7 +497,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
         homeQuickText = ""
-        homeQuickConfirm = "Added ${inr(parsed.amount)} · ${parsed.category} · ${parsed.person}"
+        val per = if (parsed.frequency == "ANNUAL") "a year" else "a month"
+        homeQuickConfirm =
+            "Added ${inr(parsed.amount)} $per · ${parsed.category} · ${parsed.person}"
     }
 
     // ── entries ────────────────────────────────────────────────────────
@@ -596,8 +648,31 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         editingAccountId = null
     }
 
+    /**
+     * Transactions are moved to another account rather than left pointing at a
+     * deleted one: an orphan drops out of every balance and shows under neither
+     * bucket, so the money silently disappears while the record remains.
+     */
     fun deleteAccount(id: String) {
-        update { s -> s.copy(accounts = s.accounts.filterNot { it.id == id }) }
+        val fallback = accounts.firstOrNull { it.id != id && it.name == defaultAccount }?.id
+            ?: accounts.firstOrNull { it.id != id }?.id.orEmpty()
+        val moved = persisted.txns
+            .filter { it.fromAccountId == id || it.toAccountId == id }
+            .map {
+                it.copy(
+                    fromAccountId = if (it.fromAccountId == id) fallback else it.fromAccountId,
+                    toAccountId = if (it.toAccountId == id) fallback else it.toAccountId
+                )
+            }
+        val movedById = moved.associateBy { it.id }
+        update { s ->
+            s.copy(
+                accounts = s.accounts.filterNot { it.id == id },
+                txns = s.txns.map { movedById[it.id] ?: it },
+                loans = s.loans.map { if (it.accountId == id) it.copy(accountId = fallback) else it }
+            )
+        }
+        moved.forEach { sync.upsertTxn(it) }
         editingAccountId = null
     }
 
@@ -762,18 +837,21 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * list it was built from. Recomputing per account per recomposition was
      * accounts × transactions of work on every frame.
      */
-    private var balanceCache: Pair<List<Txn>, Map<String, Double>>? = null
+    // Keyed on the accounts too: editing an opening balance leaves the
+    // transaction list untouched, and keying on that alone showed a stale number.
+    private var balanceCache: Triple<List<Txn>, List<Account>, Map<String, Double>>? = null
 
     private fun balances(): Map<String, Double> {
         val txns = persisted.txns
-        balanceCache?.let { (source, cached) -> if (source === txns) return cached }
+        val accounts = persisted.accounts
+        balanceCache?.let { (t, a, cached) -> if (t === txns && a === accounts) return cached }
         val map = HashMap<String, Double>(persisted.accounts.size)
         persisted.accounts.forEach { map[it.id] = it.openingBalance }
         for (t in txns) {
             if (t.fromAccountId.isNotEmpty()) map[t.fromAccountId]?.let { map[t.fromAccountId] = it - t.amount }
             if (t.toAccountId.isNotEmpty()) map[t.toAccountId]?.let { map[t.toAccountId] = it + t.amount }
         }
-        balanceCache = txns to map
+        balanceCache = Triple(txns, accounts, map)
         return map
     }
 
@@ -818,6 +896,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val mine = visibleAccounts.map { it.id }.toSet()
         val map = HashMap<String, Double>()
         for (t in txns) {
+            // A transfer isn't spending — moving money to the set-aside account
+            // for car insurance was inflating the car insurance budget.
+            if (t.kind == "TRANSFER") continue
             if (t.month == period && t.fromAccountId in mine) {
                 map[t.category] = (map[t.category] ?: 0.0) + t.amount
             }

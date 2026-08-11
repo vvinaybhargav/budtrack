@@ -61,6 +61,7 @@ data class Txn(
     val toAccountId: String = "",
     val entryId: String = "",         // the commitment this settles, if any
     val loanId: String = "",
+    val cardId: String = "",
     val period: String = "",          // yyyy-MM the confirmation belongs to
     val note: String = "",
     /** Bank reference (UTR/RRN) for imported ones — what stops a re-read

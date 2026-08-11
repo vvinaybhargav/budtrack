@@ -139,10 +139,13 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                             horizontalArrangement = Arrangement.spacedBy(Space.s2)
                         ) {
                             Text(cat, Modifier.weight(1f), color = Pf.Text, fontSize = 14.sp)
-                            PfField(
+                            // Debounced, and blank is ignored: saving on every
+                            // keystroke stored 0 the moment you cleared it,
+                            // which then crashed Home on a zero denominator.
+                            DebouncedField(
                                 value = limit.toLong().toString(),
-                                onValueChange = { v ->
-                                    vm.setBudget(cat, v.toDoubleOrNull() ?: 0.0)
+                                onSettled = { v ->
+                                    v.toDoubleOrNull()?.takeIf { it > 0 }?.let { vm.setBudget(cat, it) }
                                 },
                                 numeric = true,
                                 modifier = Modifier.width(110.dp)
@@ -205,12 +208,13 @@ fun SettingsScreen(vm: FinTrackViewModel) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
                 Heading("Sync")
-                PfField(
-                    "Firebase config — apiKey, projectId, storageBucket, messagingSenderId, appId",
-                    vm.firebaseConfigText,
-                    vm::setFirebaseConfig,
-                    placeholder = "paste the six values, separated by commas",
-                    singleLine = false
+                DebouncedField(
+                    label = "Firebase config — apiKey, projectId, storageBucket, messagingSenderId, appId",
+                    value = vm.firebaseConfigText,
+                    onSettled = vm::setFirebaseConfig,
+                    placeholder = "paste the values, separated by commas",
+                    singleLine = false,
+                    allowBlank = true
                 )
                 Row(
                     Modifier.fillMaxWidth(),
@@ -274,11 +278,12 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                     "Both profiles share one household document. The config and API key " +
                         "stay on this device — they are never uploaded."
                 )
-                PfField(
-                    "OpenAI API key — for Smart Add",
-                    vm.openaiKeyText,
-                    vm::setOpenaiKey,
-                    placeholder = "sk-…"
+                DebouncedField(
+                    label = "OpenAI API key — for Smart Add",
+                    value = vm.openaiKeyText,
+                    onSettled = vm::setOpenaiKey,
+                    placeholder = "sk-…",
+                    allowBlank = true
                 )
                 Row(
                     Modifier.fillMaxWidth(),

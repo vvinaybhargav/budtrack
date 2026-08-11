@@ -24,6 +24,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -162,6 +163,10 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
 
 @Composable
 fun ProgressBar(fraction: Float, color: Color, height: Int = 7, modifier: Modifier = Modifier) {
+    // A NaN from dividing by a zero budget or tenure survives coerceIn — every
+    // NaN comparison is false — and then fillMaxWidth throws. Guard at the one
+    // place every caller goes through.
+    val safe = if (fraction.isFinite()) fraction.coerceIn(0f, 1f) else 0f
     Box(
         modifier
             .fillMaxWidth()
@@ -170,11 +175,51 @@ fun ProgressBar(fraction: Float, color: Color, height: Int = 7, modifier: Modifi
     ) {
         Box(
             Modifier
-                .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                .fillMaxWidth(safe)
                 .height(height.dp)
                 .background(color, Radius.Pill)
         )
     }
+}
+
+/**
+ * A field that keeps its own text and only reports a settled value, so typing
+ * "6500" is one save rather than four — each of which was a disk write and a
+ * Firestore push.
+ *
+ * [onSettled] fires after [delayMs] of no typing, and blank input is never
+ * reported: clearing a budget used to store zero, which then divided by zero.
+ */
+@Composable
+fun DebouncedField(
+    value: String,
+    onSettled: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    placeholder: String = "",
+    numeric: Boolean = false,
+    singleLine: Boolean = true,
+    allowBlank: Boolean = false,
+    delayMs: Long = 600
+) {
+    var text by remember(value) { mutableStateOf(value) }
+    var edited by remember { mutableStateOf(false) }
+
+    LaunchedEffect(text, edited) {
+        if (!edited || text == value) return@LaunchedEffect
+        kotlinx.coroutines.delay(delayMs)
+        if (allowBlank || text.isNotBlank()) onSettled(text)
+    }
+
+    PfField(
+        label = label,
+        value = text,
+        onValueChange = { text = it; edited = true },
+        modifier = modifier,
+        placeholder = placeholder,
+        numeric = numeric,
+        singleLine = singleLine
+    )
 }
 
 @Composable
@@ -299,3 +344,11 @@ fun EditorActions(
         PrimaryButton("Save", onSave)
     }
 }
+
+/** Ratio that stays sane when the denominator is zero — a cleared budget, a
+ *  loan with no tenure, a card with no limit. */
+fun safeFraction(part: Double, whole: Double): Float =
+    if (whole <= 0.0) 0f else (part / whole).toFloat().coerceIn(0f, 1f)
+
+fun safeFraction(part: Int, whole: Int): Float =
+    if (whole <= 0) 0f else (part.toFloat() / whole).coerceIn(0f, 1f)
