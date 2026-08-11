@@ -29,6 +29,9 @@ data class PersistedState(
     /** References already imported — the duplicate guard against a re-read,
      *  and against the same payment arriving twice from different senders. */
     val importedRefs: Set<String> = emptySet(),
+    /** Profile this device signs in as, so the picker is skipped on launch.
+     *  Device-local: the other phone belongs to the other person. */
+    val lastProfile: String = "",
     val smsImportOn: Boolean = false,
     /** Recent import decisions, newest first, capped — the only way to see why
      *  a bank message didn't become a transaction. */

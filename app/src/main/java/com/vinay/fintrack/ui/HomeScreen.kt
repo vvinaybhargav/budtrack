@@ -600,6 +600,9 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
                         }
                         if (done) SecondaryButton("Set aside", { vm.requestConfirm(e) })
                         else PrimaryButton("Set aside", { vm.requestConfirm(e) })
+                        IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Delete, "Delete", Modifier.size(16.dp), tint = Pf.Accent400)
+                        }
                     }
                 }
             }

@@ -94,8 +94,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             syncedAt = System.currentTimeMillis()
         }
         sync.onTxnsMissing = { sync.pushAllTxns(persisted.txns) }
-        migrateOneTimeEntries()
-        if (persisted.firebaseConfigText.isNotBlank()) connectSync()
+        // Nothing that touches state is started here: the session properties
+        // below aren't initialised yet, and update() reads activeProfile.
+        // See the init block at the end of the class.
     }
 
     /**
@@ -245,7 +246,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         profiles = emptyMap(),
         smsLog = emptyList(),
         importedRefs = emptySet(),
-        lastSmsScan = 0L
+        lastSmsScan = 0L,
+        lastProfile = ""
     )
 
     /** Remote state with this device's own fields kept — the mirror of
@@ -259,7 +261,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         smsLog = persisted.smsLog,
         importedRefs = persisted.importedRefs,
         lastSmsScan = persisted.lastSmsScan,
-        smsImportOn = persisted.smsImportOn
+        smsImportOn = persisted.smsImportOn,
+        lastProfile = persisted.lastProfile
     )
 
     override fun onCleared() {
@@ -288,9 +291,19 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     val openaiKeyText: String get() = persisted.openaiKeyText
 
     // ── session UI state ───────────────────────────────────────────────
+    /**
+     * The profile this phone signs in as. Set in the declarations rather than
+     * an init block, which would run before these delegates exist.
+     *
+     * Only the picker is skipped — the PIN still stands. Repeating the choice
+     * every launch on a phone that belongs to one person was the pointless part.
+     */
+    private val rememberedProfile: String? =
+        persisted.lastProfile.takeIf { it.isNotEmpty() && it in persisted.profiles.keys }
+
     var isLocked by mutableStateOf(true); private set
-    var pinStep by mutableStateOf("pick"); private set
-    var activeProfile by mutableStateOf<String?>(null); private set
+    var pinStep by mutableStateOf(if (rememberedProfile != null) "enter" else "pick"); private set
+    var activeProfile by mutableStateOf(rememberedProfile); private set
     var pinInput by mutableStateOf(""); private set
     var pinError by mutableStateOf(false); private set
 
@@ -352,6 +365,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             if (pinInput == persisted.profiles[activeProfile]) {
                 isLocked = false
                 draft = Draft(person = activeProfile ?: "Me")
+                // Remembered only after a correct PIN, so a mistaken pick on the
+                // shared picker doesn't stick.
+                activeProfile?.let { p -> update { it.copy(lastProfile = p) } }
             } else {
                 pinInput = ""; pinError = true
             }
@@ -364,6 +380,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun switchProfile() {
         isLocked = true; pinStep = "pick"; activeProfile = null; tab = Tab.HOME
+        // Deliberately switching means the picker should come back next launch.
+        update { it.copy(lastProfile = "") }
     }
 
     fun savePin() {
@@ -1160,6 +1178,17 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             if (bucketView == "PERSONAL") it.bucket == "PERSONAL" && it.person == activeProfile
             else it.bucket == "JOINT"
         }.map { it.category }.distinct()
+
+    /**
+     * Runs last, once every property above exists. Both of these reach code
+     * that reads session state — migration saves, which reads activeProfile —
+     * so starting them from the first init block threw before the delegates
+     * were created.
+     */
+    init {
+        migrateOneTimeEntries()
+        if (persisted.firebaseConfigText.isNotBlank()) connectSync()
+    }
 
     val draftPersonOptions: List<String> get() = listOfNotNull(activeProfile, "Joint")
 
