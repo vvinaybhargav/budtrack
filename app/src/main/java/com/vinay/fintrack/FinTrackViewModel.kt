@@ -1240,7 +1240,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      */
     val plannedExpense: Double
         get() = scopedEntries
-            .filter { it.type == "EXPENSE" && it.category != "EMI" }
+            .filter { it.type == "EXPENSE" && !coveredByLoan(it) }
             .sumOf { it.monthly } + scopedLoans.sumOf { it.monthlyEmi }
 
     // Keyed on the side as well: the figures are for whichever the switch is on,
@@ -1311,12 +1311,21 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Regular monthly outgoings — everything except EMIs (own section) and annuals. */
+    /** True when a loan already accounts for this entry, so showing or counting
+     *  it as well would be the same debt twice. */
+    private fun coveredByLoan(e: Entry): Boolean =
+        e.category == "EMI" && loans.any {
+            it.person == e.person && kotlin.math.abs(it.monthlyEmi - e.amount) < 0.5
+        }
+
     val commitments: List<Entry>
         get() = scopedEntries.filter {
             // ONE_TIME excluded: older builds saved one-off payments as entries,
-            // which then asked to be confirmed again every month.
-            !it.isSetAside && it.frequency != "ONE_TIME" &&
-                ((it.type == "EXPENSE" && it.category != "EMI") || it.type == "SAVINGS")
+            // which then asked to be confirmed again every month. EMI entries
+            // are excluded only when a loan covers them — excluding the whole
+            // category left a hand-made one showing on no list at all.
+            !it.isSetAside && it.frequency != "ONE_TIME" && !coveredByLoan(it) &&
+                (it.type == "EXPENSE" || it.type == "SAVINGS")
         }
 
     /**
@@ -1440,6 +1449,26 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * so starting them from the first init block threw before the delegates
      * were created.
      */
+    /**
+     * The seed carried each EMI twice — as an expense entry and as a loan — and
+     * such an entry appears on no list: the commitments section excludes the
+     * EMI category because loans handle it, and it isn't a set-aside. So it sat
+     * invisible while inflating the month's planned total.
+     *
+     * Only entries matching a loan of the same person and amount are removed;
+     * an EMI entry with no loan behind it is somebody's own record and stays.
+     */
+    private fun migrateDuplicateEmiEntries() {
+        val duplicates = persisted.entries.filter { e ->
+            e.category == "EMI" && persisted.loans.any {
+                it.person == e.person && kotlin.math.abs(it.monthlyEmi - e.amount) < 0.5
+            }
+        }
+        if (duplicates.isEmpty()) return
+        val doomed = duplicates.map { it.id }.toSet()
+        update { s -> s.copy(entries = s.entries.filterNot { it.id in doomed }) }
+    }
+
     init {
         // Joint briefly was a sign-in profile; it's a view now, so take it back
         // out of the list rather than leaving a login nobody should use.
@@ -1449,6 +1478,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         // Unlocked without the keypad, so the draft never got its owner.
         if (!isLocked) draft = Draft(person = activeProfile ?: "Me")
         migrateOneTimeEntries()
+        migrateDuplicateEmiEntries()
         if (persisted.firebaseConfigText.isNotBlank()) connectSync()
     }
 

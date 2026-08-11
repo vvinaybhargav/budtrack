@@ -201,9 +201,8 @@ object Seed {
     val entries = listOf(
         Entry("e1", "Me", "INCOME", "JOINT", "Salary", 120000.0, "MONTHLY"),
         Entry("e2", "Wife", "INCOME", "JOINT", "Salary", 140000.0, "MONTHLY"),
-        Entry("e3", "Me", "EXPENSE", "JOINT", "EMI", 22000.0, "MONTHLY", "Car loan"),
-        Entry("e4", "Me", "EXPENSE", "JOINT", "EMI", 15300.0, "MONTHLY", "Home loan"),
-        Entry("e5", "Wife", "EXPENSE", "JOINT", "EMI", 27500.0, "MONTHLY", "Car loan"),
+        // No EMI entries: the loans below carry those, and having both meant the
+        // same debt counted twice while showing on neither list.
         Entry("e6", "Me", "EXPENSE", "PERSONAL", "Health Insurance", 55000.0, "ANNUAL", "Parents"),
         Entry("e7", "Me", "EXPENSE", "JOINT", "Health Insurance", 15000.0, "ANNUAL", "Self + wife"),
         Entry("e8", "Me", "EXPENSE", "JOINT", "Car Insurance", 40000.0, "ANNUAL"),
