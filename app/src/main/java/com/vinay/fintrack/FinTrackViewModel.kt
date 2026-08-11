@@ -430,6 +430,45 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    var renamingProfile by mutableStateOf<String?>(null); private set
+    var renameText by mutableStateOf(""); private set
+
+    fun startRenameProfile(name: String) { renamingProfile = name; renameText = name; profileMsg = "" }
+    fun editRenameText(v: String) { renameText = v.take(20); profileMsg = "" }
+    fun cancelRenameProfile() { renamingProfile = null; renameText = "" }
+
+    /**
+     * A profile's name is its identity everywhere — entries, accounts, loans
+     * and cards all carry it as a plain string — so renaming has to move all of
+     * them together or the person's data would be orphaned.
+     */
+    fun saveRenameProfile() {
+        val old = renamingProfile ?: return
+        val new = renameText.trim()
+        when {
+            new.isEmpty() -> { profileMsg = "Give the profile a name."; return }
+            new == old -> { cancelRenameProfile(); return }
+            new.equals("Joint", true) -> { profileMsg = "Joint is the shared side."; return }
+            new in persisted.profiles.keys -> { profileMsg = "That name is taken."; return }
+        }
+        update { s ->
+            s.copy(
+                profiles = s.profiles - old + (new to (s.profiles[old] ?: "1234")),
+                entries = s.entries.map { if (it.person == old) it.copy(person = new) else it },
+                accounts = s.accounts.map {
+                    if (it.person == old) it.copy(person = new, owner = ownerLabel(new)) else it
+                },
+                loans = s.loans.map { if (it.person == old) it.copy(person = new) else it },
+                cards = s.cards.map { if (it.owner == old) it.copy(owner = new) else it },
+                lastProfile = if (s.lastProfile == old) new else s.lastProfile
+            )
+        }
+        if (activeProfile == old) activeProfile = new
+        if (draft.person == old) draft = draft.copy(person = new)
+        cancelRenameProfile()
+        profileMsg = "Renamed to $new."
+    }
+
     fun removeProfile(name: String) {
         when {
             name == activeProfile -> profileMsg = "Can't remove the profile you're using."
@@ -756,6 +795,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      *  the fallback follows the Personal/Joint choice. */
     val resolvedOneOffAccount: String
         get() = oneOffAccountId.ifEmpty { defaultAccountFor(draft.person, draft.bucket) }
+
+    /** Accounts belonging to the side the For choice is on. Offering all of
+     *  them let the account contradict that choice, and the account is what
+     *  actually decides where a transaction lands. */
+    val oneOffAccountOptions: List<Account>
+        get() = visibleAccounts.filter {
+            if (draft.person == "Joint") it.person == "Joint" else it.person == draft.person
+        }.ifEmpty { visibleAccounts }
 
     val oneOffAccountName: String
         get() = accounts.firstOrNull { it.id == resolvedOneOffAccount }?.name.orEmpty()
@@ -1357,11 +1404,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      *  unless one was picked deliberately. */
     fun setDraftFor(who: String) {
         draft = draft.copy(person = who)
-        // A joint account can't stay selected on a personal payment.
-        if (oneOffAccountId.isNotEmpty() &&
-            accounts.firstOrNull { it.id == oneOffAccountId }?.person != who &&
-            who != "Joint"
-        ) {
+        // Whatever was picked belongs to the other side now, so let it resolve
+        // again rather than leaving a contradiction on screen.
+        if (accounts.firstOrNull { it.id == oneOffAccountId }?.person != who) {
             oneOffAccountId = ""
         }
     }

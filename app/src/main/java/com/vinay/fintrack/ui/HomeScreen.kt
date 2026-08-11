@@ -411,17 +411,20 @@ private fun LoansSection(vm: FinTrackViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                // Same shape as the set-aside rows: name, then
+                                // the money on the muted line, then the tag.
                                 Column(Modifier.weight(1f)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                                    ) {
-                                        Text(l.name, color = Pf.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                        OutlineTag("Loan")
-                                    }
-                                    Muted(l.person, Modifier.padding(top = 2.dp))
+                                    Text(
+                                        l.name,
+                                        color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                                    )
+                                    Muted(
+                                        "${inr(l.monthlyEmi)}/mo · ${l.remainingMonths} of " +
+                                            "${l.totalMonths} months left",
+                                        Modifier.padding(top = 2.dp, bottom = 6.dp)
+                                    )
+                                    OutlineTag("Loan")
                                 }
-                                Text("${inr(l.monthlyEmi)}/mo", color = Pf.Text, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
                                 // No account prompt — the loan already knows where the EMI comes from.
                                 if (vm.isLoanConfirmed(l.id)) {
                                     SecondaryButton("Paid", { vm.confirmLoan(l) })
@@ -490,15 +493,16 @@ private fun CardsSection(vm: FinTrackViewModel) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(c.name, color = Pf.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                    Muted("${c.owner} · Due ${c.due}")
+                                    Text(
+                                        c.name,
+                                        color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                                    )
+                                    Muted(
+                                        "${inr(c.balance)} of ${inr(c.limit)} · due ${c.due}",
+                                        Modifier.padding(top = 2.dp, bottom = 6.dp)
+                                    )
+                                    OutlineTag("Card")
                                 }
-                                Text(
-                                    "${inr(c.balance)} / ${inr(c.limit)}",
-                                    color = Pf.Text,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
                                 IconButton(onClick = { vm.startEditCard(c) }, modifier = Modifier.size(32.dp)) {
                                     Icon(Icons.Default.Edit, "Edit card", Modifier.size(16.dp), tint = Pf.Accent400)
                                 }

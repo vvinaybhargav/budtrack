@@ -78,12 +78,28 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                     vm.profileNames.forEach { name ->
                         Row(
                             Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Space.s2)
                         ) {
-                            Text(name, Modifier.weight(1f), color = Pf.Text, fontSize = 14.sp)
-                            if (name == vm.activeProfile) Tag("You", Pf.Accent100, Pf.Accent800)
-                            else SmallIcon(Icons.Default.Delete, "Remove profile", true) {
-                                vm.removeProfile(name)
+                            if (vm.renamingProfile == name) {
+                                PfField(
+                                    value = vm.renameText,
+                                    onValueChange = vm::editRenameText,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                PrimaryButton("Save", vm::saveRenameProfile)
+                                SecondaryButton("Cancel", vm::cancelRenameProfile)
+                            } else {
+                                Text(name, Modifier.weight(1f), color = Pf.Text, fontSize = 14.sp)
+                                if (name == vm.activeProfile) Tag("You", Pf.Accent100, Pf.Accent800)
+                                SmallIcon(Icons.Default.Edit, "Rename profile", true) {
+                                    vm.startRenameProfile(name)
+                                }
+                                if (name != vm.activeProfile) {
+                                    SmallIcon(Icons.Default.Delete, "Remove profile", true) {
+                                        vm.removeProfile(name)
+                                    }
+                                }
                             }
                         }
                     }

@@ -222,14 +222,7 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
         // One choice, not two: "Joint" and your own name said everything the
         // separate Person and Bucket selects said between them, and the pair
         // could be set to combinations that meant nothing.
-        //
-        // Hidden for a one-time payment: a transaction has no owner of its own,
-        // it takes its side from the account it moved through. Offering both
-        // let them disagree — For said Me while the money left the joint
-        // account, and it filed as joint.
-        if (isEditing || vm.addKind != "ONE_TIME") {
-            PfSelect("For", vm.draft.person, vm.forOptions, vm::setDraftFor)
-        }
+        PfSelect("For", vm.draft.person, vm.forOptions, vm::setDraftFor)
         if (isEditing) {
             PfSelect(
                 "Type", vm.draft.type, listOf("EXPENSE", "INCOME", "SAVINGS"),
@@ -269,15 +262,17 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             // A one-off is money that already moved, so it needs an account and
             // a direction — it becomes a transaction, not something to confirm
             // again every month.
+            // Only accounts on the chosen side, so the account can't contradict
+            // the For choice — a transaction takes its side from its account.
             PfSelect(
-                "Account — decides whose it is",
+                "Account",
                 vm.oneOffAccountName,
-                vm.visibleAccounts.map { it.name },
-                { name -> vm.setOneOffAccount(vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty()) }
-            )
-            Muted(
-                "A joint account files it under Joint; one of yours files it " +
-                    "under ${vm.activeProfile.orEmpty()}."
+                vm.oneOffAccountOptions.map { it.name },
+                { name ->
+                    vm.setOneOffAccount(
+                        vm.oneOffAccountOptions.firstOrNull { it.name == name }?.id.orEmpty()
+                    )
+                }
             )
             PfSelect(
                 "Direction",
