@@ -104,9 +104,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     private fun migrateOneTimeEntries() {
         val stale = persisted.entries.filter { it.frequency == "ONE_TIME" }
         if (stale.isEmpty()) return
-        val account = accountIdByName(persisted.defaultAccount)
         val converted = stale.map { e ->
             val credit = e.type == "INCOME"
+            // Follow the entry's own bucket: a Personal one-off belongs on that
+            // person's account, not on the joint default.
+            val account = defaultAccountFor(e.person, e.bucket)
             Txn(
                 id = newId("t"),
                 date = today(),
@@ -442,6 +444,19 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     private fun accountIdByName(name: String): String =
         accounts.firstOrNull { it.name == name }?.id ?: accounts.firstOrNull()?.id.orEmpty()
 
+    /**
+     * The account a payment should land on given who it's for. Falling back to
+     * the default account regardless put everything on the joint account, so a
+     * payment marked Personal still showed up under Joint.
+     */
+    fun defaultAccountFor(person: String, bucket: String): String {
+        if (bucket == "PERSONAL") {
+            accounts.firstOrNull { it.person == person }?.let { return it.id }
+        }
+        accounts.firstOrNull { it.person == "Joint" }?.let { return it.id }
+        return accountIdByName(defaultAccount)
+    }
+
     private fun confirmKindFor(e: Entry): String = when {
         e.type == "INCOME" -> "INCOME"
         // Annual provisions and savings stay your money — they move, they aren't spent.
@@ -619,8 +634,16 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * rather than an entry. As an entry it sat on Home asking to be confirmed
      * every month, and never appeared in Transactions at all.
      */
+    /** Resolved account for the one-off form, so the picker is never blank and
+     *  the fallback follows the Personal/Joint choice. */
+    val resolvedOneOffAccount: String
+        get() = oneOffAccountId.ifEmpty { defaultAccountFor(draft.person, draft.bucket) }
+
+    val oneOffAccountName: String
+        get() = accounts.firstOrNull { it.id == resolvedOneOffAccount }?.name.orEmpty()
+
     private fun saveOneOff(amount: Double) {
-        val account = oneOffAccountId.ifEmpty { accountIdByName(defaultAccount) }
+        val account = resolvedOneOffAccount
         addTxn { id ->
             Txn(
                 id = id,
@@ -1083,6 +1106,34 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Removes it here and in Firestore, and the balance follows. */
     fun deleteTxn(id: String) = removeTxns { it.id == id }
+
+    // ── editing a recorded transaction ─────────────────────────────────
+    // Without this, anything that landed on the wrong account — an import
+    // matched by the wrong number, a one-off that took the default — was stuck
+    // there, and stuck in whichever bucket that account belongs to.
+    var editingTxnId by mutableStateOf<String?>(null); private set
+
+    val editingTxn: Txn? get() = txns.firstOrNull { it.id == editingTxnId }
+
+    fun startEditTxn(id: String) { editingTxnId = id }
+    fun cancelEditTxn() { editingTxnId = null }
+
+    private fun replaceTxn(updated: Txn) {
+        update { s -> s.copy(txns = s.txns.map { if (it.id == updated.id) updated else it }) }
+        sync.upsertTxn(updated)
+    }
+
+    fun setTxnAccount(accountId: String) {
+        val t = editingTxn ?: return
+        replaceTxn(
+            if (t.kind == "INCOME") t.copy(toAccountId = accountId)
+            else t.copy(fromAccountId = accountId)
+        )
+    }
+
+    fun setTxnCategory(category: String) {
+        editingTxn?.let { replaceTxn(it.copy(category = category)) }
+    }
 
     val availableChips: List<String>
         get() = entries.filter {

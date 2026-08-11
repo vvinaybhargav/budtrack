@@ -222,7 +222,7 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             // again every month.
             PfSelect(
                 "Account",
-                vm.accounts.firstOrNull { it.id == vm.oneOffAccountId }?.name.orEmpty(),
+                vm.oneOffAccountName,
                 vm.visibleAccounts.map { it.name },
                 { name -> vm.setOneOffAccount(vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty()) }
             )

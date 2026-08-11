@@ -1,6 +1,7 @@
 package com.vinay.fintrack.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.inr
@@ -120,7 +122,11 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                         Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(Modifier.weight(1f)) {
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .clickable { vm.startEditTxn(t.id) }
+                        ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(Space.s2)
@@ -159,6 +165,65 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                         }
                     }
                 }
+            }
+        }
+    }
+    EditTxnSheet(vm)
+}
+
+/**
+ * Moving a transaction to the right account. This also moves it between the
+ * Joint and Personal buckets, since a transaction takes its side from the
+ * account it went through.
+ */
+@Composable
+private fun EditTxnSheet(vm: FinTrackViewModel) {
+    val txn = vm.editingTxn ?: return
+    Dialog(onDismissRequest = vm::cancelEditTxn) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(Pf.Surface, Radius.Lg)
+                .border(1.dp, Pf.Hairline, Radius.Lg)
+                .padding(Space.s4),
+            verticalArrangement = Arrangement.spacedBy(Space.s3)
+        ) {
+            Text(
+                txn.note.ifEmpty { txn.category },
+                color = Pf.Text, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold
+            )
+            Muted("${prettyDate(txn.date)} · ${inr(txn.amount)}")
+
+            Column {
+                Muted("Account")
+                PfSelect(
+                    value = vm.accounts.firstOrNull {
+                        it.id == txn.fromAccountId.ifEmpty { txn.toAccountId }
+                    }?.name.orEmpty(),
+                    options = vm.accounts.map { it.name },
+                    onSelect = { name ->
+                        vm.setTxnAccount(vm.accounts.firstOrNull { it.name == name }?.id.orEmpty())
+                    }
+                )
+            }
+            Column {
+                Muted("Category")
+                PfSelect(
+                    value = txn.category,
+                    options = vm.categories,
+                    onSelect = vm::setTxnCategory
+                )
+            }
+            Muted("An account owned by you puts this under Personal; a joint account puts it under Joint.")
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                SecondaryButton("Delete", {
+                    vm.deleteTxn(txn.id); vm.cancelEditTxn()
+                }, Modifier.weight(1f))
+                PrimaryButton("Done", vm::cancelEditTxn, Modifier.weight(1f))
             }
         }
     }
