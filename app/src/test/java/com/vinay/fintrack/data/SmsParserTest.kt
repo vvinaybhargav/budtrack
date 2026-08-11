@@ -129,6 +129,28 @@ class SmsParserTest {
         assertEquals("42345", p.dedupeKey)
     }
 
+    /** The stored value used to be 300 characters of the message, which then
+     *  synced to a household document readable by anyone with the project id. */
+    @Test
+    fun `only the amount is kept, never the message`() {
+        val body = "Rs.450.00 debited from a/c XX1234 on 09-08-26 to VPA swiggy@ybl. " +
+            "Avl Bal Rs.53,120.55. UPI Ref 423456789012"
+        val p = parseBankSms(body, "AD-HDFCBK")!!
+        assertEquals("450.00", p.amountText)
+        assertFalse(p.amountText.contains("53,120"))
+        assertFalse(p.amountText.contains("XX1234"))
+    }
+
+    /** The skip log is persisted, and OTP texts are exactly what gets skipped. */
+    @Test
+    fun `skip reasons never quote the message`() {
+        val otp = "123456 is your OTP to transfer Rs.5000 from A/c XX1234. Do not share."
+        val reason = skipReason(otp)
+        assertFalse(reason.contains("123456"))
+        assertFalse(reason.contains("XX1234"))
+        assertTrue(reason.contains("otp"))
+    }
+
     @Test
     fun `bank senders are recognised and mobile numbers are not`() {
         assertTrue(looksLikeBankSender("AD-HDFCBK"))

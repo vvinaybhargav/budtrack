@@ -103,15 +103,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     // added while offline, say. Send them rather than losing them.
                     sync.push(sharable(persisted), activeProfile ?: "", force = true)
                 } else {
-                    // Keep this device's own secrets — they're per-device, not
-                    // household data — and its transactions, which arrive on
-                    // their own listener.
-                    persisted = remote.copy(
-                        txns = persisted.txns,
-                        localUpdatedAt = persisted.localUpdatedAt,
-                        firebaseConfigText = persisted.firebaseConfigText,
-                        openaiKeyText = persisted.openaiKeyText
-                    ).also { ownRevision = store.save(it) }
+                    persisted = mergeRemote(remote).also { ownRevision = store.save(it) }
                 }
                 syncedAt = System.currentTimeMillis()
             },
@@ -196,10 +188,40 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         syncedAt = System.currentTimeMillis()
     }
 
-    /** What belongs in the shared state document: not this device's keys, and
-     *  not the transactions — those are documents of their own. */
-    private fun sharable(s: PersistedState) =
-        s.copy(txns = emptyList(), firebaseConfigText = "", openaiKeyText = "")
+    /**
+     * What belongs in the shared household document.
+     *
+     * Emptied rather than omitted: writes use SetOptions.merge(), so a field
+     * left out keeps whatever is already up there — sending empties actively
+     * clears anything an earlier build uploaded.
+     *
+     * PINs must never leave the device, and the SMS log holds excerpts of
+     * messages including OTPs. Neither is household data, and the household
+     * document is readable by anyone with the project id.
+     */
+    private fun sharable(s: PersistedState) = s.copy(
+        txns = emptyList(),
+        firebaseConfigText = "",
+        openaiKeyText = "",
+        profiles = emptyMap(),
+        smsLog = emptyList(),
+        importedRefs = emptySet(),
+        lastSmsScan = 0L
+    )
+
+    /** Remote state with this device's own fields kept — the mirror of
+     *  [sharable], so nothing it withholds gets wiped when a snapshot lands. */
+    private fun mergeRemote(remote: PersistedState) = remote.copy(
+        txns = persisted.txns,
+        localUpdatedAt = persisted.localUpdatedAt,
+        firebaseConfigText = persisted.firebaseConfigText,
+        openaiKeyText = persisted.openaiKeyText,
+        profiles = persisted.profiles,
+        smsLog = persisted.smsLog,
+        importedRefs = persisted.importedRefs,
+        lastSmsScan = persisted.lastSmsScan,
+        smsImportOn = persisted.smsImportOn
+    )
 
     override fun onCleared() {
         store.stopObserving(storeWatcher)

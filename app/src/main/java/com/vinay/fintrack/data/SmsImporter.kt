@@ -26,7 +26,7 @@ class SmsImporter(private val context: Context) {
         if (parsed == null) {
             // Recorded rather than dropped silently: without this there is no way
             // to tell a wrongly-worded alert from one that never arrived.
-            store.save(state.copy(smsLog = note(state, "skipped $sender: ${body.take(50)}")))
+            store.save(state.copy(smsLog = note(state, "skipped $sender — ${skipReason(body)}")))
             return false
         }
         if (parsed.dedupeKey in state.importedRefs) {
@@ -122,7 +122,7 @@ class SmsImporter(private val context: Context) {
                 note = p.party,
                 ref = p.ref,
                 source = "sms",
-                rawAmountText = p.body
+                rawAmountText = p.amountText
             )
             added++
             log += "added ${inr(p.amount)} ${p.party}"

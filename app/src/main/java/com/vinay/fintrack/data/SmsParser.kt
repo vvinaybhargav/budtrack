@@ -17,7 +17,10 @@ data class ParsedSms(
     val ref: String,
     val accountTail: String,
     val date: String,
-    val body: String
+    /** Just the amount as the message wrote it, for tracing a misparse. The
+     *  whole body was being stored and synced, and bank texts carry account
+     *  numbers and balances. */
+    val amountText: String
 ) {
     /** A reference, or failing that the account, is what separates a real
      *  transaction message from an advert that happens to mention rupees. */
@@ -79,7 +82,7 @@ fun parseBankSms(body: String, sender: String = ""): ParsedSms? {
         }
     }
 
-    val amount = extractAmount(body) ?: return null
+    val (amount, amountText) = extractAmountPair(body) ?: return null
     val ref = REF.find(body)?.groupValues?.getOrNull(1).orEmpty()
     val accountTail = ACCOUNT_TAIL.find(body)?.groupValues?.getOrNull(1).orEmpty()
 
@@ -94,7 +97,7 @@ fun parseBankSms(body: String, sender: String = ""): ParsedSms? {
         ref = ref,
         accountTail = accountTail,
         date = extractDate(body),
-        body = body.take(300)
+        amountText = amountText
     ).takeIf { it.isUsable }
 }
 
@@ -103,16 +106,19 @@ fun parseBankSms(body: String, sender: String = ""): ParsedSms? {
  * "Avl Bal Rs.53,120" and taking the wrong number would be silently wrong,
  * so anything introduced by a balance phrase is skipped.
  */
-private fun extractAmount(body: String): Double? {
+private fun extractAmountPair(body: String): Pair<Double, String>? {
     val lower = body.lowercase()
     for (m in AMOUNT.findAll(body)) {
         val before = lower.substring(maxOf(0, m.range.first - 28), m.range.first)
         if (listOf("bal", "balance", "limit", "outstanding").any { before.contains(it) }) continue
-        val value = m.groupValues[1].replace(",", "").toDoubleOrNull() ?: continue
-        if (value > 0) return value
+        val raw = m.groupValues[1]
+        val value = raw.replace(",", "").toDoubleOrNull() ?: continue
+        if (value > 0) return value to raw
     }
     return null
 }
+
+private fun extractAmount(body: String): Double? = extractAmountPair(body)?.first
 
 private fun firstIndexOf(text: String, words: List<String>): Int =
     words.map { text.indexOf(it) }.filter { it >= 0 }.minOrNull() ?: -1
@@ -146,6 +152,22 @@ private fun normaliseYear(raw: String): Int? {
 
 private fun iso(year: Int, month: Int, day: Int): String =
     String.format(Locale("en", "IN"), "%04d-%02d-%02d", year, month, day)
+
+/**
+ * Why a message wasn't treated as a transaction, in words that don't echo the
+ * message. The log this feeds is stored and was previously synced, and bank
+ * texts include OTPs — so it says what failed, never what was said.
+ */
+fun skipReason(body: String): String {
+    val lower = body.lowercase()
+    NOT_A_TRANSACTION.firstOrNull { lower.contains(it) }?.let { return "not a payment (\"$it\")" }
+    val hasDirection = DEBIT_WORDS.any { lower.contains(it) } || CREDIT_WORDS.any { lower.contains(it) }
+    if (!hasDirection) return "no debit or credit wording"
+    if (extractAmountOrNull(body) == null) return "no amount found"
+    return "no reference or account number"
+}
+
+internal fun extractAmountOrNull(body: String): Double? = extractAmount(body)
 
 /** Banks send from ids like AD-HDFCBK or VM-ICICIB rather than a number. */
 fun looksLikeBankSender(sender: String): Boolean {

@@ -69,7 +69,7 @@ data class Txn(
     val ref: String = "",
     /** "sms" when read from a bank alert, empty when entered by hand. */
     val source: String = "",
-    /** The message it came from, so a misparsed amount can be traced back. */
+    /** The amount exactly as the source wrote it, for tracing a misparse. */
     val rawAmountText: String = ""
 ) {
     val month: String get() = period.ifEmpty { date.take(7) }
