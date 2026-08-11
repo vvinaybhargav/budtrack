@@ -334,10 +334,10 @@ private fun MonthStats(vm: FinTrackViewModel) {
         "Invested" to (inr(vm.actualInvested) to Pf.Text)
     )
     Column {
-        SectionTitle("This month", Modifier.padding(bottom = Space.s1))
+        SectionTitle("This month · ${vm.bucketLabel}", Modifier.padding(bottom = Space.s1))
         Muted(
-            "Recorded so far. Planned: ${inr(vm.plannedIncome)} in, " +
-                "${inr(vm.plannedExpense)} out.",
+            "Recorded on this side so far. Planned: ${inr(vm.plannedIncome)} in, " +
+                "${inr(vm.plannedExpense)} out — expenses, set-asides and EMIs.",
             Modifier.padding(bottom = Space.s3)
         )
         PfCard(padding = PaddingValues(0.dp)) {

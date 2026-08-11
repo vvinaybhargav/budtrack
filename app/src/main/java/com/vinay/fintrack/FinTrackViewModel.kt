@@ -1230,21 +1230,36 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // did. The two were conflated, so the month's figures never moved however
     // many transactions were added or deleted.
     val plannedIncome: Double get() = scopedEntries.filter { it.type == "INCOME" }.sumOf { it.monthly }
-    val plannedExpense: Double get() = scopedEntries.filter { it.type == "EXPENSE" }.sumOf { it.monthly }
 
-    private var totalsCache: Pair<List<Txn>, Ledger.MonthTotals>? = null
+    /**
+     * Everything expected out each month on this side: ordinary expenses, the
+     * monthly share of each set-aside, and the loans' EMIs.
+     *
+     * EMI-category entries are left out because the loans already account for
+     * them — the seed carries both, and counting each would double the figure.
+     */
+    val plannedExpense: Double
+        get() = scopedEntries
+            .filter { it.type == "EXPENSE" && it.category != "EMI" }
+            .sumOf { it.monthly } + scopedLoans.sumOf { it.monthlyEmi }
+
+    // Keyed on the side as well: the figures are for whichever the switch is on,
+    // and using the visible accounts mixed personal and joint together whatever
+    // it said.
+    private var totalsCache: Triple<List<Txn>, String, Ledger.MonthTotals>? = null
 
     private fun monthTotals(): Ledger.MonthTotals {
         val t = persisted.txns
-        totalsCache?.let { (source, cached) -> if (source === t) return cached }
+        val key = "$bucketView/${activeProfile.orEmpty()}"
+        totalsCache?.let { (source, k, cached) -> if (source === t && k == key) return cached }
         val totals = Ledger.monthTotals(
             t,
             currentPeriod(),
-            visibleAccounts.map { it.id }.toSet(),
-            visibleCards.map { it.id }.toSet(),
+            scopedAccounts.map { it.id }.toSet(),
+            scopedCards.map { it.id }.toSet(),
             INVEST_CATEGORIES
         )
-        totalsCache = t to totals
+        totalsCache = Triple(t, key, totals)
         return totals
     }
 
@@ -1266,7 +1281,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val txns: List<Txn>,
         val accounts: List<Account>,
         val cards: List<Card>,
-        val profile: String?,
+        /** Side and profile together — both change which accounts count. */
+        val profile: String,
         val byCategory: Map<String, Double>
     )
 
@@ -1276,18 +1292,21 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun spendFor(category: String): Double {
         val txns = persisted.txns
+        val key = "$bucketView/${activeProfile.orEmpty()}"
         spendCache?.let {
             if (it.txns === txns && it.accounts === persisted.accounts &&
-                it.cards === persisted.cards && it.profile == activeProfile
+                it.cards === persisted.cards && it.profile == key
             ) return it.byCategory[category] ?: 0.0
         }
+        // Scoped, like everything else on Home: viewing the personal side used
+        // to count joint spending against the same bar.
         val map = Ledger.spendByCategory(
             txns,
             currentPeriod(),
-            visibleAccounts.map { it.id }.toSet(),
-            visibleCards.map { it.id }.toSet()
+            scopedAccounts.map { it.id }.toSet(),
+            scopedCards.map { it.id }.toSet()
         )
-        spendCache = SpendCache(txns, persisted.accounts, persisted.cards, activeProfile, map)
+        spendCache = SpendCache(txns, persisted.accounts, persisted.cards, key, map)
         return map[category] ?: 0.0
     }
 
@@ -1494,11 +1513,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * are what list_transactions is for.
      */
     private fun liveContext(): String = buildString {
-        appendLine("Total balance ${inr(totalBalance)}.")
+        val side = if (bucketView == "JOINT") "joint" else "personal"
+        appendLine("Figures below are for the $side side; the accounts listed are " +
+            "everything this profile can use.")
+        appendLine("Balance on this side ${inr(totalBalance)}.")
         appendLine("Recorded this month: received ${inr(actualIncome)}, spent ${inr(actualSpent)}, " +
             "set aside ${inr(actualSaved)}, invested ${inr(actualInvested)}.")
-        appendLine("Planned each month: ${inr(plannedIncome)} in, ${inr(plannedExpense)} out, " +
-            "${inr(monthlySavings)} saved, ${inr(monthlyInvestment)} invested.")
+        appendLine("Planned each month: ${inr(plannedIncome)} in, ${inr(plannedExpense)} out " +
+            "(expenses, set-asides and EMIs).")
         appendLine("Accounts:")
         visibleAccounts.forEach {
             appendLine("  ${it.name} = ${inr(balanceOf(it))} (${it.person}" +
