@@ -75,6 +75,20 @@ Messages are parsed on the device. Only the parsed amount, payee, reference and
 date are stored; nothing raw is uploaded. `READ_SMS`/`RECEIVE_SMS` mean this
 build cannot be published on Play, which is fine for a sideloaded app.
 
+### Android blocks SMS for sideloaded apps
+
+Android 13+ puts SMS, call log, accessibility and notification access behind a
+**restricted setting** for any app not installed from a store. The permission
+prompt is refused before it appears, and the unblock is hidden in an overflow
+menu:
+
+**Settings → Apps → FinTrack → ⋮ (top right) → Allow restricted settings**,
+then **Permissions → SMS → Allow**.
+
+This is about where the APK came from, not about the app. The same code
+installed from Play would never show it, and nothing in the APK can opt out.
+It is asked once per install, so do it on each phone after installing.
+
 The parser skips OTPs, adverts, failed payments and due-date reminders, and
 takes the transacted amount rather than the "Avl Bal" that banks append. Every
 import keeps its reference, so re-reading the inbox cannot double-count.

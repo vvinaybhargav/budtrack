@@ -544,19 +544,30 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
         // One line that says exactly where you are, rather than a button that
         // silently does nothing.
         if (!hasPermission) {
-            Muted(
+            Column(Modifier.padding(top = Space.s2)) {
+                Muted(
+                    when {
+                        blocked -> "Android won't ask again. Two steps in app info:"
+                        asked -> "Declined. Nothing is read until you allow it."
+                        else -> "Messages are read on this phone only. Amount, payee " +
+                            "and reference are kept — nothing else."
+                    }
+                )
+                // Android blocks SMS outright for apps not installed from a
+                // store, and hides the unblock in an overflow menu. Nobody
+                // finds "Allow restricted settings" without being told.
                 if (blocked) {
-                    "Android won't ask again once SMS access has been declined. " +
-                        "Open permissions, allow SMS, and come back — this screen " +
-                        "notices by itself."
-                } else if (asked) {
-                    "Declined. Nothing is read until you allow it."
-                } else {
-                    "Android will ask next. Messages are read on this phone only, " +
-                        "and nothing but the amount, payee and reference is kept."
-                },
-                Modifier.padding(top = Space.s2)
-            )
+                    Column(Modifier.padding(top = Space.s1)) {
+                        Muted("1. Tap ⋮ at the top right → Allow restricted settings")
+                        Muted("2. Permissions → SMS → Allow")
+                    }
+                    Muted(
+                        "That first step exists because the app was installed from a " +
+                            "file rather than a store. It is asked once per install.",
+                        Modifier.padding(top = Space.s2)
+                    )
+                }
+            }
         }
 
         if (vm.scanNote.isNotEmpty()) {
