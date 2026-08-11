@@ -37,6 +37,15 @@ class FirestoreSync(private val context: Context) {
     private var db: FirebaseFirestore? = null
     private var auth: FirebaseAuth? = null
     private var listener: ListenerRegistration? = null
+    private var txnListener: ListenerRegistration? = null
+
+    /** Set by the ViewModel; receives the whole transaction collection. */
+    var onTxns: ((List<Txn>) -> Unit)? = null
+
+    /** The collection doesn't exist yet — the caller should seed it. */
+    var onTxnsMissing: (() -> Unit)? = null
+
+    private var txnsSeeded = false
 
     /** This device's anonymous user id — paste it into the members doc to
      *  authorise the device without opening the database to everyone.
@@ -169,6 +178,34 @@ class FirestoreSync(private val context: Context) {
         onRemote: (PersistedState) -> Unit,
         onEmptyRemote: () -> Unit
     ) {
+        txnListener = txnsCollection(db!!).addSnapshotListener { snap, error ->
+            if (error != null) {
+                report(SyncStatus.ERROR, error.message ?: "Transaction listen failed")
+                Log.w(TAG, "txn listen failed", error); return@addSnapshotListener
+            }
+            val list = snap?.documents.orEmpty().mapNotNull { doc ->
+                val data = doc.data ?: return@mapNotNull null
+                runCatching {
+                    json.decodeFromJsonElement(Txn.serializer(), toJson(data))
+                }.getOrElse { Log.w(TAG, "bad txn ${doc.id}", it); null }
+            }
+            // The very first snapshot being empty means the collection isn't
+            // there yet — seed it from this device rather than letting it wipe
+            // local history. A later empty snapshot is a real deletion.
+            if (list.isEmpty() && !txnsSeeded) {
+                txnsSeeded = true
+                onTxnsMissing?.invoke()
+                return@addSnapshotListener
+            }
+            txnsSeeded = true
+            applyingRemote = true
+            try {
+                onTxns?.invoke(list.sortedBy { it.date + it.id })
+            } finally {
+                applyingRemote = false
+            }
+        }
+
         listener = stateDoc(db!!)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -200,6 +237,9 @@ class FirestoreSync(private val context: Context) {
     fun disconnect() {
         listener?.remove()
         listener = null
+        txnListener?.remove()
+        txnListener = null
+        txnsSeeded = false
         db = null
         auth = null
         uid = ""
@@ -268,6 +308,33 @@ class FirestoreSync(private val context: Context) {
         db.collection(WORKSPACES).document(WORKSPACE_ID)
             .collection(APP_SECTION).document(STATE_DOC)
 
+    /** One document per transaction, so two phones confirming different things
+     *  don't overwrite each other the way a single state blob would. */
+    private fun txnsCollection(db: FirebaseFirestore) = stateDoc(db).collection(TXNS)
+
+    fun upsertTxn(t: Txn) {
+        if (applyingRemote) return
+        val target = db ?: return
+        @Suppress("UNCHECKED_CAST")
+        val map = toFirestore(json.encodeToJsonElement(Txn.serializer(), t)) as Map<String, Any?>
+        txnsCollection(target).document(t.id).set(map)
+            .addOnSuccessListener { lastPushedAt = System.currentTimeMillis() }
+            .addOnFailureListener { e ->
+                report(SyncStatus.ERROR, e.message ?: "Transaction write failed")
+                Log.w(TAG, "upsertTxn failed", e)
+            }
+    }
+
+    fun deleteTxn(id: String) {
+        if (applyingRemote) return
+        val target = db ?: return
+        txnsCollection(target).document(id).delete()
+            .addOnFailureListener { e -> Log.w(TAG, "deleteTxn failed", e) }
+    }
+
+    /** Send every transaction up — used when seeding a fresh document. */
+    fun pushAllTxns(txns: List<Txn>) = txns.forEach { upsertTxn(it) }
+
     private companion object {
         const val TAG = "FinTrackSync"
         const val APP_NAME = "fintrack-sync"
@@ -279,5 +346,6 @@ class FirestoreSync(private val context: Context) {
         const val WORKSPACE_ID = "household"
         const val APP_SECTION = "budtrack"
         const val STATE_DOC = "state"
+        const val TXNS = "transactions"
     }
 }

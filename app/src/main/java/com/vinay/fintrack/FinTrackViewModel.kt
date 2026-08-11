@@ -62,6 +62,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         sync.onStatusChange = { s, e -> syncStatus = s; syncError = e }
+        sync.onTxns = { remote ->
+            persisted = persisted.copy(txns = remote).also { store.save(it) }
+            syncedAt = System.currentTimeMillis()
+        }
+        sync.onTxnsMissing = { sync.pushAllTxns(persisted.txns) }
         if (persisted.firebaseConfigText.isNotBlank()) connectSync()
     }
 
@@ -69,8 +74,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         sync.connect(
             persisted.firebaseConfigText,
             onRemote = { remote ->
-                // Keep this device's own secrets — they're per-device, not household data.
+                // Keep this device's own secrets — they're per-device, not household
+                // data — and its transactions, which arrive on their own listener.
                 persisted = remote.copy(
+                    txns = persisted.txns,
                     firebaseConfigText = persisted.firebaseConfigText,
                     openaiKeyText = persisted.openaiKeyText
                 ).also { store.save(it) }
@@ -91,9 +98,15 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     val syncAuthNote: String get() = sync.authNote
 
     fun pushNow() {
-        sync.push(persisted.copy(firebaseConfigText = "", openaiKeyText = ""), activeProfile ?: "")
+        sync.push(sharable(persisted), activeProfile ?: "")
+        sync.pushAllTxns(persisted.txns)
         syncedAt = System.currentTimeMillis()
     }
+
+    /** What belongs in the shared state document: not this device's keys, and
+     *  not the transactions — those are documents of their own. */
+    private fun sharable(s: PersistedState) =
+        s.copy(txns = emptyList(), firebaseConfigText = "", openaiKeyText = "")
 
     override fun onCleared() {
         sync.disconnect()
@@ -102,8 +115,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun update(block: (PersistedState) -> PersistedState) {
         persisted = block(persisted).also { store.save(it) }
-        // The API keys are this device's own, not household data — never upload them.
-        sync.push(persisted.copy(firebaseConfigText = "", openaiKeyText = ""), activeProfile ?: "")
+        sync.push(sharable(persisted), activeProfile ?: "")
     }
 
     // ── persisted views ────────────────────────────────────────────────
@@ -258,7 +270,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** Tapping confirm: undo if already confirmed this month, otherwise open the sheet. */
     fun requestConfirm(e: Entry) {
         if (isConfirmed(e.id)) {
-            update { s -> s.copy(txns = s.txns.filterNot { it.entryId == e.id && it.period == currentPeriod() }) }
+            removeTxns { it.entryId == e.id && it.period == currentPeriod() }
             return
         }
         val kind = confirmKindFor(e)
@@ -275,20 +287,31 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** Loan EMIs are paid from the account stored on the loan, so no sheet appears. */
     fun confirmLoan(l: Loan) {
         if (isLoanConfirmed(l.id)) {
-            update { s -> s.copy(txns = s.txns.filterNot { it.loanId == l.id && it.period == currentPeriod() }) }
+            removeTxns { it.loanId == l.id && it.period == currentPeriod() }
             return
         }
         val from = l.accountId.ifEmpty { accountIdByName(defaultAccount) }
-        update { s ->
-            s.copy(
-                txns = s.txns + Txn(
-                    id = "t${s.nextTxnSeq}", date = today(), kind = "EXPENSE", amount = l.monthlyEmi,
-                    category = "EMI", fromAccountId = from, loanId = l.id,
-                    period = currentPeriod(), note = l.name
-                ),
-                nextTxnSeq = s.nextTxnSeq + 1
+        addTxn { seq ->
+            Txn(
+                id = seq, date = today(), kind = "EXPENSE", amount = l.monthlyEmi,
+                category = "EMI", fromAccountId = from, loanId = l.id,
+                period = currentPeriod(), note = l.name
             )
         }
+    }
+
+    /** Adds a transaction locally and as its own Firestore document. */
+    private fun addTxn(build: (id: String) -> Txn) {
+        val txn = build("t${persisted.nextTxnSeq}")
+        update { s -> s.copy(txns = s.txns + txn, nextTxnSeq = s.nextTxnSeq + 1) }
+        sync.upsertTxn(txn)
+    }
+
+    private fun removeTxns(match: (Txn) -> Boolean) {
+        val doomed = persisted.txns.filter(match)
+        if (doomed.isEmpty()) return
+        update { s -> s.copy(txns = s.txns.filterNot(match)) }
+        doomed.forEach { sync.deleteTxn(it.id) }
     }
 
     fun setConfirmFrom(id: String) { pendingConfirm = pendingConfirm?.copy(fromAccountId = id) }
@@ -298,16 +321,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun commitConfirm() {
         val p = pendingConfirm ?: return
         if (!p.isReady) return
-        update { s ->
-            s.copy(
-                txns = s.txns + Txn(
-                    id = "t${s.nextTxnSeq}", date = today(), kind = p.kind, amount = p.amount,
-                    category = p.category,
-                    fromAccountId = if (p.needsFrom) p.fromAccountId else "",
-                    toAccountId = if (p.needsTo) p.toAccountId else "",
-                    entryId = p.entryId, period = currentPeriod(), note = p.title
-                ),
-                nextTxnSeq = s.nextTxnSeq + 1
+        addTxn { seq ->
+            Txn(
+                id = seq, date = today(), kind = p.kind, amount = p.amount,
+                category = p.category,
+                fromAccountId = if (p.needsFrom) p.fromAccountId else "",
+                toAccountId = if (p.needsTo) p.toAccountId else "",
+                entryId = p.entryId, period = currentPeriod(), note = p.title
             )
         }
         pendingConfirm = null
