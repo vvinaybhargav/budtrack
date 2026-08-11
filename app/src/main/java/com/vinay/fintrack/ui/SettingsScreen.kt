@@ -1,6 +1,9 @@
 package com.vinay.fintrack.ui
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -49,45 +52,17 @@ fun SettingsScreen(vm: FinTrackViewModel) {
     ) {
         item {
             Column {
-                Heading("Profile")
+                // One Profiles section, not a "Profile" and a "Profiles".
                 Row(
-                    Modifier.fillMaxWidth(),
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = Space.s2),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(vm.activeProfile.orEmpty(), color = Pf.Text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Heading("Profiles")
                     SecondaryButton("Switch profile", vm::switchProfile)
                 }
-            }
-        }
-
-        item { Hairline() }
-
-        // Only while any of it is left.
-        if (vm.sampleDataCount > 0) {
-            item {
-                Column {
-                    Heading("Sample data")
-                    Muted(
-                        "${vm.sampleDataCount} made-up record(s) from first launch — " +
-                            "salaries, accounts, cards and loans. They inflate every " +
-                            "planned figure and balance once your own numbers are in."
-                    )
-                    Row(Modifier.padding(top = Space.s3)) {
-                        SecondaryButton("Remove sample data", { vm.clearSamples() })
-                    }
-                    if (vm.sampleNote.isNotEmpty()) {
-                        Muted(vm.sampleNote, Modifier.padding(top = Space.s2))
-                    }
-                }
-            }
-
-            item { Hairline() }
-        }
-
-        item {
-            Column {
-                Heading("Profiles")
                 Muted(
                     "Each profile sees only its own accounts, cards, loans, " +
                         "investments and set-asides. Joint isn't a sign-in — " +
@@ -172,20 +147,39 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                     else SecondaryButton("Ask for PIN", { vm.setAskPinOnLaunch(true) })
                 }
                 GhostButton("Lock now", vm::lockNow, Modifier.padding(top = Space.s2))
-            }
-        }
 
-        item { Hairline() }
-
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                Heading("Change PIN")
-                PfField("New 4-digit PIN", vm.pinNew, { vm.setPinField(true, it) }, numeric = true)
-                PfField("Confirm PIN", vm.pinConfirm, { vm.setPinField(false, it) }, numeric = true)
-                if (vm.pinMsg.isNotEmpty()) {
-                    Text(vm.pinMsg, color = if (vm.pinMsgIsError) Pf.Accent400 else Pf.Text, fontSize = 13.sp)
+                // Changing the PIN belongs with the lock, not in a section of
+                // its own two headings away.
+                Column(
+                    Modifier.padding(top = Space.s4),
+                    verticalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    Muted("Change PIN for ${vm.activeProfile.orEmpty()}")
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                        PfField(
+                            value = vm.pinNew,
+                            onValueChange = { vm.setPinField(true, it) },
+                            placeholder = "New PIN",
+                            numeric = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        PfField(
+                            value = vm.pinConfirm,
+                            onValueChange = { vm.setPinField(false, it) },
+                            placeholder = "Confirm",
+                            numeric = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    if (vm.pinMsg.isNotEmpty()) {
+                        Text(
+                            vm.pinMsg,
+                            color = if (vm.pinMsgIsError) Pf.Accent400 else Pf.Text,
+                            fontSize = 13.sp
+                        )
+                    }
+                    PrimaryButton("Save PIN", vm::savePin)
                 }
-                PrimaryButton("Save PIN", vm::savePin)
             }
         }
 
@@ -236,12 +230,11 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        item { Hairline() }
-
         item {
-            Column {
-                Heading("Category budgets")
-                Muted("A monthly limit per category. The Home bars measure real confirmed spend against these.")
+            // Budgets are per category, so they sit with the categories rather
+            // than behind their own heading.
+            Column(Modifier.padding(top = Space.s4)) {
+                Muted("Monthly limits. The Home bars measure real recorded spend against these.")
                 Column(
                     Modifier.padding(top = Space.s3),
                     verticalArrangement = Arrangement.spacedBy(Space.s2)
@@ -410,6 +403,27 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                 }
             }
         }
+
+        // Last, and only while any is left: a one-off cleanup, not a setting.
+        if (vm.sampleDataCount > 0) {
+            item { Hairline() }
+            item {
+                Column {
+                    Heading("Sample data")
+                    Muted(
+                        "${vm.sampleDataCount} made-up record(s) from first launch — " +
+                            "salaries, accounts, cards and loans. They inflate every " +
+                            "planned figure and balance once your own numbers are in."
+                    )
+                    Row(Modifier.padding(top = Space.s3)) {
+                        SecondaryButton("Remove sample data", { vm.clearSamples() })
+                    }
+                    if (vm.sampleNote.isNotEmpty()) {
+                        Muted(vm.sampleNote, Modifier.padding(top = Space.s2))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -445,11 +459,21 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
     val context = LocalContext.current
     var hasPermission by remember { mutableStateOf(hasSmsPermission(context)) }
 
+    // Android stops showing the prompt after it has been declined, and SMS is
+    // among the permissions it is strictest about. Without noticing that, the
+    // button just does nothing and the only way through is App info.
+    var blocked by remember { mutableStateOf(false) }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
         hasPermission = grants.values.all { it }
-        if (hasPermission) vm.setSmsImport(true)
+        if (hasPermission) {
+            blocked = false
+            vm.setSmsImport(true)
+        } else {
+            blocked = true
+        }
     }
 
     Column {
@@ -493,6 +517,26 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
                     { vm.backfillSms() },
                     enabled = !vm.scanning
                 )
+            }
+        }
+
+        // Takes you straight to the page rather than leaving you to find it.
+        if (blocked && !hasPermission) {
+            Column(Modifier.padding(top = Space.s3)) {
+                Muted(
+                    "Android won't ask again once SMS access has been declined. " +
+                        "Turn it on under Permissions, then come back."
+                )
+                Row(Modifier.padding(top = Space.s2)) {
+                    PrimaryButton("Open app permissions", onClick = {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.fromParts("package", context.packageName, null)
+                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    })
+                }
             }
         }
 

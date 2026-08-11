@@ -542,9 +542,9 @@ private fun CardsSection(vm: FinTrackViewModel) {
 @Composable
 private fun CommitmentsSection(vm: FinTrackViewModel) {
     Column {
-        SectionTitle("Confirm this month", Modifier.padding(bottom = Space.s1))
+        SectionTitle("Recurring · this month", Modifier.padding(bottom = Space.s1))
         Muted(
-            "Recurring savings & investments — log them once they've gone through.",
+            "Paid every month. Confirm each once it has actually gone through.",
             Modifier.padding(bottom = Space.s3)
         )
         PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s2)) {
@@ -598,7 +598,7 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
     val items = vm.annualSetAsides
     if (items.isEmpty()) return
     Column {
-        SectionTitle("Set aside this month", Modifier.padding(bottom = Space.s1))
+        SectionTitle("Set aside · this month", Modifier.padding(bottom = Space.s1))
         Muted(
             "Repeating commitments split across the months between payments. " +
                 "Confirming moves the money to your set-aside account — it isn't spent.",

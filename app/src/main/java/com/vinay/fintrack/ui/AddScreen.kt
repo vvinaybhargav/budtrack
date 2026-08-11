@@ -26,26 +26,27 @@ import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.INVEST_PICKABLE
 import com.vinay.fintrack.data.inr
 
-// Monthly expense and Monthly bill are gone — both read as "money I just spent"
-// and produced a plan that never reached Transactions. One "Recurring / Set
-// aside" replaces them, since without it there is no way to create a set-aside
-// at all.
+// Recurring and Set aside are separate kinds: one is paid every month, the
+// other every few months and put by in between. They behave differently enough
+// on Home that choosing between them belongs here, not in a period dropdown.
 private val ADD_KINDS = listOf(
     "ONE_TIME" to "One-time",
-    "RECURRING" to "Recurring / Set aside",
+    "RECURRING" to "Recurring",
+    "SET_ASIDE" to "Set aside",
     "EMI_LOAN" to "EMI / Loan",
     "INVESTMENT" to "Investment",
     "BANK_ACCOUNT" to "Bank Account",
     "CREDIT_CARD" to "Credit Card"
 )
 
-/** 1–12 months between payments. 1 is an ordinary monthly commitment, 12 the
- *  old "annual"; anything above 1 is set aside a month at a time. */
-private val PERIOD_OPTIONS = (1..12).map { if (it == 1) "Every month" else "Every $it months" }
+/** A set-aside is paid every 2 to 12 months; every month would just be a
+ *  recurring commitment, which is its own kind. */
+private val PERIOD_OPTIONS = (2..12).map { "Every $it months" }
 
-private fun periodLabel(months: Int) = PERIOD_OPTIONS[(months.coerceIn(1, 12)) - 1]
+private fun periodLabel(months: Int) = "Every ${months.coerceIn(2, 12)} months"
 
-private fun periodFromLabel(label: String) = PERIOD_OPTIONS.indexOf(label) + 1
+private fun periodFromLabel(label: String) =
+    label.filter { it.isDigit() }.toIntOrNull()?.coerceIn(2, 12) ?: 12
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -81,11 +82,15 @@ fun AddScreen(vm: FinTrackViewModel) {
                     }
                     // The difference that keeps catching people out.
                     Muted(
-                        if (vm.addKind == "ONE_TIME") {
-                            "Money that has already gone. Recorded in Transactions straight away."
-                        } else {
-                            "A commitment that repeats. It waits on Home and only reaches " +
-                                "Transactions when you confirm it each month."
+                        when (vm.addKind) {
+                            "ONE_TIME" ->
+                                "Money that has already gone. Recorded in Transactions straight away."
+                            "SET_ASIDE" ->
+                                "Paid every few months. Home asks you to put by a share each " +
+                                    "month, which moves it to savings rather than spending it."
+                            else ->
+                                "A commitment that repeats each month. It waits on Home and " +
+                                    "only reaches Transactions when you confirm it."
                         },
                         Modifier.padding(top = Space.s2)
                     )
@@ -228,7 +233,8 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
         vm.categories
     }
     val notePlaceholder = if (isEditing) "Optional note" else when (vm.addKind) {
-        "RECURRING" -> "e.g. Car insurance, school fees…"
+        "RECURRING" -> "e.g. Groceries, Wi-Fi, music class…"
+        "SET_ASIDE" -> "e.g. Car insurance, school fees…"
         "INVESTMENT" -> "e.g. Monthly SIP, PPF contribution…"
         "ONE_TIME" -> "e.g. Diwali gift, appliance purchase…"
         else -> "e.g. Groceries, electricity bill…"
@@ -249,18 +255,23 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
         PfField("Amount (₹)", vm.draft.amountText, { vm.draft = vm.draft.copy(amountText = it) }, placeholder = "e.g. 5000", numeric = true)
         val oneOff = !isEditing && vm.addKind == "ONE_TIME"
         if (!oneOff) {
-            PfSelect(
-                "Repeats",
-                periodLabel(vm.draft.periodMonths),
-                PERIOD_OPTIONS,
-                { vm.draft = vm.draft.copy(periodMonths = periodFromLabel(it)) }
-            )
-            if (vm.draft.periodMonths > 1) {
-                val amount = vm.draft.amountText.toDoubleOrNull() ?: 0.0
-                Muted(
-                    "Set aside ${inr(amount / vm.draft.periodMonths)} a month " +
-                        "towards it, on the Home screen."
+            // Only a set-aside has a period to choose; a recurring commitment is
+            // monthly by definition, which is what separates the two.
+            if (isEditing || vm.addKind == "SET_ASIDE") {
+                PfSelect(
+                    "Paid",
+                    periodLabel(vm.draft.periodMonths),
+                    PERIOD_OPTIONS,
+                    { vm.draft = vm.draft.copy(periodMonths = periodFromLabel(it)) }
                 )
+                val amount = vm.draft.amountText.toDoubleOrNull() ?: 0.0
+                if (amount > 0) {
+                    Muted(
+                        "Put by ${inr(amount / vm.draft.periodMonths.coerceAtLeast(1))} a month " +
+                            "towards it. Confirming that on Home moves it to a savings " +
+                            "account rather than spending it."
+                    )
+                }
             }
             // Which account this is paid from, asked once here so confirming it
             // later starts from the right account instead of the joint default.

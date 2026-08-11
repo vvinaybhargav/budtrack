@@ -757,7 +757,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         addKind = k
         val p = scopePerson
         when (k) {
-            "RECURRING" -> draft = Draft(person = p, type = "EXPENSE", frequency = "MONTHLY")
+            "RECURRING" -> draft = Draft(person = p, type = "EXPENSE", frequency = "MONTHLY", periodMonths = 1)
+            "SET_ASIDE" -> draft = Draft(person = p, type = "EXPENSE", frequency = "ANNUAL", periodMonths = 12)
             "INVESTMENT" -> draft = Draft(person = p, type = "SAVINGS", category = "LIC", frequency = "MONTHLY")
             "ONE_TIME" -> draft = Draft(person = p, type = "EXPENSE", frequency = "ONE_TIME")
             "EMI_LOAN" -> newLoanDraft = NewLoanDraft(person = p)
