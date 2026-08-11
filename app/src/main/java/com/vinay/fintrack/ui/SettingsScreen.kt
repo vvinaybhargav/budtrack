@@ -68,7 +68,8 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                 Heading("Profiles")
                 Muted(
                     "Each profile sees only its own accounts, cards, loans, " +
-                        "investments and set-asides. Joint is shared by everyone."
+                        "investments and set-asides. Joint isn't a sign-in — " +
+                        "switch to it at the top of Home to see the shared side."
                 )
                 Column(
                     Modifier.padding(top = Space.s3),

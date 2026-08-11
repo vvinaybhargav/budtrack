@@ -318,7 +318,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     var pinError by mutableStateOf(false); private set
 
     var tab by mutableStateOf(Tab.HOME)
-    var bucketView by mutableStateOf("JOINT")
+    var bucketView by mutableStateOf("PERSONAL")
     var balanceHidden by mutableStateOf(false); private set
     var expandedLoan by mutableStateOf<String?>(null); private set
 
@@ -416,6 +416,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val name = newProfileName.trim()
         when {
             name.isEmpty() -> profileMsg = "Give the profile a name."
+            name.equals("Joint", true) ->
+                profileMsg = "Joint is the shared side you switch to on Home, not a sign-in."
             name in persisted.profiles.keys -> profileMsg = "That profile already exists."
             newProfilePin.length != 4 -> profileMsg = "PIN must be 4 digits."
             else -> {
@@ -665,7 +667,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelEdit() {
         editingEntryId = null
-        draft = Draft(person = activeProfile ?: "Me")
+        draft = Draft(person = scopePerson)
         addKind = "ONE_TIME"
     }
 
@@ -676,7 +678,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // ── add ────────────────────────────────────────────────────────────
     fun selectAddKind(k: String) {
         addKind = k
-        val p = activeProfile ?: "Me"
+        val p = scopePerson
         when (k) {
             "RECURRING" -> draft = Draft(person = p, type = "EXPENSE", frequency = "MONTHLY")
             "INVESTMENT" -> draft = Draft(person = p, type = "SAVINGS", category = "LIC", frequency = "MONTHLY")
@@ -754,7 +756,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 note = draft.note.ifEmpty { draft.category }
             )
         }
-        draft = Draft(person = activeProfile ?: "Me")
+        draft = Draft(person = scopePerson)
         oneOffAccountId = ""
         oneOffIsCredit = false
         oneOffDateText = todayDayFirst()
@@ -788,7 +790,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
         editingEntryId = null
         smartText = ""
-        draft = Draft(person = activeProfile ?: "Me")
+        draft = Draft(person = scopePerson)
         // Home, not Transactions: an entry is the plan, and Transactions now
         // lists recorded movements only — landing there looked like a failed save.
         tab = Tab.HOME
@@ -1046,10 +1048,35 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // ── derived ────────────────────────────────────────────────────────
     private fun visible(person: String) = person == activeProfile || person == "Joint"
 
+    // visible* is everything this profile may touch — mine plus joint — and is
+    // what account pickers offer, so a joint account stays choosable from the
+    // personal side.
     val visibleEntries: List<Entry> get() = entries.filter { visible(it.person) }
     val visibleAccounts: List<Account> get() = accounts.filter { visible(it.person) }
     val visibleLoans: List<Loan> get() = loans.filter { visible(it.person) }
     val visibleCards: List<Card> get() = cards.filter { visible(it.owner) }
+
+    /**
+     * scoped* is the narrower thing: only the side the Home switch is on, so
+     * flipping to Joint shows the shared accounts and commitments alone rather
+     * than mixing them with personal ones.
+     */
+    private fun inScope(person: String) =
+        if (bucketView == "JOINT") person == "Joint" else person == activeProfile
+
+    val scopedEntries: List<Entry> get() = visibleEntries.filter { inScope(it.person) }
+    val scopedAccounts: List<Account> get() = visibleAccounts.filter { inScope(it.person) }
+    val scopedLoans: List<Loan> get() = visibleLoans.filter { inScope(it.person) }
+    val scopedCards: List<Card> get() = visibleCards.filter { inScope(it.owner) }
+
+    /** Who a new entry is for, following the switch. */
+    val scopePerson: String get() = if (bucketView == "JOINT") "Joint" else activeProfile ?: "Me"
+
+    fun setScope(joint: Boolean) {
+        bucketView = if (joint) "JOINT" else "PERSONAL"
+        // So the Add form opens on the side you're looking at.
+        draft = draft.copy(person = scopePerson)
+    }
 
     /**
      * Balances for every account in one pass, cached against the transaction
@@ -1078,7 +1105,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      *  restores the old number without any inverse bookkeeping. */
     fun balanceOf(a: Account): Double = balances()[a.id] ?: a.openingBalance
 
-    val totalBalance: Double get() = visibleAccounts.sumOf { balanceOf(it) }
+    val totalBalance: Double get() = scopedAccounts.sumOf { balanceOf(it) }
 
     val txns: List<Txn> get() = persisted.txns
     val recentTxns: List<Txn> get() = persisted.txns.sortedByDescending { it.date + it.id }.take(30)
@@ -1093,12 +1120,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    val monthlyIncome: Double get() = visibleEntries.filter { it.type == "INCOME" }.sumOf { it.monthly }
-    val monthlyExpense: Double get() = visibleEntries.filter { it.type == "EXPENSE" }.sumOf { it.monthly }
+    val monthlyIncome: Double get() = scopedEntries.filter { it.type == "INCOME" }.sumOf { it.monthly }
+    val monthlyExpense: Double get() = scopedEntries.filter { it.type == "EXPENSE" }.sumOf { it.monthly }
     val monthlyInvestment: Double
-        get() = visibleEntries.filter { it.type == "SAVINGS" && it.category in INVEST_CATEGORIES }.sumOf { it.monthly }
+        get() = scopedEntries.filter { it.type == "SAVINGS" && it.category in INVEST_CATEGORIES }.sumOf { it.monthly }
     val monthlySavings: Double
-        get() = visibleEntries.filter { it.type == "SAVINGS" && it.category !in INVEST_CATEGORIES }.sumOf { it.monthly }
+        get() = scopedEntries.filter { it.type == "SAVINGS" && it.category !in INVEST_CATEGORIES }.sumOf { it.monthly }
 
     /** Actual money out for this category this month — confirmed transactions only,
      *  not the plan. A budget bar you can't move by planning is the point. */
@@ -1128,7 +1155,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Regular monthly outgoings — everything except EMIs (own section) and annuals. */
     val commitments: List<Entry>
-        get() = visibleEntries.filter {
+        get() = scopedEntries.filter {
             // ONE_TIME excluded: older builds saved one-off payments as entries,
             // which then asked to be confirmed again every month.
             !it.isSetAside && it.frequency != "ONE_TIME" &&
@@ -1141,7 +1168,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * is waiting when the yearly bill actually lands.
      */
     val annualSetAsides: List<Entry>
-        get() = visibleEntries.filter { it.isSetAside && it.type != "INCOME" }
+        get() = scopedEntries.filter { it.isSetAside && it.type != "INCOME" }
 
     val annualSetAsideMonthly: Double get() = annualSetAsides.sumOf { it.monthly }
 
@@ -1183,9 +1210,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun inBucket(t: Txn): Boolean {
         val person = txnPerson(t)
-        // Signed in as Joint, everything visible is shared — the toggle is
-        // hidden and both sides would otherwise show the same list.
-        if (activeProfile == "Joint") return person == "Joint" || person.isEmpty()
         return if (bucketView == "PERSONAL") person == activeProfile
         // Unknown owners land here rather than nowhere: an orphaned transaction
         // must stay reachable, even if its account has been deleted.
@@ -1268,10 +1292,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * were created.
      */
     init {
-        // Existing installs were seeded before Joint was a profile you could
-        // sign in to, so it won't be in their list.
-        if ("Joint" !in persisted.profiles.keys) {
-            update { it.copy(profiles = it.profiles + ("Joint" to "1234")) }
+        // Joint briefly was a sign-in profile; it's a view now, so take it back
+        // out of the list rather than leaving a login nobody should use.
+        if ("Joint" in persisted.profiles.keys) {
+            update { it.copy(profiles = it.profiles - "Joint") }
         }
         // Unlocked without the keypad, so the draft never got its owner.
         if (!isLocked) draft = Draft(person = activeProfile ?: "Me")
@@ -1299,14 +1323,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** The whole of who an entry is for: shared, or this profile's own. */
     val forOptions: List<String> get() = listOfNotNull("Joint", activeProfile).distinct()
 
-    /** Signed in as Joint there is no personal side, so the split is hidden. */
-    val showsBuckets: Boolean get() = activeProfile != "Joint"
-
-    /** Header label — a stale "Personal" would otherwise show for the Joint
-     *  profile, which has no personal side at all. */
+    /** Header label for whichever side the Home switch is on. */
     val bucketLabel: String
-        get() = if (!showsBuckets) "Joint"
-        else bucketView.lowercase().replaceFirstChar { it.uppercase() }
+        get() = if (bucketView == "JOINT") "Joint" else activeProfile.orEmpty()
 
     /** Who it's for. The bucket follows from this, and so does the account
      *  unless one was picked deliberately. */

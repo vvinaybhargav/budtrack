@@ -40,22 +40,21 @@ fun EntriesScreen(vm: FinTrackViewModel) {
     ) {
         item { Text("Transactions", color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold) }
 
-        // Nothing to split when the Joint profile is the one signed in.
-        if (vm.showsBuckets) {
-            item {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(Pf.Surface2, Radius.Pill)
-                        .padding(3.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    BucketTab(vm.activeProfile ?: "Personal", vm.bucketView == "PERSONAL", Modifier.weight(1f)) {
-                        vm.bucketView = "PERSONAL"
-                    }
-                    BucketTab("Joint", vm.bucketView == "JOINT", Modifier.weight(1f)) {
-                        vm.bucketView = "JOINT"
-                    }
+        // The same switch as Home — one piece of state, so flipping it either
+        // place keeps both screens on the same side.
+        item {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Pf.Surface2, Radius.Pill)
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                BucketTab(vm.activeProfile ?: "Personal", vm.bucketView == "PERSONAL", Modifier.weight(1f)) {
+                    vm.setScope(false)
+                }
+                BucketTab("Joint", vm.bucketView == "JOINT", Modifier.weight(1f)) {
+                    vm.setScope(true)
                 }
             }
         }

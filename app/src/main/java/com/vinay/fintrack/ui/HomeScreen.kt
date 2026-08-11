@@ -45,6 +45,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
         contentPadding = PaddingValues(Space.s4),
         verticalArrangement = Arrangement.spacedBy(Space.s6)
     ) {
+        item { ScopeSwitch(vm) }
         item { QuickAdd(vm) }
         item { BalanceCard(vm) }
         item { AccountsSection(vm) }
@@ -141,6 +142,42 @@ private fun ConfirmSheet(vm: FinTrackViewModel) {
     }
 }
 
+/**
+ * Flips the whole screen — accounts, loans, cards, commitments, set-asides and
+ * the month's figures — between your own side and the shared one, and sets
+ * what a new entry defaults to. Joint is a view, not a separate sign-in.
+ */
+@Composable
+private fun ScopeSwitch(vm: FinTrackViewModel) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(Pf.Surface2, Radius.Pill)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        ScopeTab(vm.activeProfile ?: "Personal", vm.bucketView == "PERSONAL", Modifier.weight(1f)) {
+            vm.setScope(false)
+        }
+        ScopeTab("Joint", vm.bucketView == "JOINT", Modifier.weight(1f)) { vm.setScope(true) }
+    }
+}
+
+@Composable
+private fun ScopeTab(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Text(
+        label,
+        modifier
+            .background(if (selected) Pf.Accent else Color.Transparent, Radius.Pill)
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        color = if (selected) Color.White else Pf.Text,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+    )
+}
+
 @Composable
 private fun QuickAdd(vm: FinTrackViewModel) {
     Column {
@@ -225,7 +262,7 @@ private fun BalanceCard(vm: FinTrackViewModel) {
             fontSize = 38.sp,
             fontWeight = FontWeight.ExtraBold
         )
-        Muted("Across ${vm.visibleAccounts.size} accounts", Modifier.padding(top = 4.dp))
+        Muted("Across ${vm.scopedAccounts.size} accounts", Modifier.padding(top = 4.dp))
     }
 }
 
@@ -234,7 +271,7 @@ private fun AccountsSection(vm: FinTrackViewModel) {
     Column {
         SectionTitle("Accounts", Modifier.padding(bottom = Space.s3))
         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-            vm.visibleAccounts.forEach { a ->
+            vm.scopedAccounts.forEach { a ->
                 PfCard {
                     if (vm.editingAccountId == a.id) {
                         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
@@ -356,7 +393,7 @@ private fun LoansSection(vm: FinTrackViewModel) {
     Column {
         SectionTitle("Loans", Modifier.padding(bottom = Space.s3))
         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-            vm.visibleLoans.forEach { l ->
+            vm.scopedLoans.forEach { l ->
                 PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
                     if (vm.editingLoanId == l.id) {
                         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
@@ -426,11 +463,11 @@ private fun LoansSection(vm: FinTrackViewModel) {
 
 @Composable
 private fun CardsSection(vm: FinTrackViewModel) {
-    if (vm.visibleCards.isEmpty()) return
+    if (vm.scopedCards.isEmpty()) return
     Column {
         SectionTitle("Credit cards", Modifier.padding(bottom = Space.s3))
         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-            vm.visibleCards.forEach { c ->
+            vm.scopedCards.forEach { c ->
                 PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
                     if (vm.editingCardId == c.id) {
                         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
