@@ -21,6 +21,7 @@ import com.vinay.fintrack.data.parseFirebaseConfig
 import com.vinay.fintrack.data.Txn
 import com.vinay.fintrack.data.currentPeriod
 import com.vinay.fintrack.data.inr
+import com.vinay.fintrack.data.newId
 import com.vinay.fintrack.data.today
 import com.vinay.fintrack.data.ownerLabel
 import com.vinay.fintrack.data.parseSmartAdd
