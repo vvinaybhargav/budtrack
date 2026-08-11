@@ -31,6 +31,9 @@ import com.vinay.fintrack.data.todayDayFirst
 import com.vinay.fintrack.data.ownerLabel
 import com.vinay.fintrack.data.parseSmartAdd
 import com.vinay.fintrack.data.prettyDate
+// The String overload of put is an extension; without it the member overload
+// takes over and only accepts a JsonElement.
+import kotlinx.serialization.json.put
 
 enum class Tab { HOME, ENTRIES, ADD, CHAT, SETTINGS }
 
