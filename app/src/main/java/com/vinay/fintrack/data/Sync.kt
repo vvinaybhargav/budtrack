@@ -312,8 +312,10 @@ class FirestoreSync(private val context: Context) {
      *  don't overwrite each other the way a single state blob would. */
     private fun txnsCollection(db: FirebaseFirestore) = stateDoc(db).collection(TXNS)
 
+    // No applyingRemote guard here, unlike the state document: these are only
+    // ever called for a genuinely local change, never echoing a remote one, and
+    // a silent no-op would lose an imported transaction.
     fun upsertTxn(t: Txn) {
-        if (applyingRemote) return
         val target = db ?: return
         @Suppress("UNCHECKED_CAST")
         val map = toFirestore(json.encodeToJsonElement(Txn.serializer(), t)) as Map<String, Any?>
@@ -326,7 +328,6 @@ class FirestoreSync(private val context: Context) {
     }
 
     fun deleteTxn(id: String) {
-        if (applyingRemote) return
         val target = db ?: return
         txnsCollection(target).document(id).delete()
             .addOnFailureListener { e -> Log.w(TAG, "deleteTxn failed", e) }

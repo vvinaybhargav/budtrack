@@ -14,6 +14,7 @@ import com.vinay.fintrack.data.INVEST_CATEGORIES
 import com.vinay.fintrack.data.Loan
 import com.vinay.fintrack.data.PersistedState
 import com.vinay.fintrack.data.SAVINGS_CATEGORIES
+import com.vinay.fintrack.data.ScreenshotImporter
 import com.vinay.fintrack.data.Store
 import com.vinay.fintrack.data.SyncStatus
 import com.vinay.fintrack.data.parseFirebaseConfig
@@ -23,6 +24,7 @@ import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.today
 import com.vinay.fintrack.data.ownerLabel
 import com.vinay.fintrack.data.parseSmartAdd
+import com.vinay.fintrack.work.ScreenshotWorker
 
 enum class Tab { HOME, ENTRIES, ADD, SETTINGS }
 
@@ -52,6 +54,7 @@ data class NewCardDraft(
 
 class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
+    private val appContext = app.applicationContext
     private val store = Store(app)
     private var persisted by mutableStateOf(store.load())
 
@@ -96,6 +99,67 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Why anonymous sign-in didn't happen — informational, not a failure. */
     val syncAuthNote: String get() = sync.authNote
+
+    // ── screenshot import ──────────────────────────────────────────────
+    private val importer = ScreenshotImporter(app.applicationContext)
+
+    var scanning by mutableStateOf(false); private set
+    var scanNote by mutableStateOf(""); private set
+
+    val screenshotImportOn: Boolean get() = persisted.screenshotImportOn
+    val importedCount: Int get() = persisted.txns.count { it.source == "phonepe" }
+    val pendingMoveCount: Int get() = persisted.pendingMoves.size
+    val lastScanAt: Long get() = persisted.lastScreenshotScan
+
+    fun setScreenshotImport(on: Boolean) {
+        update { it.copy(screenshotImportOn = on) }
+        if (on) ScreenshotWorker.schedule(appContext) else ScreenshotWorker.cancel(appContext)
+        scanNote = if (on) "Scanning every 15 minutes." else "Automatic scanning off."
+    }
+
+    /**
+     * Runs a scan off the main thread, then reloads what the importer wrote and
+     * pushes the new transactions up.
+     */
+    fun scanScreenshotsNow() {
+        if (scanning) return
+        scanning = true
+        scanNote = "Scanning…"
+        Thread {
+            val result = runCatching { importer.run() }.getOrNull()
+            val before = persisted.txns.map { it.id }.toSet()
+            val reloaded = store.load()
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                persisted = reloaded.copy(
+                    firebaseConfigText = persisted.firebaseConfigText,
+                    openaiKeyText = persisted.openaiKeyText
+                )
+                reloaded.txns.filterNot { it.id in before }.forEach { sync.upsertTxn(it) }
+                scanning = false
+                scanNote = when {
+                    result == null -> "Scan failed — check the media permission."
+                    result.imported == 0 -> "No new PhonePe receipts found."
+                    else -> "Added ${result.imported} transaction(s)."
+                }
+            }
+        }.start()
+    }
+
+    /** URIs waiting to be moved into Pictures/PhonePe. */
+    fun pendingMoveUris(): List<android.net.Uri> =
+        persisted.pendingMoves.mapNotNull { runCatching { android.net.Uri.parse(it) }.getOrNull() }
+
+    fun clearPendingMoves() = update { it.copy(pendingMoves = emptyList()) }
+
+    fun noteMoved(count: Int) {
+        scanNote = if (count > 0) "Moved $count screenshot(s) to Pictures/PhonePe."
+        else "Couldn't move those files."
+    }
+
+    val lastScanClock: String
+        get() = if (lastScanAt == 0L) "" else
+            java.text.SimpleDateFormat("HH:mm", java.util.Locale("en", "IN"))
+                .format(java.util.Date(lastScanAt))
 
     fun pushNow() {
         sync.push(sharable(persisted), activeProfile ?: "")

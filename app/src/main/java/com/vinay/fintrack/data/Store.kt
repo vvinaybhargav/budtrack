@@ -19,6 +19,13 @@ data class PersistedState(
     val defaultAccount: String = "ICICI Joint",
     val firebaseConfigText: String = "",
     val openaiKeyText: String = "",
+    /** Epoch millis of the last screenshot scan, so each run is incremental. */
+    val lastScreenshotScan: Long = 0L,
+    /** UTRs already imported — the duplicate guard for a rescan. */
+    val importedRefs: Set<String> = emptySet(),
+    /** Screenshot URIs waiting for the batched move-consent dialog. */
+    val pendingMoves: List<String> = emptyList(),
+    val screenshotImportOn: Boolean = false,
     val nextTxnSeq: Int = 1,
     val nextEntrySeq: Int = 16,
     val nextLoanSeq: Int = 4,

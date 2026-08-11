@@ -1,5 +1,11 @@
 package com.vinay.fintrack.ui
 
+import android.Manifest
+import android.app.Activity
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,7 +24,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.font.FontFamily
@@ -26,9 +37,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
+import com.vinay.fintrack.data.ScreenshotMover
 import com.vinay.fintrack.data.SyncStatus
 import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.today
+import com.vinay.fintrack.work.ScreenshotWorker
 
 @Composable
 fun SettingsScreen(vm: FinTrackViewModel) {
@@ -188,6 +201,10 @@ fun SettingsScreen(vm: FinTrackViewModel) {
 
         item { Hairline() }
 
+        item { ScreenshotImportSection(vm) }
+
+        item { Hairline() }
+
         item {
             Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
                 Heading("Sync")
@@ -299,5 +316,108 @@ private fun SmallIcon(
             Modifier.size(14.dp),
             tint = if (enabled) Pf.Accent400 else Pf.Muted.copy(alpha = 0.4f)
         )
+    }
+}
+
+/**
+ * PhonePe screenshot import. Two system prompts are involved and neither can be
+ * avoided: reading images at all, and — on Android 11+ — moving files the app
+ * didn't create. The move consent is asked once per batch, not per file.
+ */
+@Composable
+private fun ScreenshotImportSection(vm: FinTrackViewModel) {
+    val context = LocalContext.current
+    var hasPermission by remember { mutableStateOf(ScreenshotWorker.hasMediaPermission(context)) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasPermission = granted
+        if (granted) vm.setScreenshotImport(true)
+    }
+
+    val moveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val moved = ScreenshotMover(context).move(vm.pendingMoveUris())
+            vm.clearPendingMoves()
+            vm.noteMoved(moved)
+        }
+    }
+
+    Column {
+        Heading("PhonePe screenshots")
+        Muted(
+            "Reads receipts from your Screenshots folder with on-device OCR and " +
+                "adds them as transactions automatically."
+        )
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = Space.s3),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Muted("Automatic scan")
+            if (vm.screenshotImportOn) Tag("On", Pf.Accent2_100, Pf.Accent2_800)
+            else OutlineTag("Off")
+        }
+
+        Row(
+            Modifier.padding(top = Space.s3),
+            horizontalArrangement = Arrangement.spacedBy(Space.s2)
+        ) {
+            if (!hasPermission) {
+                PrimaryButton("Allow access") {
+                    permissionLauncher.launch(
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            Manifest.permission.READ_MEDIA_IMAGES
+                        } else {
+                            Manifest.permission.READ_EXTERNAL_STORAGE
+                        }
+                    )
+                }
+            } else if (vm.screenshotImportOn) {
+                SecondaryButton("Turn off", { vm.setScreenshotImport(false) })
+            } else {
+                PrimaryButton("Turn on", { vm.setScreenshotImport(true) })
+            }
+            if (hasPermission) {
+                SecondaryButton(
+                    if (vm.scanning) "Scanning…" else "Scan now",
+                    vm::scanScreenshotsNow,
+                    enabled = !vm.scanning
+                )
+            }
+        }
+
+        if (vm.scanNote.isNotEmpty()) {
+            Muted(vm.scanNote, Modifier.padding(top = Space.s2))
+        }
+        Muted(
+            "${vm.importedCount} imported so far" +
+                if (vm.lastScanAt > 0L) " · last scan ${vm.lastScanClock}" else "",
+            Modifier.padding(top = Space.s1)
+        )
+
+        // Android will not relocate another app's images silently, so this is a
+        // deliberate button rather than something that happens behind your back.
+        if (vm.pendingMoveCount > 0) {
+            Column(Modifier.padding(top = Space.s3)) {
+                Muted("${vm.pendingMoveCount} screenshot(s) ready to move into Pictures/PhonePe")
+                PrimaryButton("Move to PhonePe folder") {
+                    val sender = ScreenshotMover(context).consentRequest(vm.pendingMoveUris())
+                    if (sender != null) {
+                        moveLauncher.launch(IntentSenderRequest.Builder(sender).build())
+                    } else {
+                        val moved = ScreenshotMover(context).move(vm.pendingMoveUris())
+                        vm.clearPendingMoves()
+                        vm.noteMoved(moved)
+                    }
+                }
+            }
+        }
     }
 }

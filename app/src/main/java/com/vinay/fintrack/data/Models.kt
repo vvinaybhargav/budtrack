@@ -59,7 +59,13 @@ data class Txn(
     val entryId: String = "",         // the commitment this settles, if any
     val loanId: String = "",
     val period: String = "",          // yyyy-MM the confirmation belongs to
-    val note: String = ""
+    val note: String = "",
+    /** UPI reference (UTR) for imported ones — what stops a rescan duplicating. */
+    val ref: String = "",
+    /** "phonepe" when OCR'd from a screenshot, empty when entered by hand. */
+    val source: String = "",
+    /** Exactly what OCR read, so a misread amount can be traced back. */
+    val rawAmountText: String = ""
 ) {
     val month: String get() = period.ifEmpty { date.take(7) }
 }
