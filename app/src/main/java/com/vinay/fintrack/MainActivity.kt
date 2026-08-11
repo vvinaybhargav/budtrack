@@ -125,11 +125,7 @@ private fun Header(vm: FinTrackViewModel) {
                     )
                 }
             }
-            Tag(
-                vm.bucketView.lowercase().replaceFirstChar { it.uppercase() },
-                Pf.Accent100,
-                Pf.Accent800
-            )
+            Tag(vm.bucketLabel, Pf.Accent100, Pf.Accent800)
         }
         Hairline()
     }

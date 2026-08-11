@@ -15,7 +15,11 @@ data class PersistedState(
      *  separately — so un-confirming is just deleting the transaction. */
     val txns: List<Txn> = emptyList(),
     val budgets: Map<String, Double> = Seed.budgets,
-    val profiles: Map<String, String> = mapOf("Me" to "1234", "Wife" to "1234"),
+    /** Joint is a profile you can sign in to, not only a side of the data:
+     *  signing in as it shows the shared accounts and commitments and nothing
+     *  personal. Both people know its PIN. */
+    val profiles: Map<String, String> =
+        mapOf("Me" to "1234", "Wife" to "1234", "Joint" to "1234"),
     val categories: List<String> = Seed.categoriesMedium,
     val defaultAccount: String = "ICICI Joint",
     val firebaseConfigText: String = "",

@@ -416,8 +416,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val name = newProfileName.trim()
         when {
             name.isEmpty() -> profileMsg = "Give the profile a name."
-            name.equals("Joint", true) ->
-                profileMsg = "\"Joint\" is the shared side, not a profile."
             name in persisted.profiles.keys -> profileMsg = "That profile already exists."
             newProfilePin.length != 4 -> profileMsg = "PIN must be 4 digits."
             else -> {
@@ -431,6 +429,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun removeProfile(name: String) {
         when {
             name == activeProfile -> profileMsg = "Can't remove the profile you're using."
+            // Shared accounts and commitments are filed against it.
+            name == "Joint" -> profileMsg = "Joint is shared and can't be removed."
             persisted.profiles.size <= 1 -> profileMsg = "Keep at least one profile."
             else -> {
                 update { it.copy(profiles = it.profiles - name) }
@@ -1183,6 +1183,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun inBucket(t: Txn): Boolean {
         val person = txnPerson(t)
+        // Signed in as Joint, everything visible is shared — the toggle is
+        // hidden and both sides would otherwise show the same list.
+        if (activeProfile == "Joint") return person == "Joint" || person.isEmpty()
         return if (bucketView == "PERSONAL") person == activeProfile
         // Unknown owners land here rather than nowhere: an orphaned transaction
         // must stay reachable, even if its account has been deleted.
@@ -1265,6 +1268,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * were created.
      */
     init {
+        // Existing installs were seeded before Joint was a profile you could
+        // sign in to, so it won't be in their list.
+        if ("Joint" !in persisted.profiles.keys) {
+            update { it.copy(profiles = it.profiles + ("Joint" to "1234")) }
+        }
         // Unlocked without the keypad, so the draft never got its owner.
         if (!isLocked) draft = Draft(person = activeProfile ?: "Me")
         migrateOneTimeEntries()
@@ -1283,10 +1291,22 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         pinStep = if (activeProfile != null) "enter" else "pick"
     }
 
-    val draftPersonOptions: List<String> get() = listOfNotNull(activeProfile, "Joint")
+    // distinct(): signed in as Joint, both entries are "Joint" and the dropdown
+    // would offer the same option twice.
+    val draftPersonOptions: List<String>
+        get() = listOfNotNull(activeProfile, "Joint").distinct()
 
     /** The whole of who an entry is for: shared, or this profile's own. */
-    val forOptions: List<String> get() = listOfNotNull("Joint", activeProfile)
+    val forOptions: List<String> get() = listOfNotNull("Joint", activeProfile).distinct()
+
+    /** Signed in as Joint there is no personal side, so the split is hidden. */
+    val showsBuckets: Boolean get() = activeProfile != "Joint"
+
+    /** Header label — a stale "Personal" would otherwise show for the Joint
+     *  profile, which has no personal side at all. */
+    val bucketLabel: String
+        get() = if (!showsBuckets) "Joint"
+        else bucketView.lowercase().replaceFirstChar { it.uppercase() }
 
     /** Who it's for. The bucket follows from this, and so does the account
      *  unless one was picked deliberately. */
