@@ -30,7 +30,6 @@ import com.vinay.fintrack.data.newId
 import com.vinay.fintrack.data.today
 import com.vinay.fintrack.data.todayDayFirst
 import com.vinay.fintrack.data.ownerLabel
-import com.vinay.fintrack.data.parseSmartAdd
 import com.vinay.fintrack.data.prettyDate
 // The String overload of put is an extension; without it the member overload
 // takes over and only accepts a JsonElement.
@@ -191,6 +190,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     var scanNote by mutableStateOf(""); private set
 
     val smsImportOn: Boolean get() = persisted.smsImportOn
+
+    /** Survives leaving the screen, so a permanently denied permission is still
+     *  recognised as such rather than offering a button that does nothing. */
+    val smsAsked: Boolean get() = persisted.smsAsked
+
+    fun markSmsAsked() {
+        if (!persisted.smsAsked) update { it.copy(smsAsked = true) }
+    }
     val importedCount: Int get() = persisted.txns.count { it.source.startsWith("sms") }
 
     /** Newest first: what the importer did with each recent message. */
@@ -270,7 +277,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         smsLog = emptyList(),
         importedRefs = emptySet(),
         lastSmsScan = 0L,
-        lastProfile = ""
+        lastProfile = "",
+        smsAsked = false
     )
 
     /** Remote state with this device's own fields kept — the mirror of
@@ -285,7 +293,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         importedRefs = persisted.importedRefs,
         lastSmsScan = persisted.lastSmsScan,
         smsImportOn = persisted.smsImportOn,
-        lastProfile = persisted.lastProfile
+        lastProfile = persisted.lastProfile,
+        smsAsked = persisted.smsAsked
     )
 
     override fun onCleared() {
@@ -337,8 +346,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     var balanceHidden by mutableStateOf(false); private set
     var expandedLoan by mutableStateOf<String?>(null); private set
 
-    var homeQuickText by mutableStateOf("")
-    var homeQuickConfirm by mutableStateOf("")
 
     var entriesSearch by mutableStateOf("")
     var entriesCategoryFilter by mutableStateOf<String?>(null)
@@ -346,11 +353,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     var editingEntryId by mutableStateOf<String?>(null); private set
     var draft by mutableStateOf(Draft())
     var addKind by mutableStateOf("ONE_TIME"); private set
-    var smartText by mutableStateOf("")
-    var chatMessages by mutableStateOf(
-        listOf(ChatMessage("assistant", "Hi! Tell me what to add — e.g. \"22k EMI\" or \"4500 wife music class\"."))
-    ); private set
-
     var newLoanDraft by mutableStateOf(NewLoanDraft())
     var newAccountDraft by mutableStateOf(NewAccountDraft())
     var newCardDraft by mutableStateOf(NewCardDraft())
@@ -695,41 +697,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         pendingConfirm = null
     }
 
-    fun quickAddFromHome() {
-        val text = homeQuickText.trim()
-        if (text.isEmpty()) return
-        val parsed = parseSmartAdd(text, categories)
-        if (parsed.amount <= 0) {
-            homeQuickConfirm = "Couldn't find an amount — try e.g. '22k EMI'."
-            return
-        }
-        // Files to whichever side the switch is on, not to whoever the text
-        // mentions: on Joint it was landing in Personal and vanishing from the
-        // screen it was typed on, and it could file an entry against the other
-        // profile, which this device isn't meant to create.
-        val person = scopePerson
-        val bucket = if (person == "Joint") "JOINT" else "PERSONAL"
-        update { s ->
-            s.copy(
-                entries = s.entries + Entry(
-                    id = newId("e"),
-                    person = person,
-                    type = parsed.type,
-                    bucket = bucket,
-                    category = parsed.category,
-                    amount = parsed.amount,
-                    frequency = parsed.frequency,
-                    note = parsed.note,
-                    accountId = defaultAccountFor(person, bucket),
-                    periodMonths = if (parsed.frequency == "ANNUAL") 12 else 1
-                )
-            )
-        }
-        homeQuickText = ""
-        val per = if (parsed.frequency == "ANNUAL") "a year" else "a month"
-        homeQuickConfirm = "Added ${inr(parsed.amount)} $per · ${parsed.category} · $person"
-    }
-
     // ── entries ────────────────────────────────────────────────────────
     fun deleteEntry(id: String) = update { s -> s.copy(entries = s.entries.filterNot { it.id == id }) }
 
@@ -765,31 +732,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             "BANK_ACCOUNT" -> newAccountDraft = NewAccountDraft(owner = p)
             "CREDIT_CARD" -> newCardDraft = NewCardDraft(owner = p)
         }
-    }
-
-    fun parseSmart() {
-        val text = smartText
-        if (text.isEmpty()) return
-        val parsed = parseSmartAdd(text, categories)
-        // Named, not positional: this passed bucket into a Draft that no longer
-        // has one, shifting every field after it — the category became "JOINT"
-        // and the amount became the category name — and it still compiled,
-        // because they are all Strings.
-        draft = Draft(
-            person = scopePerson,
-            type = parsed.type,
-            category = parsed.category,
-            amountText = if (parsed.amount > 0) parsed.amount.toLong().toString() else "",
-            frequency = parsed.frequency,
-            note = parsed.note,
-            periodMonths = if (parsed.frequency == "ANNUAL") 12 else 1
-        )
-        smartText = ""
-        chatMessages = chatMessages + ChatMessage("user", text) + ChatMessage(
-            "assistant",
-            "Got it — ${inr(parsed.amount)} for ${parsed.category}, ${parsed.frequency.lowercase()}, " +
-                "under $scopePerson. Check the form below and tap Save."
-        )
     }
 
     var oneOffAccountId by mutableStateOf("")
@@ -857,7 +799,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         oneOffAccountId = ""
         oneOffIsCredit = false
         oneOffDateText = todayDayFirst()
-        smartText = ""
         tab = Tab.ENTRIES
     }
 
@@ -890,7 +831,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         editingEntryId = null
-        smartText = ""
         draft = Draft(person = scopePerson)
         // Home, not Transactions: an entry is the plan, and Transactions now
         // lists recorded movements only — landing there looked like a failed save.

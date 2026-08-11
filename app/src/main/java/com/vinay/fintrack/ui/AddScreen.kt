@@ -1,24 +1,18 @@
 package com.vinay.fintrack.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,8 +64,6 @@ fun AddScreen(vm: FinTrackViewModel) {
                 }
             }
         } else {
-            item { SmartAdd(vm) }
-            item { Hairline() }
             item {
                 Column {
                     Muted("What are you adding?", Modifier.padding(bottom = Space.s2))
@@ -80,17 +72,13 @@ fun AddScreen(vm: FinTrackViewModel) {
                             Chip(label, vm.addKind == key, { vm.selectAddKind(key) }, Modifier.padding(bottom = 6.dp))
                         }
                     }
-                    // The difference that keeps catching people out.
+                    // One line, because the distinction is the whole point.
                     Muted(
                         when (vm.addKind) {
-                            "ONE_TIME" ->
-                                "Money that has already gone. Recorded in Transactions straight away."
-                            "SET_ASIDE" ->
-                                "Paid every few months. Home asks you to put by a share each " +
-                                    "month, which moves it to savings rather than spending it."
-                            else ->
-                                "A commitment that repeats each month. It waits on Home and " +
-                                    "only reaches Transactions when you confirm it."
+                            "ONE_TIME" -> "Already paid. Goes to Transactions now."
+                            "SET_ASIDE" -> "Paid every few months. Put by a share each month."
+                            "RECURRING" -> "Paid every month. Confirm it on Home."
+                            else -> ""
                         },
                         Modifier.padding(top = Space.s2)
                     )
@@ -110,51 +98,8 @@ fun AddScreen(vm: FinTrackViewModel) {
     }
 }
 
-@Composable
-private fun SmartAdd(vm: FinTrackViewModel) {
-    Column {
-        Text("Smart Add", Modifier.padding(bottom = 6.dp), color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
-        Column(
-            Modifier
-                .heightIn(max = 170.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = Space.s2),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            vm.chatMessages.forEach { m ->
-                val user = m.role == "user"
-                Box(
-                    Modifier
-                        .fillMaxWidth(),
-                    contentAlignment = if (user) Alignment.CenterEnd else Alignment.CenterStart
-                ) {
-                    Text(
-                        m.text,
-                        Modifier
-                            .fillMaxWidth(0.85f)
-                            .background(if (user) Pf.Accent else Pf.Surface2, Radius.Sm)
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        color = if (user) Color.White else Pf.Text,
-                        fontSize = 13.sp
-                    )
-                }
-            }
-        }
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Space.s2),
-            verticalAlignment = Alignment.Bottom
-        ) {
-            PfField(
-                value = vm.smartText,
-                onValueChange = { vm.smartText = it },
-                placeholder = "e.g. 22k EMI, 4500 wife music class",
-                modifier = Modifier.weight(1f)
-            )
-            PrimaryButton("Send", vm::parseSmart, enabled = vm.smartText.isNotBlank())
-        }
-    }
-}
+// Smart Add lived here: a second, weaker chat beside the real one. The Chat tab
+// reads and writes everything, so this screen is just the forms now.
 
 @Composable
 private fun LoanForm(vm: FinTrackViewModel) {

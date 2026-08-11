@@ -1,6 +1,7 @@
 package com.vinay.fintrack.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -24,12 +25,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import androidx.compose.ui.Modifier
@@ -63,11 +69,7 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                     Heading("Profiles")
                     SecondaryButton("Switch profile", vm::switchProfile)
                 }
-                Muted(
-                    "Each profile sees only its own accounts, cards, loans, " +
-                        "investments and set-asides. Joint isn't a sign-in — " +
-                        "switch to it at the top of Home to see the shared side."
-                )
+                Muted("Each profile sees only its own. Joint is the switch on Home.")
                 Column(
                     Modifier.padding(top = Space.s3),
                     verticalArrangement = Arrangement.spacedBy(Space.s2)
@@ -381,10 +383,7 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                         }
                     }
                 }
-                Muted(
-                    "Both profiles share one household document. The config and API key " +
-                        "stay on this device — they are never uploaded."
-                )
+                Muted("Both phones share one document. Keys stay on this device.")
                 DebouncedField(
                     label = "OpenAI API key — for Smart Add",
                     value = vm.openaiKeyText,
@@ -411,9 +410,8 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                 Column {
                     Heading("Sample data")
                     Muted(
-                        "${vm.sampleDataCount} made-up record(s) from first launch — " +
-                            "salaries, accounts, cards and loans. They inflate every " +
-                            "planned figure and balance once your own numbers are in."
+                        "${vm.sampleDataCount} made-up record(s) from first launch. " +
+                            "They inflate every figure once your own numbers are in."
                     )
                     Row(Modifier.padding(top = Space.s3)) {
                         SecondaryButton("Remove sample data", { vm.clearSamples() })
@@ -457,32 +455,46 @@ private fun SmallIcon(
 @Composable
 private fun SmsImportSection(vm: FinTrackViewModel) {
     val context = LocalContext.current
+    val activity = context as? Activity
     var hasPermission by remember { mutableStateOf(hasSmsPermission(context)) }
 
-    // Android stops showing the prompt after it has been declined, and SMS is
-    // among the permissions it is strictest about. Without noticing that, the
-    // button just does nothing and the only way through is App info.
-    var blocked by remember { mutableStateOf(false) }
+    /**
+     * Android's three states, which the app has to tell apart:
+     *   GRANTED    — nothing to do.
+     *   ASKABLE    — the prompt will appear.
+     *   BLOCKED    — declined for good; the prompt no longer appears at all, so
+     *                only the system settings page can turn it on.
+     *
+     * shouldShowRequestPermissionRationale is what distinguishes the last two,
+     * and only after a first attempt — before that it is false for a permission
+     * never requested, which is why the attempt has to be recorded.
+     */
+    val asked = vm.smsAsked
+    val blocked = asked && !hasPermission && activity != null &&
+        !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.READ_SMS)
+
+    // Coming back from the settings page: without this the screen still says
+    // access is missing until the app is restarted.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) hasPermission = hasSmsPermission(context)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
+        vm.markSmsAsked()
         hasPermission = grants.values.all { it }
-        if (hasPermission) {
-            blocked = false
-            vm.setSmsImport(true)
-        } else {
-            blocked = true
-        }
+        if (hasPermission) vm.setSmsImport(true)
     }
 
     Column {
         Heading("Bank SMS")
-        Muted(
-            "Records payments from your bank's alerts as they arrive — UPI, card, " +
-                "ATM and EMI alike. Messages are read on this phone and only the " +
-                "parsed amount, payee and reference are kept."
-        )
+        Muted("Records payments from your bank's alerts — UPI, card, ATM and EMI.")
 
         Row(
             Modifier
@@ -500,10 +512,19 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
             Modifier.padding(top = Space.s3),
             horizontalArrangement = Arrangement.spacedBy(Space.s2)
         ) {
-            if (!hasPermission) {
+            if (!hasPermission && !blocked) {
                 PrimaryButton("Allow SMS access", onClick = {
                     permissionLauncher.launch(
                         arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS)
+                    )
+                })
+            } else if (!hasPermission) {
+                PrimaryButton("Open permissions", onClick = {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", context.packageName, null)
+                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     )
                 })
             } else if (vm.smsImportOn) {
@@ -520,24 +541,22 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
             }
         }
 
-        // Takes you straight to the page rather than leaving you to find it.
-        if (blocked && !hasPermission) {
-            Column(Modifier.padding(top = Space.s3)) {
-                Muted(
+        // One line that says exactly where you are, rather than a button that
+        // silently does nothing.
+        if (!hasPermission) {
+            Muted(
+                if (blocked) {
                     "Android won't ask again once SMS access has been declined. " +
-                        "Turn it on under Permissions, then come back."
-                )
-                Row(Modifier.padding(top = Space.s2)) {
-                    PrimaryButton("Open app permissions", onClick = {
-                        context.startActivity(
-                            Intent(
-                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                Uri.fromParts("package", context.packageName, null)
-                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    })
-                }
-            }
+                        "Open permissions, allow SMS, and come back — this screen " +
+                        "notices by itself."
+                } else if (asked) {
+                    "Declined. Nothing is read until you allow it."
+                } else {
+                    "Android will ask next. Messages are read on this phone only, " +
+                        "and nothing but the amount, payee and reference is kept."
+                },
+                Modifier.padding(top = Space.s2)
+            )
         }
 
         if (vm.scanNote.isNotEmpty()) {
@@ -562,9 +581,8 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
             }
         }
         Muted(
-            "Set each account's last digits in its editor on Home — that's how a " +
-                "message finds the right account. Without it everything lands on " +
-                "your default account.",
+            "Set each account's last digits on Home, or every message lands on " +
+                "the default account.",
             Modifier.padding(top = Space.s2)
         )
     }

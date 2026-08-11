@@ -38,6 +38,11 @@ data class PersistedState(
      *  default: on a phone that belongs to one person it was pure friction. */
     val askPinOnLaunch: Boolean = false,
     val smsImportOn: Boolean = false,
+    /** Whether SMS access has ever been requested. Android only reveals that a
+     *  permission is permanently denied after a first attempt, so without
+     *  remembering this the app cannot tell "not asked yet" from "declined for
+     *  good" — and offers a button that does nothing. */
+    val smsAsked: Boolean = false,
     /** Recent import decisions, newest first, capped — the only way to see why
      *  a bank message didn't become a transaction. */
     val smsLog: List<String> = emptyList()

@@ -126,33 +126,24 @@ fun ChatScreen(vm: FinTrackViewModel) {
 
 @Composable
 private fun Intro(vm: FinTrackViewModel) {
-    Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
         Text(
             "Ask me anything",
             color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold
         )
-        Muted(
-            if (vm.chatReady) {
-                "I can read your accounts, transactions and commitments, and change " +
-                    "them too — add a payment, fix a wrong amount, set a budget, " +
-                    "confirm this month's EMI."
-            } else {
-                "Add an OpenAI key in Settings and I'll be able to read your data " +
-                    "and change it for you."
-            }
-        )
+        if (!vm.chatReady) {
+            Muted("Add an OpenAI key in Settings first.")
+            return@Column
+        }
+        // Four examples, not six paragraphs: they say what it can do faster
+        // than a description of what it can do.
         listOf(
-            "How much did I spend on groceries this month?",
             "What's left in the joint account?",
             "Add 450 for Swiggy from ICICI Joint",
-            "The last Swiggy one should be 540, fix it",
-            "Set the eating out budget to 4000",
+            "Make the last Swiggy one 540",
             "Confirm this month's car EMI"
         ).forEach { Muted("· $it") }
-        Muted(
-            "Your figures are sent to OpenAI to answer. Nothing else leaves the app.",
-            Modifier.padding(top = Space.s2)
-        )
-        Hairline(Modifier.padding(top = Space.s2))
+        Muted("Your figures go to OpenAI to answer. Not your PINs or keys.")
+        Hairline()
     }
 }

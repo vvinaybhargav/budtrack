@@ -16,8 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
@@ -46,7 +44,6 @@ fun HomeScreen(vm: FinTrackViewModel) {
         verticalArrangement = Arrangement.spacedBy(Space.s6)
     ) {
         item { ScopeSwitch(vm) }
-        item { QuickAdd(vm) }
         item { BalanceCard(vm) }
         item { AccountsSection(vm) }
         item { MonthStats(vm) }
@@ -178,50 +175,8 @@ private fun ScopeTab(label: String, selected: Boolean, modifier: Modifier, onCli
     )
 }
 
-@Composable
-private fun QuickAdd(vm: FinTrackViewModel) {
-    Column {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(Pf.Surface, Radius.Pill)
-                .border(1.dp, Pf.Hairline, Radius.Pill)
-                .padding(horizontal = Space.s4, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.s2)
-        ) {
-            Icon(Icons.Default.Search, null, Modifier.size(18.dp), tint = Pf.Muted)
-            androidx.compose.foundation.text.BasicTextField(
-                value = vm.homeQuickText,
-                onValueChange = { vm.homeQuickText = it },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(color = Pf.Text, fontSize = 14.sp),
-                cursorBrush = androidx.compose.ui.graphics.SolidColor(Pf.Accent),
-                decorationBox = { inner ->
-                    if (vm.homeQuickText.isEmpty()) {
-                        // It creates a recurring entry, not a one-off payment —
-                        // saying "transaction" made people add ₹500/month by
-                        // accident. Actual payments arrive from bank SMS.
-                        Text("Add a monthly commitment… e.g. 22k EMI", color = Pf.Muted, fontSize = 14.sp)
-                    }
-                    inner()
-                }
-            )
-            IconButton(
-                onClick = vm::quickAddFromHome,
-                modifier = Modifier
-                    .size(30.dp)
-                    .background(Pf.Accent, Radius.Pill)
-            ) {
-                Icon(Icons.Default.Send, "Add", Modifier.size(15.dp), tint = Color.White)
-            }
-        }
-        if (vm.homeQuickConfirm.isNotEmpty()) {
-            Muted(vm.homeQuickConfirm, Modifier.padding(top = 6.dp, start = Space.s1))
-        }
-    }
-}
+// The quick-add bar lived here: a text box that guessed at what you meant and
+// silently produced a monthly commitment. The Chat tab does it properly.
 
 @Composable
 private fun BalanceCard(vm: FinTrackViewModel) {
