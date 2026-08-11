@@ -91,7 +91,41 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             syncedAt = System.currentTimeMillis()
         }
         sync.onTxnsMissing = { sync.pushAllTxns(persisted.txns) }
+        migrateOneTimeEntries()
         if (persisted.firebaseConfigText.isNotBlank()) connectSync()
+    }
+
+    /**
+     * One-off payments used to be saved as entries. They are transactions now,
+     * and since they no longer belong in the commitments list, leaving them as
+     * entries would make them invisible and impossible to delete — so convert
+     * them once, keeping the money rather than dropping it.
+     */
+    private fun migrateOneTimeEntries() {
+        val stale = persisted.entries.filter { it.frequency == "ONE_TIME" }
+        if (stale.isEmpty()) return
+        val account = accountIdByName(persisted.defaultAccount)
+        val converted = stale.map { e ->
+            val credit = e.type == "INCOME"
+            Txn(
+                id = newId("t"),
+                date = today(),
+                kind = if (credit) "INCOME" else "EXPENSE",
+                amount = e.amount,
+                category = e.category,
+                fromAccountId = if (credit) "" else account,
+                toAccountId = if (credit) account else "",
+                period = currentPeriod(),
+                note = e.note.ifEmpty { e.category }
+            )
+        }
+        update { s ->
+            s.copy(
+                entries = s.entries.filterNot { it.frequency == "ONE_TIME" },
+                txns = s.txns + converted
+            )
+        }
+        converted.forEach { sync.upsertTxn(it) }
     }
 
     private fun connectSync() {
