@@ -166,3 +166,68 @@ class SmsParserTest {
         assertTrue(withinDays("2026-07-31", "2026-08-02", 4))   // across a month end
     }
 }
+
+/**
+ * Routing a bank alert to the right account by its trailing digits. Personal
+ * and joint accounts are the pair that must never be confused: the account
+ * decides which bucket a transaction lands in, so a wrong match files someone's
+ * private spending as shared.
+ */
+class AccountTailTest {
+
+    private fun account(id: String, person: String, tail: String) =
+        Account(id, "acct-$id", person, person, 0.0, tail)
+
+    private val accounts = listOf(
+        account("joint", "Joint", "1234"),
+        account("me", "Me", "5678"),
+        account("wife", "Wife", "4321")
+    )
+
+    @Test
+    fun `exact digits match`() {
+        assertEquals(
+            AccountMatch.One("me"),
+            matchAccountByTail(accounts, "5678")
+        )
+    }
+
+    /** Recording only the last three still has to find a four-digit message. */
+    @Test
+    fun `three stored digits match a four digit message`() {
+        val threeDigit = listOf(account("me", "Me", "678"), account("joint", "Joint", "234"))
+        assertEquals(AccountMatch.One("me"), matchAccountByTail(threeDigit, "5678"))
+    }
+
+    @Test
+    fun `three digits in the message match a four digit account`() {
+        assertEquals(AccountMatch.One("me"), matchAccountByTail(accounts, "678"))
+    }
+
+    /** Guessing here would file a personal payment as joint. */
+    @Test
+    fun `shared endings are reported rather than guessed`() {
+        val clashing = listOf(account("joint", "Joint", "1123"), account("me", "Me", "2123"))
+        val result = matchAccountByTail(clashing, "123")
+        assertTrue(result is AccountMatch.Ambiguous)
+        assertEquals(2, (result as AccountMatch.Ambiguous).count)
+    }
+
+    @Test
+    fun `an exact match wins over a longer partial one`() {
+        val mixed = listOf(account("me", "Me", "123"), account("joint", "Joint", "4123"))
+        assertEquals(AccountMatch.One("me"), matchAccountByTail(mixed, "123"))
+    }
+
+    @Test
+    fun `no digits recorded means no match`() {
+        val blank = listOf(account("me", "Me", ""), account("joint", "Joint", ""))
+        assertEquals(AccountMatch.None, matchAccountByTail(blank, "5678"))
+        assertEquals(AccountMatch.None, matchAccountByTail(accounts, ""))
+    }
+
+    @Test
+    fun `unknown digits fall through instead of matching something`() {
+        assertEquals(AccountMatch.None, matchAccountByTail(accounts, "9999"))
+    }
+}

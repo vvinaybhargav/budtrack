@@ -1134,12 +1134,26 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun inBucket(t: Txn): Boolean {
         val person = txnPerson(t)
-        return if (bucketView == "PERSONAL") person == activeProfile else person != activeProfile
+        return if (bucketView == "PERSONAL") person == activeProfile
+        // Unknown owners land here rather than nowhere: an orphaned transaction
+        // must stay reachable, even if its account has been deleted.
+        else person == "Joint" || person.isEmpty()
     }
 
-    /** How many are sitting in the other bucket, so an empty list can say so
-     *  instead of looking like the transaction was never recorded. */
-    val otherBucketCount: Int get() = txns.count { !inBucket(it) }
+    /** In the other tab — so an empty list can say where things went instead of
+     *  looking like nothing was recorded. */
+    val otherBucketCount: Int
+        get() = txns.count { t ->
+            val p = txnPerson(t)
+            if (bucketView == "PERSONAL") p == "Joint" || p.isEmpty() else p == activeProfile
+        }
+
+    /** On the other profile's own account, so it belongs on their phone. */
+    val otherProfileTxnCount: Int
+        get() = txns.count { t ->
+            val p = txnPerson(t)
+            p.isNotEmpty() && p != "Joint" && p != activeProfile
+        }
 
     /** The Transactions screen shows these and nothing else: real recorded
      *  movements, not the recurring plan. */

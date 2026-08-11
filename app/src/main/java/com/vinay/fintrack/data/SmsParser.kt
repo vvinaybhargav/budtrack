@@ -169,6 +169,42 @@ fun skipReason(body: String): String {
 
 internal fun extractAmountOrNull(body: String): Double? = extractAmount(body)
 
+/** Why an account lookup landed where it did. */
+sealed interface AccountMatch {
+    data class One(val accountId: String) : AccountMatch
+    /** More than one account ends in those digits — guessing would put money on
+     *  the wrong one, and personal and joint accounts are the pair most worth
+     *  not confusing. */
+    data class Ambiguous(val tail: String, val count: Int) : AccountMatch
+    object None : AccountMatch
+}
+
+/**
+ * Finds the account a bank message refers to by its trailing digits.
+ *
+ * Lengths need not agree: three stored digits match a four-digit message and
+ * the other way round, so recording just the last three is enough — as long as
+ * they're unique across your accounts.
+ */
+fun matchAccountByTail(accounts: List<Account>, tail: String): AccountMatch {
+    if (tail.isBlank()) return AccountMatch.None
+    val withTails = accounts.filter { it.numberTail.isNotBlank() }
+
+    withTails.filter { it.numberTail == tail }.let {
+        if (it.size == 1) return AccountMatch.One(it.first().id)
+        if (it.size > 1) return AccountMatch.Ambiguous(tail, it.size)
+    }
+
+    val suffix = withTails.filter {
+        it.numberTail.endsWith(tail) || tail.endsWith(it.numberTail)
+    }
+    return when {
+        suffix.size == 1 -> AccountMatch.One(suffix.first().id)
+        suffix.size > 1 -> AccountMatch.Ambiguous(tail, suffix.size)
+        else -> AccountMatch.None
+    }
+}
+
 /** Banks send from ids like AD-HDFCBK or VM-ICICIB rather than a number. */
 fun looksLikeBankSender(sender: String): Boolean {
     val s = sender.uppercase()

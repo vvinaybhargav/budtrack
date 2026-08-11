@@ -109,7 +109,7 @@ class SmsImporter(private val context: Context) {
                 log += "matched ${inr(p.amount)} ${p.party} to an existing confirmation"
                 continue
             }
-            val accountId = accountFor(state, p.accountTail)
+            val accountId = accountFor(state, p.accountTail, log)
             txns += Txn(
                 id = newId("t"),
                 date = p.date,
@@ -158,16 +158,23 @@ class SmsImporter(private val context: Context) {
     private fun capRefs(refs: Set<String>): Set<String> =
         if (refs.size <= MAX_REFS) refs else refs.toList().takeLast(MAX_REFS).toSet()
 
-    /** Matches the account by its last digits, falling back to the default. */
-    private fun accountFor(state: PersistedState, tail: String): String {
-        if (tail.isNotEmpty()) {
-            state.accounts.firstOrNull { it.numberTail.isNotEmpty() && it.numberTail.endsWith(tail) }
-                ?.let { return it.id }
-            state.accounts.firstOrNull { it.numberTail.isNotEmpty() && tail.endsWith(it.numberTail) }
-                ?.let { return it.id }
-        }
-        return state.accounts.firstOrNull { it.name == state.defaultAccount }?.id
+    /**
+     * The account the message names, or the default when it can't be told
+     * apart. An ambiguous match is reported rather than guessed: putting a
+     * personal payment on the joint account is exactly the mistake that makes
+     * the buckets untrustworthy.
+     */
+    private fun accountFor(state: PersistedState, tail: String, log: MutableList<String>): String {
+        val fallback = state.accounts.firstOrNull { it.name == state.defaultAccount }?.id
             ?: state.accounts.firstOrNull()?.id.orEmpty()
+        return when (val m = matchAccountByTail(state.accounts, tail)) {
+            is AccountMatch.One -> m.accountId
+            is AccountMatch.Ambiguous -> {
+                log += "…$tail matches ${m.count} accounts — add a digit to tell them apart"
+                fallback
+            }
+            AccountMatch.None -> fallback
+        }
     }
 
     private fun categoryFor(party: String, categories: List<String>): String {

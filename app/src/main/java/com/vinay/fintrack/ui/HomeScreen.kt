@@ -242,7 +242,7 @@ private fun AccountsSection(vm: FinTrackViewModel) {
                             PfField(value = vm.accountDraft.owner, onValueChange = { vm.accountDraft = vm.accountDraft.copy(owner = it) }, placeholder = "Owner")
                             PfField(value = vm.accountDraft.balanceText, onValueChange = { vm.accountDraft = vm.accountDraft.copy(balanceText = it) }, placeholder = "Balance", numeric = true)
                             // Lets a bank SMS land on this account instead of the default.
-                            PfField(value = vm.accountDraft.numberTail, onValueChange = { vm.accountDraft = vm.accountDraft.copy(numberTail = it) }, placeholder = "Last digits, as the bank's SMS shows", numeric = true)
+                            PfField(value = vm.accountDraft.numberTail, onValueChange = { vm.accountDraft = vm.accountDraft.copy(numberTail = it) }, placeholder = "Last 3-4 digits, as the bank SMS shows", numeric = true)
                             EditorActions({ vm.deleteAccount(a.id) }, vm::cancelEditAccount, vm::saveAccount)
                         }
                     } else {
@@ -266,7 +266,12 @@ private fun AccountsSection(vm: FinTrackViewModel) {
                                 }
                                 Column {
                                     Text(a.name, color = Pf.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                    Muted(a.owner)
+                                    // Shown so it's obvious at a glance which
+                                    // account a bank alert will land on.
+                                    Muted(
+                                        if (a.numberTail.isNotBlank()) "${a.owner} · ••${a.numberTail}"
+                                        else "${a.owner} · no digits set"
+                                    )
                                 }
                             }
                             Text(inr(vm.balanceOf(a)), color = Pf.Text, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)

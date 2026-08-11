@@ -113,6 +113,14 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                         },
                         Modifier.padding(top = Space.s2)
                     )
+                    // Otherwise a payment on the other person's account looks lost.
+                    if (vm.otherProfileTxnCount > 0) {
+                        Muted(
+                            "${vm.otherProfileTxnCount} more are on another profile's own " +
+                                "account and show on their phone.",
+                            Modifier.padding(top = Space.s1)
+                        )
+                    }
                 }
             }
         } else {
