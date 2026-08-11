@@ -182,8 +182,11 @@ class Assistant(private val vm: FinTrackViewModel) {
     private fun overview(): String = buildString {
         appendLine("Profile: ${vm.activeProfile.orEmpty()}, viewing the ${vm.bucketLabel} side.")
         appendLine("Total balance: ${inr(vm.totalBalance)}")
-        appendLine("This month — income ${inr(vm.monthlyIncome)}, expenses ${inr(vm.monthlyExpense)}, " +
-            "savings ${inr(vm.monthlySavings)}, investments ${inr(vm.monthlyInvestment)}")
+        appendLine("Recorded this month — received ${inr(vm.actualIncome)}, " +
+            "spent ${inr(vm.actualSpent)}, set aside ${inr(vm.actualSaved)}, " +
+            "invested ${inr(vm.actualInvested)}")
+        appendLine("Planned each month — ${inr(vm.plannedIncome)} in, " +
+            "${inr(vm.plannedExpense)} out")
         appendLine("Set aside needed this month: ${inr(vm.annualSetAsideMonthly)}, " +
             "done ${inr(vm.annualSetAsideDone)}")
         if (vm.budgets.isEmpty()) appendLine("No budgets set.")

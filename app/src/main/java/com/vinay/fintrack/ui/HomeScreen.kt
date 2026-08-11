@@ -325,14 +325,21 @@ private fun AccountsSection(vm: FinTrackViewModel) {
 
 @Composable
 private fun MonthStats(vm: FinTrackViewModel) {
+    // Money that actually moved. These were the planned figures, so they showed
+    // the same numbers whether or not anything had been recorded.
     val stats = listOf(
-        "Income" to (inr(vm.monthlyIncome) to Pf.Accent400),
-        "Expenses" to (inr(vm.monthlyExpense) to Pf.Text),
-        "Savings" to (inr(vm.monthlySavings) to Pf.Text),
-        "Investment" to (inr(vm.monthlyInvestment) to Pf.Text)
+        "Received" to (inr(vm.actualIncome) to Pf.Accent400),
+        "Spent" to (inr(vm.actualSpent) to Pf.Text),
+        "Set aside" to (inr(vm.actualSaved) to Pf.Text),
+        "Invested" to (inr(vm.actualInvested) to Pf.Text)
     )
     Column {
-        SectionTitle("This month", Modifier.padding(bottom = Space.s3))
+        SectionTitle("This month", Modifier.padding(bottom = Space.s1))
+        Muted(
+            "Recorded so far. Planned: ${inr(vm.plannedIncome)} in, " +
+                "${inr(vm.plannedExpense)} out.",
+            Modifier.padding(bottom = Space.s3)
+        )
         PfCard(padding = PaddingValues(0.dp)) {
             stats.chunked(2).forEach { pair ->
                 Row(Modifier.fillMaxWidth()) {

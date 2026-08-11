@@ -277,3 +277,88 @@ class TxnTimeTest {
         assertFalse(Txn(id = "a", date = "2026-08-11", kind = "EXPENSE", amount = 1.0).whenText.contains(","))
     }
 }
+
+/**
+ * The month's figures come from what was recorded, not from what was planned.
+ * They used to be summed from entries, so deleting every transaction left them
+ * unchanged — which reads as the app being broken.
+ */
+class MonthTotalsTest {
+
+    private val mine = Account("a-me", "SBI", "Me", "Me", 0.0)
+    private val ids = setOf(mine.id)
+    private val cardIds = setOf("c1")
+    private val invest = listOf("LIC", "PPF")
+
+    private fun t(
+        kind: String, amount: Double, from: String = "", to: String = "",
+        card: String = "", category: String = "Groceries", source: String = ""
+    ) = Txn(
+        id = "t${amount.toInt()}$kind$category", date = "2026-08-09", kind = kind,
+        amount = amount, category = category, fromAccountId = from, toAccountId = to,
+        cardId = card, period = "2026-08", source = source
+    )
+
+    @Test
+    fun `nothing recorded means nothing to show`() {
+        val m = Ledger.monthTotals(emptyList(), "2026-08", ids, cardIds, invest)
+        assertEquals(0.0, m.income, 0.001)
+        assertEquals(0.0, m.spent, 0.001)
+        assertEquals(0.0, m.saved, 0.001)
+        assertEquals(0.0, m.invested, 0.001)
+    }
+
+    @Test
+    fun `income and spending are counted separately`() {
+        val m = Ledger.monthTotals(
+            listOf(
+                t("INCOME", 120_000.0, to = mine.id, category = "Salary"),
+                t("EXPENSE", 2_000.0, from = mine.id)
+            ),
+            "2026-08", ids, cardIds, invest
+        )
+        assertEquals(120_000.0, m.income, 0.001)
+        assertEquals(2_000.0, m.spent, 0.001)
+    }
+
+    /** Money moved to a savings pot is kept, not spent. */
+    @Test
+    fun `a transfer is set aside rather than spent`() {
+        val m = Ledger.monthTotals(
+            listOf(t("TRANSFER", 3_333.0, from = mine.id, category = "Car Insurance")),
+            "2026-08", ids, cardIds, invest
+        )
+        assertEquals(3_333.0, m.saved, 0.001)
+        assertEquals(0.0, m.spent, 0.001)
+    }
+
+    @Test
+    fun `a transfer to an investment category counts as invested`() {
+        val m = Ledger.monthTotals(
+            listOf(t("TRANSFER", 5_000.0, from = mine.id, category = "PPF")),
+            "2026-08", ids, cardIds, invest
+        )
+        assertEquals(5_000.0, m.invested, 0.001)
+        assertEquals(0.0, m.saved, 0.001)
+    }
+
+    @Test
+    fun `a card spend counts, and settling the card does not`() {
+        val m = Ledger.monthTotals(
+            listOf(
+                t("EXPENSE", 2_450.0, card = "c1", category = "Eating Out"),
+                t("EXPENSE", 2_450.0, from = mine.id, card = "c1",
+                    category = "Credit Card", source = Ledger.CARD_PAYMENT)
+            ),
+            "2026-08", ids, cardIds, invest
+        )
+        assertEquals(2_450.0, m.spent, 0.001)
+    }
+
+    @Test
+    fun `last month is not this month`() {
+        val old = t("EXPENSE", 900.0, from = mine.id).copy(period = "2026-07")
+        val m = Ledger.monthTotals(listOf(old), "2026-08", ids, cardIds, invest)
+        assertEquals(0.0, m.spent, 0.001)
+    }
+}

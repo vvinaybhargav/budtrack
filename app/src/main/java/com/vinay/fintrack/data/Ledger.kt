@@ -72,6 +72,53 @@ object Ledger {
         return map
     }
 
+    /** Money that actually moved this month, as opposed to what was planned. */
+    class MonthTotals(
+        val income: Double,
+        val spent: Double,
+        val saved: Double,
+        val invested: Double
+    )
+
+    /**
+     * The month's real figures, from transactions.
+     *
+     * Not from entries: those are the plan, so they showed the same numbers
+     * whether or not a rupee had moved — deleting every transaction left them
+     * untouched, which reads as the app being wrong.
+     *
+     * A transfer is money kept rather than spent, so it counts as saved or
+     * invested by its category, never as an expense. A card spend counts as
+     * spending; settling the card does not, or it would count twice.
+     */
+    fun monthTotals(
+        txns: List<Txn>,
+        period: String,
+        accountIds: Set<String>,
+        cardIds: Set<String>,
+        investCategories: List<String>
+    ): MonthTotals {
+        var income = 0.0
+        var spent = 0.0
+        var saved = 0.0
+        var invested = 0.0
+        for (t in txns) {
+            if (t.month != period) continue
+            when (t.kind) {
+                "INCOME" -> if (t.toAccountId in accountIds) income += t.amount
+                "TRANSFER" -> if (t.fromAccountId in accountIds) {
+                    if (t.category in investCategories) invested += t.amount else saved += t.amount
+                }
+                else -> {
+                    val counts = t.fromAccountId in accountIds ||
+                        (t.cardId.isNotEmpty() && t.cardId in cardIds && t.source != CARD_PAYMENT)
+                    if (counts) spent += t.amount
+                }
+            }
+        }
+        return MonthTotals(income, spent, saved, invested)
+    }
+
     /**
      * What to put by this month for a commitment paid every [everyMonths].
      *

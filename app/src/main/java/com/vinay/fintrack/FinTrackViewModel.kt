@@ -1226,8 +1226,35 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    val monthlyIncome: Double get() = scopedEntries.filter { it.type == "INCOME" }.sumOf { it.monthly }
-    val monthlyExpense: Double get() = scopedEntries.filter { it.type == "EXPENSE" }.sumOf { it.monthly }
+    // planned* is what the entries say should happen each month; actual* is what
+    // did. The two were conflated, so the month's figures never moved however
+    // many transactions were added or deleted.
+    val plannedIncome: Double get() = scopedEntries.filter { it.type == "INCOME" }.sumOf { it.monthly }
+    val plannedExpense: Double get() = scopedEntries.filter { it.type == "EXPENSE" }.sumOf { it.monthly }
+
+    private var totalsCache: Pair<List<Txn>, Ledger.MonthTotals>? = null
+
+    private fun monthTotals(): Ledger.MonthTotals {
+        val t = persisted.txns
+        totalsCache?.let { (source, cached) -> if (source === t) return cached }
+        val totals = Ledger.monthTotals(
+            t,
+            currentPeriod(),
+            visibleAccounts.map { it.id }.toSet(),
+            visibleCards.map { it.id }.toSet(),
+            INVEST_CATEGORIES
+        )
+        totalsCache = t to totals
+        return totals
+    }
+
+    val actualIncome: Double get() = monthTotals().income
+    val actualSpent: Double get() = monthTotals().spent
+    val actualSaved: Double get() = monthTotals().saved
+    val actualInvested: Double get() = monthTotals().invested
+
+    val monthlyIncome: Double get() = plannedIncome
+    val monthlyExpense: Double get() = plannedExpense
     val monthlyInvestment: Double
         get() = scopedEntries.filter { it.type == "SAVINGS" && it.category in INVEST_CATEGORIES }.sumOf { it.monthly }
     val monthlySavings: Double
@@ -1467,9 +1494,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * are what list_transactions is for.
      */
     private fun liveContext(): String = buildString {
-        appendLine("Total balance ${inr(totalBalance)}. This month: income ${inr(monthlyIncome)}, " +
-            "expenses ${inr(monthlyExpense)}, savings ${inr(monthlySavings)}, " +
-            "investments ${inr(monthlyInvestment)}.")
+        appendLine("Total balance ${inr(totalBalance)}.")
+        appendLine("Recorded this month: received ${inr(actualIncome)}, spent ${inr(actualSpent)}, " +
+            "set aside ${inr(actualSaved)}, invested ${inr(actualInvested)}.")
+        appendLine("Planned each month: ${inr(plannedIncome)} in, ${inr(plannedExpense)} out, " +
+            "${inr(monthlySavings)} saved, ${inr(monthlyInvestment)} invested.")
         appendLine("Accounts:")
         visibleAccounts.forEach {
             appendLine("  ${it.name} = ${inr(balanceOf(it))} (${it.person}" +
