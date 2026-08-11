@@ -178,6 +178,14 @@ private fun AccountForm(vm: FinTrackViewModel) {
         PfField("Account name", vm.newAccountDraft.name, { vm.newAccountDraft = vm.newAccountDraft.copy(name = it) }, placeholder = "e.g. HDFC Savings")
         PfSelect("Owner", vm.newAccountDraft.owner, vm.draftPersonOptions, { vm.newAccountDraft = vm.newAccountDraft.copy(owner = it) })
         PfField("Current balance (₹)", vm.newAccountDraft.balanceText, { vm.newAccountDraft = vm.newAccountDraft.copy(balanceText = it) }, placeholder = "e.g. 120000", numeric = true)
+        PfField(
+            "Last digits of the account number",
+            vm.newAccountDraft.numberTail,
+            { vm.newAccountDraft = vm.newAccountDraft.copy(numberTail = it) },
+            placeholder = "e.g. 234 — the digits your bank's SMS shows",
+            numeric = true
+        )
+        Muted("Three is enough, as long as no two accounts end the same.")
         PrimaryButton("Add account", vm::addNewAccount, Modifier.fillMaxWidth(), enabled = vm.newAccountDraft.name.isNotBlank())
     }
 }
@@ -195,6 +203,14 @@ private fun CardForm(vm: FinTrackViewModel) {
             PfField("Minimum due (₹)", vm.newCardDraft.minDueText, { vm.newCardDraft = vm.newCardDraft.copy(minDueText = it) }, Modifier.weight(1f), "e.g. 2200", numeric = true)
             PfField("Due date", vm.newCardDraft.due, { vm.newCardDraft = vm.newCardDraft.copy(due = it) }, Modifier.weight(1f), "e.g. 18 Sep")
         }
+        PfField(
+            "Last digits of the card",
+            vm.newCardDraft.numberTail,
+            { vm.newCardDraft = vm.newCardDraft.copy(numberTail = it) },
+            placeholder = "e.g. 321 — the digits your bank's SMS shows",
+            numeric = true
+        )
+        Muted("A spend on this card is added to the card, not taken from an account.")
         PrimaryButton(
             "Add card",
             vm::addNewCard,

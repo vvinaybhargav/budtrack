@@ -186,20 +186,27 @@ sealed interface AccountMatch {
  * the other way round, so recording just the last three is enough — as long as
  * they're unique across your accounts.
  */
-fun matchAccountByTail(accounts: List<Account>, tail: String): AccountMatch {
-    if (tail.isBlank()) return AccountMatch.None
-    val withTails = accounts.filter { it.numberTail.isNotBlank() }
+fun matchAccountByTail(accounts: List<Account>, tail: String): AccountMatch =
+    matchByTail(accounts.map { it.id to it.numberTail }, tail)
 
-    withTails.filter { it.numberTail == tail }.let {
-        if (it.size == 1) return AccountMatch.One(it.first().id)
+/** Cards carry digits too: "Card XX4321" is a card spend, not a bank debit. */
+fun matchCardByTail(cards: List<Card>, tail: String): AccountMatch =
+    matchByTail(cards.map { it.id to it.numberTail }, tail)
+
+private fun matchByTail(items: List<Pair<String, String>>, tail: String): AccountMatch {
+    if (tail.isBlank()) return AccountMatch.None
+    val withTails = items.filter { it.second.isNotBlank() }
+
+    withTails.filter { it.second == tail }.let {
+        if (it.size == 1) return AccountMatch.One(it.first().first)
         if (it.size > 1) return AccountMatch.Ambiguous(tail, it.size)
     }
 
     val suffix = withTails.filter {
-        it.numberTail.endsWith(tail) || tail.endsWith(it.numberTail)
+        it.second.endsWith(tail) || tail.endsWith(it.second)
     }
     return when {
-        suffix.size == 1 -> AccountMatch.One(suffix.first().id)
+        suffix.size == 1 -> AccountMatch.One(suffix.first().first)
         suffix.size > 1 -> AccountMatch.Ambiguous(tail, suffix.size)
         else -> AccountMatch.None
     }

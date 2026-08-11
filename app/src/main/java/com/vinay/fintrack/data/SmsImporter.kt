@@ -97,6 +97,7 @@ class SmsImporter(private val context: Context) {
         var matched = 0
         var added = 0
         val log = mutableListOf<String>()
+        val cardSpend = mutableMapOf<String, Double>()
 
         for (p in items) {
             val existing = matchingConfirmed(txns, p)
@@ -109,28 +110,37 @@ class SmsImporter(private val context: Context) {
                 log += "matched ${inr(p.amount)} ${p.party} to an existing confirmation"
                 continue
             }
-            val accountId = accountFor(state, p.accountTail, log)
+            // A card spend adds to what the card owes; it doesn't leave any
+            // bank account until the bill is paid.
+            val card = (matchCardByTail(state.cards, p.accountTail) as? AccountMatch.One)?.accountId
+            val accountId = if (card != null) "" else accountFor(state, p.accountTail, log)
             txns += Txn(
                 id = newId("t"),
                 date = p.date,
                 kind = if (p.isCredit) "INCOME" else "EXPENSE",
                 amount = p.amount,
                 category = categoryFor(p.party, state.categories),
-                fromAccountId = if (p.isCredit) "" else accountId,
-                toAccountId = if (p.isCredit) accountId else "",
+                fromAccountId = if (p.isCredit || card != null) "" else accountId,
+                toAccountId = if (p.isCredit && card == null) accountId else "",
+                cardId = card.orEmpty(),
                 period = p.date.take(7),
                 note = p.party,
                 ref = p.ref,
                 source = "sms",
                 rawAmountText = p.amountText
             )
+            if (card != null && !p.isCredit) cardSpend[card] = (cardSpend[card] ?: 0.0) + p.amount
             added++
-            log += "added ${inr(p.amount)} ${p.party}"
+            log += if (card != null) "added ${inr(p.amount)} ${p.party} to the card"
+            else "added ${inr(p.amount)} ${p.party}"
         }
 
         Log.i(TAG, "SMS import: $added added, $matched matched to existing confirmations")
         return state.copy(
             txns = txns,
+            cards = state.cards.map { c ->
+                cardSpend[c.id]?.let { c.copy(balance = c.balance + it, paid = false) } ?: c
+            },
             importedRefs = capRefs(state.importedRefs + items.map { it.dedupeKey }),
             smsLog = (log.asReversed() + state.smsLog).take(MAX_LOG),
             lastSmsScan = maxOf(newest, state.lastSmsScan)

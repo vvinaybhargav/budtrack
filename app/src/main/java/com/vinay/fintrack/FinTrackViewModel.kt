@@ -64,7 +64,9 @@ data class NewAccountDraft(
 
 data class NewCardDraft(
     val name: String = "", val owner: String = "Me", val limitText: String = "",
-    val balanceText: String = "", val minDueText: String = "", val due: String = ""
+    val balanceText: String = "", val minDueText: String = "", val due: String = "",
+    /** Last digits as the bank's SMS shows them, for matching card spends. */
+    val numberTail: String = ""
 )
 
 class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
@@ -907,10 +909,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s ->
             s.copy(
                 cards = s.cards + Card(
-                    newId("cc"), newCardDraft.name, newCardDraft.owner, limit,
-                    newCardDraft.balanceText.toDoubleOrNull() ?: 0.0,
-                    newCardDraft.minDueText.toDoubleOrNull() ?: 0.0,
-                    newCardDraft.due
+                    id = newId("cc"),
+                    name = newCardDraft.name,
+                    owner = newCardDraft.owner,
+                    limit = limit,
+                    balance = newCardDraft.balanceText.toDoubleOrNull() ?: 0.0,
+                    minDue = newCardDraft.minDueText.toDoubleOrNull() ?: 0.0,
+                    due = newCardDraft.due,
+                    numberTail = newCardDraft.numberTail
                 )
             )
         }
@@ -1005,7 +1011,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         editingCardId = c.id
         cardDraft = NewCardDraft(
             c.name, c.owner, c.limit.toLong().toString(), c.balance.toLong().toString(),
-            c.minDue.toLong().toString(), c.due
+            c.minDue.toLong().toString(), c.due, c.numberTail
         )
     }
 
@@ -1020,7 +1026,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     limit = cardDraft.limitText.toDoubleOrNull() ?: 0.0,
                     balance = cardDraft.balanceText.toDoubleOrNull() ?: 0.0,
                     minDue = cardDraft.minDueText.toDoubleOrNull() ?: 0.0,
-                    due = cardDraft.due
+                    due = cardDraft.due,
+                    numberTail = cardDraft.numberTail
                 ) else it
             })
         }
@@ -1271,6 +1278,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** Which side of the household a transaction belongs to, taken from the
      *  account it moved through — transactions have no bucket of their own. */
     private fun txnPerson(t: Txn): String {
+        // A card spend touches no account, so its side comes from the card.
+        if (t.cardId.isNotEmpty()) {
+            return cards.firstOrNull { it.id == t.cardId }?.owner.orEmpty()
+        }
         val id = t.fromAccountId.ifEmpty { t.toAccountId }
         return accounts.firstOrNull { it.id == id }?.person.orEmpty()
     }

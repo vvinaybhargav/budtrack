@@ -480,6 +480,8 @@ private fun CardsSection(vm: FinTrackViewModel) {
                             PfField(value = vm.cardDraft.balanceText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(balanceText = it) }, placeholder = "Current balance", numeric = true)
                             PfField(value = vm.cardDraft.minDueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(minDueText = it) }, placeholder = "Minimum due", numeric = true)
                             PfField(value = vm.cardDraft.due, onValueChange = { vm.cardDraft = vm.cardDraft.copy(due = it) }, placeholder = "Due date")
+                            // Lets a card spend in a bank SMS find this card.
+                            PfField(value = vm.cardDraft.numberTail, onValueChange = { vm.cardDraft = vm.cardDraft.copy(numberTail = it) }, placeholder = "Last 3-4 digits of the card", numeric = true)
                             EditorActions({ vm.deleteCard(c.id) }, vm::cancelEditCard, vm::saveCard)
                         }
                     } else {

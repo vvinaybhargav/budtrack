@@ -231,3 +231,34 @@ class AccountTailTest {
         assertEquals(AccountMatch.None, matchAccountByTail(accounts, "9999"))
     }
 }
+
+/** A card spend is added to the card, not taken from a bank account. */
+class CardTailTest {
+
+    private val cards = listOf(
+        Card("cc1", "HDFC Regalia", "Me", 300000.0, 0.0, 0.0, "18 Sep", false, "4321"),
+        Card("cc2", "ICICI Amazon", "Wife", 150000.0, 0.0, 0.0, "22 Sep", false, "8765")
+    )
+
+    @Test
+    fun `a card is found by its last digits`() {
+        assertEquals(AccountMatch.One("cc1"), matchCardByTail(cards, "4321"))
+        assertEquals(AccountMatch.One("cc2"), matchCardByTail(cards, "765"))
+    }
+
+    @Test
+    fun `digits belonging to no card fall through to the accounts`() {
+        assertEquals(AccountMatch.None, matchCardByTail(cards, "1111"))
+    }
+
+    @Test
+    fun `a card message parses like any other`() {
+        val p = parseBankSms(
+            "Rs.2,450.00 spent on HDFC Bank Card XX4321 at SWIGGY on 09-08-26. Txn 553311224488",
+            "AD-HDFCBK"
+        )
+        assertEquals(2450.0, p!!.amount, 0.001)
+        assertEquals("4321", p.accountTail)
+        assertEquals(AccountMatch.One("cc1"), matchCardByTail(cards, p.accountTail))
+    }
+}

@@ -103,7 +103,10 @@ data class Card(
     val balance: Double,
     val minDue: Double,
     val due: String,
-    val paid: Boolean = false
+    val paid: Boolean = false,
+    /** Last digits as the bank writes them ("Card XX4321"). A card spend is
+     *  matched on these, and adds to the card rather than to any account. */
+    val numberTail: String = ""
 )
 
 @Serializable
