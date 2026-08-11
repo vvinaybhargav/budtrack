@@ -126,7 +126,7 @@ private fun LoanForm(vm: FinTrackViewModel) {
 private fun AccountForm(vm: FinTrackViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
         PfField("Account name", vm.newAccountDraft.name, { vm.newAccountDraft = vm.newAccountDraft.copy(name = it) }, placeholder = "e.g. HDFC Savings")
-        PfSelect("Owner", vm.newAccountDraft.owner, vm.draftPersonOptions, { vm.newAccountDraft = vm.newAccountDraft.copy(owner = it) })
+        PfSelect("Belongs to", vm.newAccountDraft.owner, vm.ownerOptions, { vm.newAccountDraft = vm.newAccountDraft.copy(owner = it) })
         PfField("Current balance (₹)", vm.newAccountDraft.balanceText, { vm.newAccountDraft = vm.newAccountDraft.copy(balanceText = it) }, placeholder = "e.g. 120000", numeric = true)
         PfField(
             "Last digits of the account number",
@@ -144,7 +144,7 @@ private fun AccountForm(vm: FinTrackViewModel) {
 private fun CardForm(vm: FinTrackViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
         PfField("Card name", vm.newCardDraft.name, { vm.newCardDraft = vm.newCardDraft.copy(name = it) }, placeholder = "e.g. HDFC Regalia")
-        PfSelect("Owner", vm.newCardDraft.owner, vm.draftPersonOptions, { vm.newCardDraft = vm.newCardDraft.copy(owner = it) })
+        PfSelect("Belongs to", vm.newCardDraft.owner, vm.ownerOptions, { vm.newCardDraft = vm.newCardDraft.copy(owner = it) })
         Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
             PfField("Credit limit (₹)", vm.newCardDraft.limitText, { vm.newCardDraft = vm.newCardDraft.copy(limitText = it) }, Modifier.weight(1f), "e.g. 300000", numeric = true)
             PfField("Current balance (₹)", vm.newCardDraft.balanceText, { vm.newCardDraft = vm.newCardDraft.copy(balanceText = it) }, Modifier.weight(1f), "e.g. 42500", numeric = true)

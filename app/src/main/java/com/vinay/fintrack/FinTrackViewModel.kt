@@ -976,8 +976,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // ── inline editors ─────────────────────────────────────────────────
     fun startEditAccount(a: Account) {
         editingAccountId = a.id
+        // a.person, not a.owner: owner is the display label ("Me · personal").
         accountDraft = NewAccountDraft(
-            a.name, a.owner, a.openingBalance.toLong().toString(), a.numberTail
+            a.name, a.person, a.openingBalance.toLong().toString(), a.numberTail
         )
     }
 
@@ -988,7 +989,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s ->
             s.copy(accounts = s.accounts.map {
                 if (it.id == id) it.copy(
-                    name = accountDraft.name, owner = accountDraft.owner,
+                    name = accountDraft.name,
+                    // person is what decides the bucket and where a bank
+                    // message lands. It was never written here, so an account
+                    // could not be moved between profiles at all.
+                    person = accountDraft.owner,
+                    owner = ownerLabel(accountDraft.owner),
                     openingBalance = accountDraft.balanceText.toDoubleOrNull() ?: 0.0,
                     numberTail = accountDraft.numberTail
                 ) else it
@@ -1533,6 +1539,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     val draftPersonOptions: List<String>
         get() = listOfNotNull(activeProfile, "Joint").distinct()
 
+    /**
+     * Who an account or card can belong to: every profile, plus Joint.
+     *
+     * Wider than [forOptions] deliberately — you set up both phones' accounts
+     * from one, and an account has to be assignable to whoever owns it.
+     */
+    val ownerOptions: List<String> get() = (listOf("Joint") + profileNames).distinct()
+
     /** The whole of who an entry is for: shared, or this profile's own. */
     val forOptions: List<String> get() = listOfNotNull("Joint", activeProfile).distinct()
 
@@ -1570,6 +1584,33 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** The model's transcript, without the system message — that is rebuilt
      *  each turn so its figures are current. */
     private var assistantHistory: List<kotlinx.serialization.json.JsonElement>? = null
+
+    /**
+     * Keeps the recent conversation, cut only where it is safe to cut.
+     *
+     * A tool reply is only valid directly after the assistant message that
+     * asked for it. Trimming by count alone could keep the reply and drop the
+     * request, and OpenAI rejects the whole call: "messages with role 'tool'
+     * must be a response to a preceding message with tool_calls".
+     *
+     * So the window is moved back to the nearest user message, which is always
+     * a clean boundary.
+     */
+    private fun trimHistory(
+        history: List<kotlinx.serialization.json.JsonElement>
+    ): List<kotlinx.serialization.json.JsonElement> {
+        if (history.size <= KEPT_TURNS) return history
+        var start = history.size - KEPT_TURNS
+        while (start < history.size && roleOf(history[start]) != "user") start++
+        // No user message in the window: keep the lot rather than send something
+        // malformed.
+        return if (start >= history.size) history else history.drop(start)
+    }
+
+    private fun roleOf(message: kotlinx.serialization.json.JsonElement): String =
+        ((message as? kotlinx.serialization.json.JsonObject)
+            ?.get("role") as? kotlinx.serialization.json.JsonPrimitive)
+            ?.content.orEmpty()
 
     /**
      * Everything the assistant would otherwise spend a round trip fetching.
@@ -1672,7 +1713,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
         // Older turns are dropped: every request resends the whole conversation,
         // so an unbounded one gets slower and dearer with each message.
-        val kept = assistantHistory.orEmpty().takeLast(KEPT_TURNS)
+        val kept = trimHistory(assistantHistory.orEmpty())
         val withUser = kotlinx.serialization.json.buildJsonArray {
             add(system)
             kept.forEach { add(it) }

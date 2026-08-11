@@ -245,7 +245,15 @@ private fun AccountsSection(vm: FinTrackViewModel) {
                     if (vm.editingAccountId == a.id) {
                         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
                             PfField(value = vm.accountDraft.name, onValueChange = { vm.accountDraft = vm.accountDraft.copy(name = it) }, placeholder = "Account name")
-                            PfField(value = vm.accountDraft.owner, onValueChange = { vm.accountDraft = vm.accountDraft.copy(owner = it) }, placeholder = "Owner")
+                            // A picker, not free text: this is the profile the
+                            // account belongs to, so it decides which side the
+                            // account shows under and where its bank messages go.
+                            PfSelect(
+                                label = "Belongs to",
+                                value = vm.accountDraft.owner,
+                                options = vm.ownerOptions,
+                                onSelect = { vm.accountDraft = vm.accountDraft.copy(owner = it) }
+                            )
                             PfField(value = vm.accountDraft.balanceText, onValueChange = { vm.accountDraft = vm.accountDraft.copy(balanceText = it) }, placeholder = "Balance", numeric = true)
                             // Lets a bank SMS land on this account instead of the default.
                             PfField(value = vm.accountDraft.numberTail, onValueChange = { vm.accountDraft = vm.accountDraft.copy(numberTail = it) }, placeholder = "Last 3-4 digits, as the bank SMS shows", numeric = true)
@@ -451,7 +459,7 @@ private fun CardsSection(vm: FinTrackViewModel) {
                     if (vm.editingCardId == c.id) {
                         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
                             PfField(value = vm.cardDraft.name, onValueChange = { vm.cardDraft = vm.cardDraft.copy(name = it) }, placeholder = "Card name")
-                            PfField(value = vm.cardDraft.owner, onValueChange = { vm.cardDraft = vm.cardDraft.copy(owner = it) }, placeholder = "Owner")
+                            PfSelect(label = "Belongs to", value = vm.cardDraft.owner, options = vm.ownerOptions, onSelect = { vm.cardDraft = vm.cardDraft.copy(owner = it) })
                             PfField(value = vm.cardDraft.limitText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(limitText = it) }, placeholder = "Credit limit", numeric = true)
                             PfField(value = vm.cardDraft.balanceText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(balanceText = it) }, placeholder = "Current balance", numeric = true)
                             PfField(value = vm.cardDraft.minDueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(minDueText = it) }, placeholder = "Minimum due", numeric = true)
