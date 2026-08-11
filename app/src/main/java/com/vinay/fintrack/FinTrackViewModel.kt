@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import com.vinay.fintrack.data.Account
 import com.vinay.fintrack.data.Card
+import com.vinay.fintrack.data.AssistantTools
 import com.vinay.fintrack.data.ChatMessage
 import com.vinay.fintrack.data.Entry
 import com.vinay.fintrack.data.FirestoreSync
@@ -23,13 +24,15 @@ import com.vinay.fintrack.data.Txn
 import com.vinay.fintrack.data.currentPeriod
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.isoFromDayFirst
+import com.vinay.fintrack.data.millisOfDate
 import com.vinay.fintrack.data.newId
 import com.vinay.fintrack.data.today
 import com.vinay.fintrack.data.todayDayFirst
 import com.vinay.fintrack.data.ownerLabel
 import com.vinay.fintrack.data.parseSmartAdd
+import com.vinay.fintrack.data.prettyDate
 
-enum class Tab { HOME, ENTRIES, ADD, SETTINGS }
+enum class Tab { HOME, ENTRIES, ADD, CHAT, SETTINGS }
 
 /** Marks the transaction that settles a card bill, as opposed to the spends
  *  imported onto that same card. */
@@ -1434,4 +1437,301 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             oneOffAccountId = ""
         }
     }
+
+    // ── the chat ───────────────────────────────────────────────────────
+
+    private val assistant = Assistant(this)
+
+    /** What the user sees. The model's own transcript, including tool calls
+     *  and their results, is kept separately in [assistantHistory]. */
+    var chat by mutableStateOf(listOf<ChatMessage>()); private set
+    var chatBusy by mutableStateOf(false); private set
+    var chatInput by mutableStateOf("")
+
+    private var assistantHistory: kotlinx.serialization.json.JsonArray? = null
+
+    fun setChatInput(v: String) { chatInput = v }
+
+    val chatReady: Boolean get() = persisted.openaiKeyText.isNotBlank()
+
+    fun clearChat() {
+        chat = emptyList()
+        assistantHistory = null
+    }
+
+    /**
+     * Sends a message and applies whatever the assistant decides to do. Runs off
+     * the main thread; the tools hop back onto it themselves.
+     */
+    fun sendChat() {
+        val text = chatInput.trim()
+        if (text.isEmpty() || chatBusy) return
+        if (!chatReady) {
+            chat = chat + ChatMessage("assistant", "Add an OpenAI key in Settings first.")
+            return
+        }
+        chatInput = ""
+        chat = chat + ChatMessage("user", text)
+        chatBusy = true
+        markUndoPoint()
+
+        val key = persisted.openaiKeyText
+        val history = assistantHistory ?: kotlinx.serialization.json.buildJsonArray {
+            add(
+                kotlinx.serialization.json.buildJsonObject {
+                    put("role", "system")
+                    put(
+                        "content",
+                        AssistantTools.systemPrompt(
+                            activeProfile.orEmpty(),
+                            if (bucketView == "JOINT") "joint" else "personal",
+                            prettyDate(today())
+                        )
+                    )
+                }
+            )
+        }
+        val withUser = kotlinx.serialization.json.buildJsonArray {
+            history.forEach { add(it) }
+            add(
+                kotlinx.serialization.json.buildJsonObject {
+                    put("role", "user"); put("content", text)
+                }
+            )
+        }
+
+        Thread {
+            val outcome = runCatching { assistant.run(withUser, key) }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                outcome
+                    .onSuccess {
+                        assistantHistory = it.history
+                        chat = chat + ChatMessage("assistant", it.reply)
+                        if (!it.changed) undoPoint = null
+                    }
+                    .onFailure { e ->
+                        undoPoint = null
+                        chat = chat + ChatMessage(
+                            "assistant",
+                            e.message ?: "Something went wrong talking to OpenAI."
+                        )
+                    }
+                chatBusy = false
+            }
+        }.start()
+    }
+
+    // ── what the assistant drives ──────────────────────────────────────
+    // The same paths the screens use, so a change made in chat syncs, moves
+    // balances and respects profiles exactly as a tap would.
+
+    /** State before the assistant's last change, so a mistake is recoverable. */
+    private var undoPoint: PersistedState? = null
+
+    val canUndoAssistant: Boolean get() = undoPoint != null
+
+    fun markUndoPoint() { undoPoint = persisted }
+
+    fun undoAssistant(): Boolean {
+        val prev = undoPoint ?: return false
+        persisted = prev.also { ownRevision = store.save(it) }
+        undoPoint = null
+        pushNow()
+        return true
+    }
+
+    fun accountNamed(name: String): Account? =
+        visibleAccounts.firstOrNull { it.name.equals(name, true) }
+            ?: visibleAccounts.firstOrNull { it.name.contains(name, true) }
+
+    fun entryById(id: String): Entry? = entries.firstOrNull { it.id == id }
+    fun loanById(id: String): Loan? = loans.firstOrNull { it.id == id }
+    fun txnById(id: String): Txn? = txns.firstOrNull { it.id == id }
+
+    fun categoryNamed(name: String): String =
+        categories.firstOrNull { it.equals(name, true) }
+            ?: categories.firstOrNull { it.contains(name, true) }
+            ?: categories.lastOrNull().orEmpty()
+
+    /** Records money that has already moved, as the one-time form does. */
+    fun addTransactionDirect(
+        amount: Double,
+        category: String,
+        credit: Boolean,
+        accountId: String,
+        note: String,
+        dateIso: String
+    ): Txn {
+        val txn = Txn(
+            id = newId("t"),
+            date = dateIso,
+            kind = if (credit) "INCOME" else "EXPENSE",
+            amount = amount,
+            category = category,
+            fromAccountId = if (credit) "" else accountId,
+            toAccountId = if (credit) accountId else "",
+            period = dateIso.take(7),
+            note = note,
+            at = if (dateIso == today()) System.currentTimeMillis() else millisOfDate(dateIso)
+        )
+        update { s -> s.copy(txns = s.txns + txn) }
+        sync.upsertTxn(txn)
+        return txn
+    }
+
+    /** Changes a recorded transaction. Nulls leave a field alone. */
+    fun updateTransaction(
+        id: String,
+        amount: Double? = null,
+        category: String? = null,
+        accountId: String? = null,
+        note: String? = null,
+        dateIso: String? = null
+    ): Txn? {
+        val t = txnById(id) ?: return null
+        val credit = t.kind == "INCOME"
+        val updated = t.copy(
+            amount = amount ?: t.amount,
+            category = category ?: t.category,
+            note = note ?: t.note,
+            date = dateIso ?: t.date,
+            period = (dateIso ?: t.date).take(7),
+            at = if (dateIso != null) millisOfDate(dateIso) else t.at,
+            fromAccountId = if (accountId != null && !credit) accountId else t.fromAccountId,
+            toAccountId = if (accountId != null && credit) accountId else t.toAccountId
+        )
+        update { s -> s.copy(txns = s.txns.map { if (it.id == id) updated else it }) }
+        sync.upsertTxn(updated)
+        return updated
+    }
+
+    /** Adds a recurring entry — the plan, not a payment. */
+    fun addCommitmentDirect(
+        amount: Double,
+        category: String,
+        everyMonths: Int,
+        type: String,
+        joint: Boolean,
+        note: String
+    ): Entry {
+        val person = if (joint) "Joint" else activeProfile ?: "Me"
+        val bucket = if (joint) "JOINT" else "PERSONAL"
+        val entry = Entry(
+            id = newId("e"),
+            person = person,
+            type = type,
+            bucket = bucket,
+            category = category,
+            amount = amount,
+            frequency = if (everyMonths >= 12) "ANNUAL" else "MONTHLY",
+            note = note,
+            accountId = defaultAccountFor(person, bucket),
+            periodMonths = everyMonths.coerceIn(1, 12)
+        )
+        update { s -> s.copy(entries = s.entries + entry) }
+        return entry
+    }
+
+    fun updateCommitment(
+        id: String,
+        amount: Double? = null,
+        category: String? = null,
+        everyMonths: Int? = null,
+        note: String? = null
+    ): Entry? {
+        val e = entryById(id) ?: return null
+        val months = everyMonths?.coerceIn(1, 12) ?: e.everyMonths
+        val updated = e.copy(
+            amount = amount ?: e.amount,
+            category = category ?: e.category,
+            note = note ?: e.note,
+            periodMonths = months,
+            frequency = if (months >= 12) "ANNUAL" else "MONTHLY"
+        )
+        update { s -> s.copy(entries = s.entries.map { if (it.id == id) updated else it }) }
+        return updated
+    }
+
+    /**
+     * Confirms this month's payment without the sheet, the assistant having
+     * already established which accounts are involved.
+     */
+    fun confirmDirect(id: String, fromId: String?, toId: String?): String {
+        loanById(id)?.let { l ->
+            if (isLoanConfirmed(l.id)) return "${l.name} was already paid this month."
+            confirmLoan(l)
+            return "Paid ${inr(l.monthlyEmi)} for ${l.name}."
+        }
+        val e = entryById(id) ?: return "No commitment with that id."
+        if (isConfirmed(e.id)) return "${e.note.ifEmpty { e.category }} was already done this month."
+
+        val kind = confirmKindFor(e)
+        val from = fromId ?: e.accountId.ifEmpty { defaultAccountFor(e.person, e.bucket) }
+        val to = toId ?: accounts.firstOrNull { it.person == "Joint" && it.id != from }?.id.orEmpty()
+        if (kind == "TRANSFER" && to.isEmpty()) {
+            return "Tell me which account the set-aside should go to."
+        }
+        addTxn { generated ->
+            Txn(
+                id = generated, date = today(), kind = kind, amount = e.monthly,
+                category = e.category,
+                fromAccountId = if (kind == "INCOME") "" else from,
+                toAccountId = when (kind) {
+                    "INCOME" -> from
+                    "TRANSFER" -> to
+                    else -> ""
+                },
+                entryId = e.id, period = currentPeriod(),
+                note = e.note.ifEmpty { e.category },
+                at = System.currentTimeMillis()
+            )
+        }
+        return if (kind == "TRANSFER") "Set aside ${inr(e.monthly)} for ${e.category}."
+        else "Confirmed ${inr(e.monthly)} for ${e.category}."
+    }
+
+    fun addAccountDirect(name: String, balance: Double, tail: String, joint: Boolean): Account {
+        val person = if (joint) "Joint" else activeProfile ?: "Me"
+        val a = Account(newId("a"), name, ownerLabel(person), person, balance, tail)
+        update { s -> s.copy(accounts = s.accounts + a) }
+        return a
+    }
+
+    fun addCardDirect(
+        name: String, limit: Double, balance: Double, minDue: Double, due: String, tail: String
+    ): Card {
+        val c = Card(
+            id = newId("cc"), name = name, owner = activeProfile ?: "Me", limit = limit,
+            balance = balance, minDue = minDue, due = due, numberTail = tail
+        )
+        update { s -> s.copy(cards = s.cards + c) }
+        return c
+    }
+
+    fun addLoanDirect(name: String, emi: Double, total: Int, remaining: Int): Loan {
+        val person = activeProfile ?: "Me"
+        val l = Loan(
+            newId("l"), name, person, emi, total, remaining.coerceIn(0, total),
+            defaultAccountFor(person, "JOINT")
+        )
+        update { s -> s.copy(loans = s.loans + l) }
+        return l
+    }
+
+    fun updateAccountDirect(id: String, newName: String?, balance: Double?, tail: String?): Account? {
+        val a = accounts.firstOrNull { it.id == id } ?: return null
+        val updated = a.copy(
+            name = newName ?: a.name,
+            openingBalance = balance ?: a.openingBalance,
+            numberTail = tail ?: a.numberTail
+        )
+        update { s -> s.copy(accounts = s.accounts.map { if (it.id == id) updated else it }) }
+        return updated
+    }
+
+    fun addCategoryNamed(name: String) {
+        if (name.isBlank() || categories.any { it.equals(name, true) }) return
+        update { s -> s.copy(categories = s.categories + name.trim()) }
+    }
 }
+

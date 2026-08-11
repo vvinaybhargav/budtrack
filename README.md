@@ -29,6 +29,33 @@ gradle wrapper --gradle-version 8.7 && ./gradlew assembleDebug
 The app is signed with the checked-in `app/keystore/fintrack.jks` (password `fintrack`)
 so every build — local or CI — installs over the previous one without uninstalling.
 
+## The chat
+
+A tab that can read and change everything, given an OpenAI key in Settings.
+It calls tools rather than answering from memory, so a figure it quotes is the
+figure the screens show, and a change it makes goes through the same code a tap
+would — syncing, moving balances, respecting profiles.
+
+```
+How much did I spend on groceries this month?
+Add 450 for Swiggy from ICICI Joint
+The last Swiggy one should be 540, fix it
+Set the eating out budget to 4000
+Confirm this month's car EMI
+```
+
+It can add, edit and delete transactions and commitments, confirm a month's
+payment, add accounts, cards and loans, set budgets and categories, and switch
+between the personal and joint sides.
+
+**Your figures are sent to OpenAI** to answer — balances, amounts, payees,
+account names. Not your PINs, Firebase config or the raw text of any bank
+message. The tab does nothing until a key is set.
+
+Two guards worth knowing: an **Undo** button appears after any change the
+assistant made, restoring the state from just before it; and the tool loop is
+bounded, so a model that keeps calling tools stops instead of spending credit.
+
 ## Bank SMS import
 
 Transactions come from your bank's own alerts rather than from anything you

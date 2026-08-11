@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.ui.AddScreen
+import com.vinay.fintrack.ui.ChatScreen
 import com.vinay.fintrack.ui.EntriesScreen
 import com.vinay.fintrack.ui.FinTrackTheme
 import com.vinay.fintrack.ui.Hairline
@@ -81,6 +83,7 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
                 Tab.HOME -> HomeScreen(vm)
                 Tab.ENTRIES -> EntriesScreen(vm)
                 Tab.ADD -> AddScreen(vm)
+                Tab.CHAT -> ChatScreen(vm)
                 Tab.SETTINGS -> SettingsScreen(vm)
             }
         }
@@ -144,6 +147,7 @@ private fun BottomNav(vm: FinTrackViewModel) {
             NavItem(Icons.Default.Home, "Home", vm.tab == Tab.HOME, Modifier.weight(1f)) { vm.tab = Tab.HOME }
             NavItem(Icons.AutoMirrored.Filled.List, "Transactions", vm.tab == Tab.ENTRIES, Modifier.weight(1f)) { vm.tab = Tab.ENTRIES }
             NavItem(Icons.Default.Add, "Add", vm.tab == Tab.ADD, Modifier.weight(1f)) { vm.tab = Tab.ADD }
+            NavItem(Icons.AutoMirrored.Filled.Chat, "Chat", vm.tab == Tab.CHAT, Modifier.weight(1f)) { vm.tab = Tab.CHAT }
             NavItem(Icons.Default.Settings, "Settings", vm.tab == Tab.SETTINGS, Modifier.weight(1f)) { vm.tab = Tab.SETTINGS }
         }
     }
