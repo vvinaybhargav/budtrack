@@ -977,14 +977,26 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         return accounts.firstOrNull { it.id == id }?.person.orEmpty()
     }
 
+    /**
+     * Personal is mine, Joint is everything else — deliberately not
+     * `person == "Joint"`. Requiring an exact match hid anything paid from a
+     * personal account while the toggle sat on Joint, and made a transaction on
+     * the other profile's account invisible in both buckets.
+     */
+    private fun inBucket(t: Txn): Boolean {
+        val person = txnPerson(t)
+        return if (bucketView == "PERSONAL") person == activeProfile else person != activeProfile
+    }
+
+    /** How many are sitting in the other bucket, so an empty list can say so
+     *  instead of looking like the transaction was never recorded. */
+    val otherBucketCount: Int get() = txns.count { !inBucket(it) }
+
     /** The Transactions screen shows these and nothing else: real recorded
      *  movements, not the recurring plan. */
     val filteredTxns: List<Txn>
         get() = txns
-            .filter { t ->
-                if (bucketView == "PERSONAL") txnPerson(t) == activeProfile
-                else txnPerson(t) == "Joint"
-            }
+            .filter { inBucket(it) }
             .filter { t ->
                 (entriesCategoryFilter == null || t.category == entriesCategoryFilter) &&
                     (entriesSearch.isEmpty() ||
@@ -995,12 +1007,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             .sortedByDescending { it.date + it.id }
 
     val txnChips: List<String>
-        get() = txns
-            .filter { t ->
-                if (bucketView == "PERSONAL") txnPerson(t) == activeProfile
-                else txnPerson(t) == "Joint"
-            }
-            .map { it.category }.distinct()
+        get() = txns.filter { inBucket(it) }.map { it.category }.distinct()
 
     /** Removes it here and in Firestore, and the balance follows. */
     fun deleteTxn(id: String) = removeTxns { it.id == id }

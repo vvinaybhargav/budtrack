@@ -88,13 +88,27 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                         .padding(vertical = Space.s6),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    val elsewhere = vm.otherBucketCount
+                    val filtered = vm.entriesSearch.isNotEmpty() || vm.entriesCategoryFilter != null
                     Text(
-                        "Nothing recorded yet.",
+                        when {
+                            elsewhere > 0 -> "Nothing here."
+                            filtered -> "Nothing matches."
+                            else -> "Nothing recorded yet."
+                        },
                         color = Pf.Muted,
                         textAlign = TextAlign.Center
                     )
+                    // A transaction on the other side used to look like one that
+                    // was never recorded at all.
                     Muted(
-                        "Confirm a commitment on Home, or turn on bank SMS in Settings.",
+                        when {
+                            elsewhere > 0 ->
+                                "$elsewhere transaction(s) are under " +
+                                    if (vm.bucketView == "JOINT") "Personal." else "Joint."
+                            filtered -> "Clear the search or category filter to see everything."
+                            else -> "Confirm a commitment on Home, or turn on bank SMS in Settings."
+                        },
                         Modifier.padding(top = Space.s2)
                     )
                 }
