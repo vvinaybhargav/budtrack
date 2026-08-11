@@ -358,11 +358,11 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
             horizontalArrangement = Arrangement.spacedBy(Space.s2)
         ) {
             if (!hasPermission) {
-                PrimaryButton("Allow SMS access") {
+                PrimaryButton("Allow SMS access", onClick = {
                     permissionLauncher.launch(
                         arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS)
                     )
-                }
+                })
             } else if (vm.smsImportOn) {
                 SecondaryButton("Turn off", { vm.setSmsImport(false) })
             } else {
