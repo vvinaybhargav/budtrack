@@ -1,0 +1,40 @@
+rules_version = '2';
+
+// Paste into Firebase console → Firestore Database → Rules → Publish.
+//
+// This document holds salaries, balances, loans and every payment either of
+// you makes. The version currently live is open by path: anyone who knows the
+// project id can read all of it. These rules close that.
+//
+// Before publishing:
+//   1. Firebase console → Authentication → Sign-in method → Anonymous → Enable.
+//      Without it the app cannot sign in and every read is denied.
+//   2. Open Settings on each phone and copy "This device's ID".
+//   3. Create the document workspaces/household/members with a field `uids`
+//      of type array, holding those ids.
+//
+// Anonymous ids are per-install: reinstalling or clearing app data mints a new
+// one, which has to be added to `uids` again. If both phones lose access, edit
+// that document in the console — it is the only way back in.
+//
+// Note this also governs vvinaybhargav/fintrack, which shares the workspace.
+// Roll it out to both phones together.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // The allowlist itself: readable by any signed-in device so the rule below
+    // can be evaluated, writable only from the console.
+    match /workspaces/household/members {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Everything else in the household, restricted to the named devices.
+    match /workspaces/household/{document=**} {
+      allow read, write: if request.auth != null
+        && request.auth.uid in
+           get(/databases/$(database)/documents/workspaces/household/members).data.uids;
+    }
+  }
+}

@@ -144,25 +144,10 @@ match /workspaces/household/{document=**} {
 }
 ```
 
-To tighten it, enable anonymous sign-in, take the **This device's ID** value
-Settings shows on each phone, put them in a `uids` array on
-`workspaces/household/members`, and require membership:
-
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /workspaces/household/members {
-      allow read: if request.auth != null;
-      allow write: if false;
-    }
-    match /workspaces/household/{document=**} {
-      allow read, write: if request.auth != null
-        && request.auth.uid in get(/databases/$(database)/documents/workspaces/household/members).data.uids;
-    }
-  }
-}
-```
+To tighten it, publish [`firestore.rules`](firestore.rules) from this repo. It
+carries the steps in its header: enable anonymous sign-in, take the **This
+device's ID** value Settings shows on each phone, and list them in a `uids`
+array on `workspaces/household/members`.
 
 Anonymous IDs are per-install: reinstalling or clearing app data mints a new
 one, which then has to be added to `uids` again. Note this rule also governs

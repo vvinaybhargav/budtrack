@@ -63,6 +63,28 @@ fun SettingsScreen(vm: FinTrackViewModel) {
 
         item { Hairline() }
 
+        // Only while any of it is left.
+        if (vm.sampleDataCount > 0) {
+            item {
+                Column {
+                    Heading("Sample data")
+                    Muted(
+                        "${vm.sampleDataCount} made-up record(s) from first launch — " +
+                            "salaries, accounts, cards and loans. They inflate every " +
+                            "planned figure and balance once your own numbers are in."
+                    )
+                    Row(Modifier.padding(top = Space.s3)) {
+                        SecondaryButton("Remove sample data", { vm.clearSamples() })
+                    }
+                    if (vm.sampleNote.isNotEmpty()) {
+                        Muted(vm.sampleNote, Modifier.padding(top = Space.s2))
+                    }
+                }
+            }
+
+            item { Hairline() }
+        }
+
         item {
             Column {
                 Heading("Profiles")

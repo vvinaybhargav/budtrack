@@ -16,6 +16,7 @@ import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.Loan
 import com.vinay.fintrack.data.PersistedState
 import com.vinay.fintrack.data.SAVINGS_CATEGORIES
+import com.vinay.fintrack.data.Seed
 import com.vinay.fintrack.data.SmsImporter
 import com.vinay.fintrack.data.Store
 import com.vinay.fintrack.data.SyncStatus
@@ -1877,6 +1878,70 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         )
         update { s -> s.copy(accounts = s.accounts.map { if (it.id == id) updated else it }) }
         return updated
+    }
+
+    // ── clearing the sample data ───────────────────────────────────────
+    // The app ships with fabricated salaries, accounts, cards and loans so the
+    // screens aren't empty on first run. Left in place they inflate every
+    // planned figure and every balance once real numbers arrive.
+
+    private val sampleEntryIds = Seed.entries.map { it.id }.toSet()
+    private val sampleAccountIds = Seed.accounts.map { it.id }.toSet()
+    private val sampleLoanIds = Seed.loans.map { it.id }.toSet()
+    private val sampleCardIds = Seed.cards.map { it.id }.toSet()
+
+    var sampleNote by mutableStateOf(""); private set
+
+    fun clearSamples() { sampleNote = removeSampleData() }
+
+    /** How much of the sample data is still here. */
+    val sampleDataCount: Int
+        get() = entries.count { it.id in sampleEntryIds } +
+            accounts.count { it.id in sampleAccountIds } +
+            loans.count { it.id in sampleLoanIds } +
+            cards.count { it.id in sampleCardIds }
+
+    /**
+     * Removes what the app invented, keeping everything you added.
+     *
+     * A sample account carrying real transactions is kept rather than deleted:
+     * removing it would either strand those records or silently move the money
+     * somewhere else. Renaming it is the right move, and the message says so.
+     */
+    fun removeSampleData(): String {
+        val usedAccounts = persisted.txns.flatMap { listOf(it.fromAccountId, it.toAccountId) }
+            .filter { it.isNotEmpty() }.toSet()
+        val usedCards = persisted.txns.map { it.cardId }.filter { it.isNotEmpty() }.toSet()
+
+        val accountsToGo = sampleAccountIds - usedAccounts
+        val cardsToGo = sampleCardIds - usedCards
+        val kept = (sampleAccountIds intersect usedAccounts).size +
+            (sampleCardIds intersect usedCards).size
+
+        val removed = entries.count { it.id in sampleEntryIds } +
+            loans.count { it.id in sampleLoanIds } +
+            accounts.count { it.id in accountsToGo } +
+            cards.count { it.id in cardsToGo }
+
+        if (removed == 0 && kept == 0) return "There's no sample data left."
+
+        update { s ->
+            s.copy(
+                entries = s.entries.filterNot { it.id in sampleEntryIds },
+                loans = s.loans.filterNot { it.id in sampleLoanIds },
+                accounts = s.accounts.filterNot { it.id in accountsToGo },
+                cards = s.cards.filterNot { it.id in cardsToGo }
+            )
+        }
+        pushNow()
+
+        return buildString {
+            append("Removed $removed sample record(s).")
+            if (kept > 0) {
+                append(" Kept $kept that your transactions refer to — rename ")
+                append("them on Home rather than deleting, so nothing is stranded.")
+            }
+        }
     }
 
     fun addCategoryNamed(name: String) {
