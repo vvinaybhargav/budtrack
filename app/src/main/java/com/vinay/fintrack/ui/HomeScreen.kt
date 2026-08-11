@@ -550,8 +550,8 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
     Column {
         SectionTitle("Set aside this month", Modifier.padding(bottom = Space.s1))
         Muted(
-            "Yearly commitments split by 12. Confirming moves the money to your " +
-                "set-aside account — it isn't spent.",
+            "Repeating commitments split across the months between payments. " +
+                "Confirming moves the money to your set-aside account — it isn't spent.",
             Modifier.padding(bottom = Space.s3)
         )
         PfCard(padding = PaddingValues(Space.s4)) {
@@ -598,7 +598,8 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
                                 color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
                             )
                             Muted(
-                                "${inr(e.monthly)}/mo · ${inr(e.amount)} a year",
+                                "${inr(e.monthly)}/mo · ${inr(e.amount)} every " +
+                                    if (e.everyMonths == 12) "year" else "${e.everyMonths} months",
                                 Modifier.padding(top = 2.dp, bottom = 6.dp)
                             )
                             Tag("Set aside", Pf.Accent2_100, Pf.Accent2_800)

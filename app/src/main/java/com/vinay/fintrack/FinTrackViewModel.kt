@@ -33,15 +33,21 @@ enum class Tab { HOME, ENTRIES, ADD, SETTINGS }
 data class Draft(
     val person: String = "Me",
     val type: String = "EXPENSE",
-    /** Kept in step with [person] rather than chosen separately: "Joint" means
-     *  JOINT, a profile name means PERSONAL. */
-    val bucket: String = "JOINT",
     val category: String = "Other",
     val amountText: String = "",
     val frequency: String = "MONTHLY",
     val note: String = "",
-    val accountId: String = ""
-)
+    val accountId: String = "",
+    /** Months between payments, 1–12. Twelve is the old "annual". */
+    val periodMonths: Int = 1
+) {
+    /**
+     * Derived, never stored. As its own field it defaulted to JOINT and stayed
+     * there while the form showed a profile name, so a payment marked "Me" was
+     * filed against the joint account. It cannot drift from [person] now.
+     */
+    val bucket: String get() = if (person == "Joint") "JOINT" else "PERSONAL"
+}
 
 data class NewLoanDraft(
     val name: String = "", val person: String = "Me", val emiText: String = "",
@@ -485,7 +491,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     private fun confirmKindFor(e: Entry): String = when {
         e.type == "INCOME" -> "INCOME"
         // Annual provisions and savings stay your money — they move, they aren't spent.
-        e.frequency == "ANNUAL" || e.type == "SAVINGS" -> "TRANSFER"
+        // Any set-aside, not just yearly ones: a quarterly bill is put by a
+        // month at a time exactly the same way.
+        e.isSetAside || e.type == "SAVINGS" -> "TRANSFER"
         else -> "EXPENSE"
     }
 
@@ -613,8 +621,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         editingEntryId = e.id
         tab = Tab.ADD
         draft = Draft(
-            e.person, e.type, e.bucket, e.category,
-            e.amount.toLong().toString(), e.frequency, e.note, e.accountId
+            e.person, e.type, e.category,
+            e.amount.toLong().toString(), e.frequency, e.note, e.accountId, e.everyMonths
         )
     }
 
@@ -633,7 +641,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         addKind = k
         val p = activeProfile ?: "Me"
         when (k) {
-            "EXPENSE", "BILL" -> draft = Draft(person = p, type = "EXPENSE", frequency = "MONTHLY")
+            "RECURRING" -> draft = Draft(person = p, type = "EXPENSE", frequency = "MONTHLY")
             "INVESTMENT" -> draft = Draft(person = p, type = "SAVINGS", category = "LIC", frequency = "MONTHLY")
             "ONE_TIME" -> draft = Draft(person = p, type = "EXPENSE", frequency = "ONE_TIME")
             "EMI_LOAN" -> newLoanDraft = NewLoanDraft(person = p)
@@ -728,8 +736,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s ->
             val entry = Entry(
                 editingId ?: newId("e"), draft.person, draft.type, draft.bucket,
-                draft.category, amount, draft.frequency, draft.note,
-                draft.accountId.ifEmpty { defaultAccountFor(draft.person, draft.bucket) }
+                draft.category, amount,
+                // Kept for older readers; the period is what actually counts.
+                if (draft.periodMonths >= 12) "ANNUAL" else "MONTHLY",
+                draft.note,
+                draft.accountId.ifEmpty { defaultAccountFor(draft.person, draft.bucket) },
+                draft.periodMonths
             )
             if (editingId != null) {
                 s.copy(entries = s.entries.map { if (it.id == entry.id) entry else it })
@@ -1082,7 +1094,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         get() = visibleEntries.filter {
             // ONE_TIME excluded: older builds saved one-off payments as entries,
             // which then asked to be confirmed again every month.
-            it.frequency != "ANNUAL" && it.frequency != "ONE_TIME" &&
+            !it.isSetAside && it.frequency != "ONE_TIME" &&
                 ((it.type == "EXPENSE" && it.category != "EMI") || it.type == "SAVINGS")
         }
 
@@ -1092,7 +1104,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * is waiting when the yearly bill actually lands.
      */
     val annualSetAsides: List<Entry>
-        get() = visibleEntries.filter { it.frequency == "ANNUAL" && it.type != "INCOME" }
+        get() = visibleEntries.filter { it.isSetAside && it.type != "INCOME" }
 
     val annualSetAsideMonthly: Double get() = annualSetAsides.sumOf { it.monthly }
 
@@ -1239,14 +1251,16 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** The whole of who an entry is for: shared, or this profile's own. */
     val forOptions: List<String> get() = listOfNotNull("Joint", activeProfile)
 
-    /** Sets person and bucket together — they were never independent, and
-     *  letting them drift produced states that meant nothing. */
+    /** Who it's for. The bucket follows from this, and so does the account
+     *  unless one was picked deliberately. */
     fun setDraftFor(who: String) {
-        draft = draft.copy(
-            person = who,
-            bucket = if (who == "Joint") "JOINT" else "PERSONAL",
-            // The account follows unless one was chosen deliberately.
-            accountId = if (draft.accountId.isEmpty()) "" else draft.accountId
-        )
+        draft = draft.copy(person = who)
+        // A joint account can't stay selected on a personal payment.
+        if (oneOffAccountId.isNotEmpty() &&
+            accounts.firstOrNull { it.id == oneOffAccountId }?.person != who &&
+            who != "Joint"
+        ) {
+            oneOffAccountId = ""
+        }
     }
 }

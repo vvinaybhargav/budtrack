@@ -17,9 +17,25 @@ data class Entry(
     val note: String = "",
     /** Account this is normally paid from, chosen when the entry is created so
      *  confirming it doesn't start from a guess. */
-    val accountId: String = ""
+    val accountId: String = "",
+    /** How many months between payments, 1–12. Zero means fall back to
+     *  [frequency], so entries written before this field still read correctly. */
+    val periodMonths: Int = 0
 ) {
-    val monthly: Double get() = if (frequency == "ANNUAL") amount / 12 else amount
+    val everyMonths: Int
+        get() = when {
+            periodMonths in 1..12 -> periodMonths
+            frequency == "ANNUAL" -> 12
+            else -> 1
+        }
+
+    /** What it costs each month: a quarterly bill is a third of itself, an
+     *  annual one a twelfth. A one-off is simply its own amount. */
+    val monthly: Double
+        get() = if (frequency == "ONE_TIME") amount else amount / everyMonths
+
+    /** Anything that isn't monthly needs putting aside between payments. */
+    val isSetAside: Boolean get() = frequency != "ONE_TIME" && everyMonths > 1
 }
 
 @Serializable

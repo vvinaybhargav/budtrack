@@ -24,18 +24,28 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.INVEST_PICKABLE
+import com.vinay.fintrack.data.inr
 
-// "Expense" read as "money I just spent" and produced a monthly plan instead,
-// so the recurring ones now say so and the one-off leads.
+// Monthly expense and Monthly bill are gone — both read as "money I just spent"
+// and produced a plan that never reached Transactions. One "Recurring / Set
+// aside" replaces them, since without it there is no way to create a set-aside
+// at all.
 private val ADD_KINDS = listOf(
-    "ONE_TIME" to "Paid now",
-    "EXPENSE" to "Monthly expense",
-    "BILL" to "Monthly bill",
+    "ONE_TIME" to "One-time",
+    "RECURRING" to "Recurring / Set aside",
     "EMI_LOAN" to "EMI / Loan",
-    "INVESTMENT" to "Monthly investment",
+    "INVESTMENT" to "Investment",
     "BANK_ACCOUNT" to "Bank Account",
     "CREDIT_CARD" to "Credit Card"
 )
+
+/** 1–12 months between payments. 1 is an ordinary monthly commitment, 12 the
+ *  old "annual"; anything above 1 is set aside a month at a time. */
+private val PERIOD_OPTIONS = (1..12).map { if (it == 1) "Every month" else "Every $it months" }
+
+private fun periodLabel(months: Int) = PERIOD_OPTIONS[(months.coerceIn(1, 12)) - 1]
+
+private fun periodFromLabel(label: String) = PERIOD_OPTIONS.indexOf(label) + 1
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -202,7 +212,7 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
         vm.categories
     }
     val notePlaceholder = if (isEditing) "Optional note" else when (vm.addKind) {
-        "BILL" -> "e.g. Car insurance, Wi-Fi renewal…"
+        "RECURRING" -> "e.g. Car insurance, school fees…"
         "INVESTMENT" -> "e.g. Monthly SIP, PPF contribution…"
         "ONE_TIME" -> "e.g. Diwali gift, appliance purchase…"
         else -> "e.g. Groceries, electricity bill…"
@@ -223,7 +233,19 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
         PfField("Amount (₹)", vm.draft.amountText, { vm.draft = vm.draft.copy(amountText = it) }, placeholder = "e.g. 5000", numeric = true)
         val oneOff = !isEditing && vm.addKind == "ONE_TIME"
         if (!oneOff) {
-            PfSelect("Frequency", vm.draft.frequency, listOf("MONTHLY", "ANNUAL"), { vm.draft = vm.draft.copy(frequency = it) })
+            PfSelect(
+                "Repeats",
+                periodLabel(vm.draft.periodMonths),
+                PERIOD_OPTIONS,
+                { vm.draft = vm.draft.copy(periodMonths = periodFromLabel(it)) }
+            )
+            if (vm.draft.periodMonths > 1) {
+                val amount = vm.draft.amountText.toDoubleOrNull() ?: 0.0
+                Muted(
+                    "Set aside ${inr(amount / vm.draft.periodMonths)} a month " +
+                        "towards it, on the Home screen."
+                )
+            }
             // Which account this is paid from, asked once here so confirming it
             // later starts from the right account instead of the joint default.
             PfSelect(
