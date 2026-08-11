@@ -2,6 +2,7 @@ package com.vinay.fintrack.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -227,6 +228,24 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                 )
             }
             Muted("An account owned by you puts this under Personal; a joint account puts it under Joint.")
+
+            // What the bank actually said, for an imported one. Kept on this
+            // phone only — it is here so a misread can be checked against the
+            // original, not so it can travel.
+            val message = vm.smsBodyFor(txn.id)
+            if (message.isNotEmpty()) {
+                Column(Modifier.padding(top = Space.s2)) {
+                    Muted("The message this came from")
+                    SelectionContainer {
+                        Text(
+                            message,
+                            Modifier.padding(top = 4.dp),
+                            color = Pf.Muted,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
 
             Row(
                 Modifier.fillMaxWidth(),

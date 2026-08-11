@@ -43,9 +43,12 @@ data class PersistedState(
      *  remembering this the app cannot tell "not asked yet" from "declined for
      *  good" — and offers a button that does nothing. */
     val smsAsked: Boolean = false,
-    /** Recent import decisions, newest first, capped — the only way to see why
-     *  a bank message didn't become a transaction. */
-    val smsLog: List<String> = emptyList()
+    val smsLog: List<String> = emptyList(),
+    /** The message each imported transaction came from, keyed by its id.
+     *  Device-local and never synced: bank texts carry account numbers and
+     *  balances, and this exists so you can check what was read, not so it can
+     *  travel. Capped, oldest dropped first. */
+    val smsBodies: Map<String, String> = emptyMap()
 )
 
 class Store(context: Context) {

@@ -98,6 +98,7 @@ class SmsImporter(private val context: Context) {
         var added = 0
         val log = mutableListOf<String>()
         val cardSpend = mutableMapOf<String, Double>()
+        val bodies = mutableMapOf<String, String>()
 
         for (p in items) {
             val existing = matchingConfirmed(txns, p)
@@ -130,6 +131,7 @@ class SmsImporter(private val context: Context) {
                 source = "sms",
                 rawAmountText = p.amountText
             )
+            bodies[txns.last().id] = p.body
             if (card != null && !p.isCredit) cardSpend[card] = (cardSpend[card] ?: 0.0) + p.amount
             added++
             log += if (card != null) "added ${inr(p.amount)} ${p.party} to the card"
@@ -150,6 +152,7 @@ class SmsImporter(private val context: Context) {
                 cardSpend[c.id]?.let { c.copy(balance = c.balance + it, paid = false) } ?: c
             },
             importedRefs = capRefs(state.importedRefs + items.map { it.dedupeKey }),
+            smsBodies = capBodies(state.smsBodies + bodies),
             smsLog = (log.asReversed() + state.smsLog).take(MAX_LOG),
             lastSmsScan = maxOf(newest, state.lastSmsScan)
         )
@@ -167,6 +170,11 @@ class SmsImporter(private val context: Context) {
      *  enough to stop a re-read duplicating. */
     private fun capRefs(refs: Set<String>): Set<String> =
         if (refs.size <= MAX_REFS) refs else refs.toList().takeLast(MAX_REFS).toSet()
+
+    /** Message bodies are the bulkiest thing stored; keep only recent ones. */
+    private fun capBodies(bodies: Map<String, String>): Map<String, String> =
+        if (bodies.size <= MAX_BODIES) bodies
+        else bodies.entries.toList().takeLast(MAX_BODIES).associate { it.key to it.value }
 
     /**
      * The account the message names, or the default when it can't be told
@@ -204,5 +212,6 @@ class SmsImporter(private val context: Context) {
         const val TAG = "SmsImporter"
         const val MAX_REFS = 500
         const val MAX_LOG = 25
+        const val MAX_BODIES = 300
     }
 }

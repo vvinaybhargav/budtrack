@@ -17,10 +17,11 @@ data class ParsedSms(
     val ref: String,
     val accountTail: String,
     val date: String,
-    /** Just the amount as the message wrote it, for tracing a misparse. The
-     *  whole body was being stored and synced, and bank texts carry account
-     *  numbers and balances. */
+    /** Just the amount as the message wrote it, for tracing a misparse. */
     val amountText: String,
+    /** The message itself. Kept on the device so an import can be checked and
+     *  re-matched; stripped before anything is synced. */
+    val body: String = "",
     /** When the bank sent it — the real time of the payment, better than the
      *  moment the app happened to read the message. */
     val receivedAt: Long = 0L
@@ -100,7 +101,8 @@ fun parseBankSms(body: String, sender: String = ""): ParsedSms? {
         ref = ref,
         accountTail = accountTail,
         date = extractDate(body),
-        amountText = amountText
+        amountText = amountText,
+        body = body.take(300)
     ).takeIf { it.isUsable }
 }
 

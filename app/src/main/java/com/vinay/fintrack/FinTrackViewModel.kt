@@ -19,7 +19,11 @@ import com.vinay.fintrack.data.SAVINGS_CATEGORIES
 import com.vinay.fintrack.data.hashPin
 import com.vinay.fintrack.data.looksLikePlainPin
 import com.vinay.fintrack.data.Seed
+import com.vinay.fintrack.data.AccountMatch
 import com.vinay.fintrack.data.SmsImporter
+import com.vinay.fintrack.data.matchAccountByTail
+import com.vinay.fintrack.data.matchCardByTail
+import com.vinay.fintrack.data.parseBankSms
 import com.vinay.fintrack.data.categoryForParty
 import com.vinay.fintrack.data.Store
 import com.vinay.fintrack.data.SyncStatus
@@ -218,6 +222,50 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * Reads the inbox for older messages. Runs off the main thread, then picks
      * up whatever the importer wrote and sends the new transactions up.
      */
+    /**
+     * Re-files imported transactions against the account digits as they stand
+     * now.
+     *
+     * A backfill run before the digits were filled in put everything on the
+     * shared account, and there was no way to correct sixty days of it except
+     * one at a time. The stored message is re-read for its account number and
+     * the transaction moved — nothing else about it changes.
+     */
+    fun rematchImports() {
+        val moved = mutableListOf<Txn>()
+        persisted.txns.forEach { t ->
+            if (t.source.isEmpty()) return@forEach
+            val body = persisted.smsBodies[t.id].orEmpty()
+            if (body.isEmpty()) return@forEach
+            val tail = parseBankSms(body)?.accountTail.orEmpty()
+            if (tail.isEmpty()) return@forEach
+
+            val card = matchCardByTail(cards, tail) as? AccountMatch.One
+            if (card != null) {
+                if (t.cardId != card.accountId) {
+                    moved += t.copy(cardId = card.accountId, fromAccountId = "", toAccountId = "")
+                }
+                return@forEach
+            }
+            val account = matchAccountByTail(accounts, tail) as? AccountMatch.One ?: return@forEach
+            val credit = t.kind == "INCOME"
+            val current = if (credit) t.toAccountId else t.fromAccountId
+            if (current == account.accountId) return@forEach
+            moved += if (credit) t.copy(toAccountId = account.accountId)
+            else t.copy(fromAccountId = account.accountId, cardId = "")
+        }
+
+        if (moved.isEmpty()) {
+            scanNote = "Nothing to move — the imports already match, or those " +
+                "accounts have no digits set."
+            return
+        }
+        val byId = moved.associateBy { it.id }
+        update { s -> s.copy(txns = s.txns.map { byId[it.id] ?: it }) }
+        moved.forEach { sync.upsertTxn(it) }
+        scanNote = "Moved ${moved.size} import(s) onto the account their message names."
+    }
+
     fun backfillSms(days: Int = 60) {
         if (scanning) return
         scanning = true
@@ -276,6 +324,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         firebaseConfigText = "",
         openaiKeyText = "",
         smsLog = emptyList(),
+        smsBodies = emptyMap(),
         importedRefs = emptySet(),
         lastSmsScan = 0L,
         lastProfile = "",
@@ -290,6 +339,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         firebaseConfigText = persisted.firebaseConfigText,
         openaiKeyText = persisted.openaiKeyText,
         smsLog = persisted.smsLog,
+        smsBodies = persisted.smsBodies,
         importedRefs = persisted.importedRefs,
         lastSmsScan = persisted.lastSmsScan,
         smsImportOn = persisted.smsImportOn,
@@ -1103,6 +1153,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setDefaultAccount(v: String) = update { it.copy(defaultAccount = v) }
     fun setFirebaseConfig(v: String) = update { it.copy(firebaseConfigText = v) }
+    fun setOpenaiKey(v: String) = update { it.copy(openaiKeyText = v) }
 
     /** Explicit, so typing the config doesn't reconnect on every keystroke. */
     fun applyFirebaseConfig() {
@@ -1393,6 +1444,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     var editingTxnId by mutableStateOf<String?>(null); private set
 
     val editingTxn: Txn? get() = txns.firstOrNull { it.id == editingTxnId }
+
+    /** The bank message an imported transaction came from, if it's still kept. */
+    fun smsBodyFor(id: String): String = persisted.smsBodies[id].orEmpty()
 
     fun startEditTxn(id: String) { editingTxnId = id }
     fun cancelEditTxn() { editingTxnId = null }

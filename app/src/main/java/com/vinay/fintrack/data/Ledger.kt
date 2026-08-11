@@ -230,7 +230,7 @@ fun categoryForParty(party: String, categories: List<String>): String {
 /** "SWIGGY" and "swiggy limited" both become "Swiggy Limited". */
 private fun titleCase(raw: String): String =
     raw.trim()
-        .split(Regex("\s+"))
+        .split(Regex("\\s+"))
         .filter { it.isNotBlank() }
         .joinToString(" ") { word ->
             word.lowercase().replaceFirstChar { it.uppercase() }
