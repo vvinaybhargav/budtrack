@@ -21,8 +21,10 @@ import com.vinay.fintrack.data.parseFirebaseConfig
 import com.vinay.fintrack.data.Txn
 import com.vinay.fintrack.data.currentPeriod
 import com.vinay.fintrack.data.inr
+import com.vinay.fintrack.data.isoFromDayFirst
 import com.vinay.fintrack.data.newId
 import com.vinay.fintrack.data.today
+import com.vinay.fintrack.data.todayDayFirst
 import com.vinay.fintrack.data.ownerLabel
 import com.vinay.fintrack.data.parseSmartAdd
 
@@ -660,6 +662,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     var oneOffAccountId by mutableStateOf("")
     var oneOffIsCredit by mutableStateOf(false)
 
+    /** Day-first as written here. Defaults to today so the common case is a
+     *  field you never touch, but a payment from last week can be recorded. */
+    var oneOffDateText by mutableStateOf(todayDayFirst())
+
+    val oneOffDateValid: Boolean get() = isoFromDayFirst(oneOffDateText) != null
+
+    val todayDayFirstText: String get() = todayDayFirst()
+
     fun setOneOffAccount(id: String) { oneOffAccountId = id }
 
     /**
@@ -683,22 +693,26 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun saveOneOff(amount: Double) {
         val account = resolvedOneOffAccount
+        val date = isoFromDayFirst(oneOffDateText) ?: today()
         addTxn { id ->
             Txn(
                 id = id,
-                date = today(),
+                date = date,
                 kind = if (oneOffIsCredit) "INCOME" else "EXPENSE",
                 amount = amount,
                 category = draft.category,
                 fromAccountId = if (oneOffIsCredit) "" else account,
                 toAccountId = if (oneOffIsCredit) account else "",
-                period = currentPeriod(),
+                // The month it happened in, not the month you typed it in, so a
+                // backdated payment counts against the right budget.
+                period = date.take(7),
                 note = draft.note.ifEmpty { draft.category }
             )
         }
         draft = Draft(person = activeProfile ?: "Me")
         oneOffAccountId = ""
         oneOffIsCredit = false
+        oneOffDateText = todayDayFirst()
         smartText = ""
         tab = Tab.ENTRIES
     }

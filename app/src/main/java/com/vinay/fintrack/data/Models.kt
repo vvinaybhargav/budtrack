@@ -126,6 +126,27 @@ fun prettyMonth(period: String): String =
         java.text.SimpleDateFormat("MMM yyyy", Locale("en", "IN")).format(isoMonth.parse(period)!!)
     }.getOrDefault(period)
 
+private val dayFirst = java.text.SimpleDateFormat("dd-MM-yyyy", Locale("en", "IN"))
+
+/** Today as people write it here: 11-08-2026. */
+fun todayDayFirst(): String = dayFirst.format(Calendar.getInstance().time)
+
+/**
+ * "11-08-2026" → "2026-08-11", day first as written in India. Accepts `-`,
+ * `/`, `.` or spaces, and a two-digit year. Null when it isn't a real date, so
+ * the caller can fall back rather than storing something nonsensical.
+ */
+fun isoFromDayFirst(text: String): String? {
+    val m = Regex("""(\d{1,2})\s*[-/. ]\s*(\d{1,2})\s*[-/. ]\s*(\d{2,4})""").find(text.trim())
+        ?: return null
+    val day = m.groupValues[1].toIntOrNull() ?: return null
+    val month = m.groupValues[2].toIntOrNull() ?: return null
+    var year = m.groupValues[3].toIntOrNull() ?: return null
+    if (year < 100) year += 2000
+    if (month !in 1..12 || day !in 1..31) return null
+    return String.format(Locale("en", "IN"), "%04d-%02d-%02d", year, month, day)
+}
+
 fun monthsToDate(remaining: Int): String {
     val c = Calendar.getInstance()
     c.add(Calendar.MONTH, remaining)

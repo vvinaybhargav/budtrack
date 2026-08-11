@@ -252,6 +252,15 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
                 listOf("Money out", "Money in"),
                 { vm.oneOffIsCredit = it == "Money in" }
             )
+            PfField(
+                "Date",
+                vm.oneOffDateText,
+                { vm.oneOffDateText = it },
+                placeholder = "dd-mm-yyyy"
+            )
+            if (!vm.oneOffDateValid) {
+                Text("Use dd-mm-yyyy, e.g. ${vm.todayDayFirstText}", color = Pf.Accent400, fontSize = 12.sp)
+            }
         }
         PfField("Note (optional)", vm.draft.note, { vm.draft = vm.draft.copy(note = it) }, placeholder = notePlaceholder)
         PrimaryButton(
@@ -262,7 +271,8 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             },
             vm::saveDraft,
             Modifier.fillMaxWidth(),
-            enabled = (vm.draft.amountText.toDoubleOrNull() ?: 0.0) > 0
+            enabled = (vm.draft.amountText.toDoubleOrNull() ?: 0.0) > 0 &&
+                (!oneOff || vm.oneOffDateValid)
         )
         if (oneOff) {
             Muted("Goes straight to Transactions and moves the account balance.")
