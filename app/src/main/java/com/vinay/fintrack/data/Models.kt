@@ -32,7 +32,7 @@ data class Entry(
     /** What it costs each month: a quarterly bill is a third of itself, an
      *  annual one a twelfth. A one-off is simply its own amount. */
     val monthly: Double
-        get() = if (frequency == "ONE_TIME") amount else amount / everyMonths
+        get() = if (frequency == "ONE_TIME") amount else Ledger.monthlyShare(amount, everyMonths)
 
     /** Anything that isn't monthly needs putting aside between payments. */
     val isSetAside: Boolean get() = frequency != "ONE_TIME" && everyMonths > 1

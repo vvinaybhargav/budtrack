@@ -152,16 +152,8 @@ class SmsImporter(private val context: Context) {
      * direction, same amount, within a few days, and carrying no bank
      * reference of its own yet.
      */
-    private fun matchingConfirmed(txns: List<Txn>, p: ParsedSms): Txn? {
-        val wanted = if (p.isCredit) "INCOME" else "EXPENSE"
-        return txns.firstOrNull { t ->
-            t.ref.isEmpty() &&
-                t.source.isEmpty() &&
-                (t.kind == wanted || t.kind == "TRANSFER") &&
-                kotlin.math.abs(t.amount - p.amount) < 0.5 &&
-                withinDays(t.date, p.date, 4)
-        }
-    }
+    private fun matchingConfirmed(txns: List<Txn>, p: ParsedSms): Txn? =
+        txns.firstOrNull { Ledger.isSamePayment(it, p.amount, p.date, p.isCredit) }
 
     /** Unbounded growth in SharedPreferences helps nobody; recent keys are
      *  enough to stop a re-read duplicating. */

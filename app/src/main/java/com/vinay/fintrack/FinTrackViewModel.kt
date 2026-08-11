@@ -11,6 +11,7 @@ import com.vinay.fintrack.data.ChatMessage
 import com.vinay.fintrack.data.Entry
 import com.vinay.fintrack.data.FirestoreSync
 import com.vinay.fintrack.data.INVEST_CATEGORIES
+import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.Loan
 import com.vinay.fintrack.data.PersistedState
 import com.vinay.fintrack.data.SAVINGS_CATEGORIES
@@ -32,7 +33,7 @@ enum class Tab { HOME, ENTRIES, ADD, SETTINGS }
 
 /** Marks the transaction that settles a card bill, as opposed to the spends
  *  imported onto that same card. */
-const val CARD_PAYMENT = "cardpay"
+const val CARD_PAYMENT = Ledger.CARD_PAYMENT
 
 data class Draft(
     val person: String = "Me",
@@ -1189,12 +1190,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val txns = persisted.txns
         val accounts = persisted.accounts
         balanceCache?.let { (t, a, cached) -> if (t === txns && a === accounts) return cached }
-        val map = HashMap<String, Double>(persisted.accounts.size)
-        persisted.accounts.forEach { map[it.id] = it.openingBalance }
-        for (t in txns) {
-            if (t.fromAccountId.isNotEmpty()) map[t.fromAccountId]?.let { map[t.fromAccountId] = it - t.amount }
-            if (t.toAccountId.isNotEmpty()) map[t.toAccountId]?.let { map[t.toAccountId] = it + t.amount }
-        }
+        val map = Ledger.balances(accounts, txns)
         balanceCache = Triple(txns, accounts, map)
         return map
     }
@@ -1246,21 +1242,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 it.cards === persisted.cards && it.profile == activeProfile
             ) return it.byCategory[category] ?: 0.0
         }
-        val period = currentPeriod()
-        val mine = visibleAccounts.map { it.id }.toSet()
-        val myCards = visibleCards.map { it.id }.toSet()
-        val map = HashMap<String, Double>()
-        for (t in txns) {
-            // A transfer isn't spending — moving money to the set-aside account
-            // for car insurance was inflating the car insurance budget.
-            if (t.kind == "TRANSFER") continue
-            if (t.month != period) continue
-            // Card spends have no account, so testing the account alone left
-            // everything bought on a card out of its category's budget.
-            val counts = t.fromAccountId in mine ||
-                (t.cardId.isNotEmpty() && t.cardId in myCards && t.source != CARD_PAYMENT)
-            if (counts) map[t.category] = (map[t.category] ?: 0.0) + t.amount
-        }
+        val map = Ledger.spendByCategory(
+            txns,
+            currentPeriod(),
+            visibleAccounts.map { it.id }.toSet(),
+            visibleCards.map { it.id }.toSet()
+        )
         spendCache = SpendCache(txns, persisted.accounts, persisted.cards, activeProfile, map)
         return map[category] ?: 0.0
     }
@@ -1309,14 +1296,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Which side of the household a transaction belongs to, taken from the
      *  account it moved through — transactions have no bucket of their own. */
-    private fun txnPerson(t: Txn): String {
-        // A card spend touches no account, so its side comes from the card.
-        if (t.cardId.isNotEmpty()) {
-            return cards.firstOrNull { it.id == t.cardId }?.owner.orEmpty()
-        }
-        val id = t.fromAccountId.ifEmpty { t.toAccountId }
-        return accounts.firstOrNull { it.id == id }?.person.orEmpty()
-    }
+    private fun txnPerson(t: Txn): String = Ledger.personOf(t, accounts, cards)
 
     /**
      * Personal is mine, Joint is everything else — deliberately not
@@ -1324,13 +1304,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * personal account while the toggle sat on Joint, and made a transaction on
      * the other profile's account invisible in both buckets.
      */
-    private fun inBucket(t: Txn): Boolean {
-        val person = txnPerson(t)
-        return if (bucketView == "PERSONAL") person == activeProfile
-        // Unknown owners land here rather than nowhere: an orphaned transaction
-        // must stay reachable, even if its account has been deleted.
-        else person == "Joint" || person.isEmpty()
-    }
+    private fun inBucket(t: Txn): Boolean =
+        Ledger.inBucket(txnPerson(t), activeProfile, bucketView == "PERSONAL")
 
     /** In the other tab — so an empty list can say where things went instead of
      *  looking like nothing was recorded. */
