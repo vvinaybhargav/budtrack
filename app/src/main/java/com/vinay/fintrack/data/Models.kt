@@ -226,7 +226,7 @@ object Seed {
         Entry("e6", "Me", "EXPENSE", "PERSONAL", "Health Insurance", 55000.0, "ANNUAL", "Parents"),
         Entry("e7", "Me", "EXPENSE", "JOINT", "Health Insurance", 15000.0, "ANNUAL", "Self + wife"),
         Entry("e8", "Me", "EXPENSE", "JOINT", "Car Insurance", 40000.0, "ANNUAL"),
-        Entry("e9", "Me", "EXPENSE", "PERSONAL", "Other", 50000.0, "ANNUAL", "Parents' health"),
+        Entry("e9", "Me", "EXPENSE", "PERSONAL", "Parents", 50000.0, "ANNUAL", "Parents' health"),
         Entry("e10", "Wife", "EXPENSE", "PERSONAL", "Music Classes", 4500.0, "MONTHLY"),
         Entry("e11", "Wife", "EXPENSE", "PERSONAL", "Music Classes", 1500.0, "MONTHLY"),
         Entry("e12", "Wife", "SAVINGS", "JOINT", "RD", 20000.0, "MONTHLY"),
@@ -261,7 +261,7 @@ object Seed {
 
     val categoriesMedium = listOf(
         "EMI", "Health Insurance", "Car Insurance", "LIC", "Music Classes", "RD", "FD",
-        "PPF", "SIP", "Home Expenses", "Groceries", "Eating Out", "Utilities", "Other"
+        "PPF", "SIP", "Home Expenses", "Groceries", "Eating Out", "Utilities"
     )
 }
 

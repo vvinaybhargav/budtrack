@@ -41,12 +41,60 @@ object Ledger {
     }
 
     /**
+     * Everyone a transaction concerns — both ends of a transfer, not just the
+     * one it left.
+     *
+     * A transfer from your account to the joint one is yours and the
+     * household's alike, and moving money to your wife's account is something
+     * you both need to see. Taking only the source hid it from one of them.
+     */
+    fun personsOf(t: Txn, accounts: List<Account>, cards: List<Card>): Set<String> {
+        if (t.cardId.isNotEmpty()) {
+            return setOfNotNull(cards.firstOrNull { it.id == t.cardId }?.owner)
+        }
+        val people = listOf(t.fromAccountId, t.toAccountId)
+            .filter { it.isNotEmpty() }
+            .mapNotNull { id -> accounts.firstOrNull { it.id == id }?.person }
+        return people.toSet()
+    }
+
+    private fun <T : Any> setOfNotNull(value: T?): Set<T> = if (value == null) emptySet() else setOf(value)
+
+    /**
      * Personal is the active profile's; joint is the shared side, and takes
      * orphans too so a transaction whose account was deleted stays reachable
      * rather than disappearing from both.
      */
     fun inBucket(person: String, activeProfile: String?, personalView: Boolean): Boolean =
-        if (personalView) person == activeProfile else person == "Joint" || person.isEmpty()
+        inBucket(setOf(person), activeProfile, personalView)
+
+    /** Both ends count, so a transfer between two people shows for each. */
+    fun inBucket(persons: Set<String>, activeProfile: String?, personalView: Boolean): Boolean =
+        if (personalView) activeProfile != null && activeProfile in persons
+        else "Joint" in persons || persons.isEmpty() || persons.all { it.isEmpty() }
+
+    /**
+     * The month a date belongs to when months don't start on the 1st.
+     *
+     * Salaries and set-asides follow a pay cycle, so [resetDay] moves the
+     * boundary: with a reset on the 5th, the 3rd of August still belongs to
+     * July's cycle.
+     */
+    fun cycleOf(dateIso: String, resetDay: Int): String {
+        if (resetDay <= 1) return dateIso.take(7)
+        val parts = dateIso.split("-")
+        if (parts.size < 3) return dateIso.take(7)
+        val year = parts[0].toIntOrNull() ?: return dateIso.take(7)
+        val month = parts[1].toIntOrNull() ?: return dateIso.take(7)
+        val day = parts[2].toIntOrNull() ?: return dateIso.take(7)
+        if (day >= resetDay) return "%04d-%02d".format(year, month)
+        return if (month == 1) "%04d-12".format(year - 1) else "%04d-%02d".format(year, month - 1)
+    }
+
+    /** How much has already been put by for a set-aside this cycle. */
+    fun setAsideDone(txns: List<Txn>, entryId: String, cycle: String): Double =
+        txns.filter { it.entryId == entryId && it.month == cycle && it.kind == "TRANSFER" }
+            .sumOf { it.amount }
 
     /**
      * Real money out per category this month.
@@ -145,3 +193,47 @@ object Ledger {
             withinDays(existing.date, date, 4)
     }
 }
+
+/**
+ * The category a payment belongs to, inventing one from the payee when nothing
+ * fits.
+ *
+ * Never "Other": everything unrecognised landing in one bucket makes budgets
+ * useless and hides what the money actually went on. A new category named after
+ * the payee is at least true, and can be renamed or merged later.
+ */
+fun categoryForParty(party: String, categories: List<String>): String {
+    val p = party.lowercase().trim()
+    if (p.isEmpty()) return categories.firstOrNull().orEmpty()
+
+    // An existing category named in the payee wins outright.
+    categories.firstOrNull { it.isNotBlank() && p.contains(it.lowercase()) }?.let { return it }
+
+    val known = mapOf(
+        "Eating Out" to listOf("swiggy", "zomato", "restaurant", "cafe", "eatclub", "dominos", "kfc"),
+        "Groceries" to listOf("bigbasket", "blinkit", "zepto", "grocer", "dmart", "mart", "instamart"),
+        "Utilities" to listOf("electricity", "gas", "water", "broadband", "airtel", "jio", "vodafone", "bescom"),
+        "Fuel" to listOf("petrol", "diesel", "fuel", "hpcl", "bpcl", "indianoil", "shell"),
+        "Travel" to listOf("uber", "ola", "rapido", "irctc", "indigo", "makemytrip", "redbus"),
+        "Shopping" to listOf("amazon", "flipkart", "myntra", "ajio", "meesho", "nykaa"),
+        "Health" to listOf("pharmacy", "apollo", "medplus", "hospital", "clinic", "diagnostic"),
+        "EMI" to listOf("emi", "loan")
+    )
+    known.forEach { (name, needles) ->
+        if (needles.any { p.contains(it) }) return name
+    }
+
+    // Nothing fits: name it after the payee rather than burying it in Other.
+    return titleCase(party)
+}
+
+/** "SWIGGY" and "swiggy limited" both become "Swiggy Limited". */
+private fun titleCase(raw: String): String =
+    raw.trim()
+        .split(Regex("\s+"))
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { word ->
+            word.lowercase().replaceFirstChar { it.uppercase() }
+        }
+        .take(24)
+        .ifBlank { "Uncategorised" }

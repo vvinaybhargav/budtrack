@@ -64,9 +64,15 @@ fun HomeScreen(vm: FinTrackViewModel) {
 @Composable
 private fun ConfirmSheet(vm: FinTrackViewModel) {
     val pending = vm.pendingConfirm ?: return
-    val accountName = { id: String -> vm.accounts.firstOrNull { it.id == id }?.name.orEmpty() }
-    val options = vm.visibleAccounts.map { it.name }
-    val idFor = { name: String -> vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty() }
+    // Labelled with the owner: "SBI Savings · Me" beats "SBI Savings" when both
+    // of you bank at the same place and the transfer is between profiles.
+    val label = { id: String ->
+        vm.accounts.firstOrNull { it.id == id }?.let { "${it.name} · ${it.person}" }.orEmpty()
+    }
+    val options = vm.transferAccounts.map { "${it.name} · ${it.person}" }
+    val idFor = { text: String ->
+        vm.transferAccounts.firstOrNull { "${it.name} · ${it.person}" == text }?.id.orEmpty()
+    }
 
     Dialog(onDismissRequest = vm::cancelConfirm) {
         Column(
@@ -86,18 +92,26 @@ private fun ConfirmSheet(vm: FinTrackViewModel) {
                 color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold
             )
             Text(
-                "${pending.title} · ${inr(pending.amount)}",
+                pending.title,
                 color = Pf.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold
             )
+            // Editable: a set-aside can be part-paid, and the amount left is a
+            // suggestion rather than the only figure allowed.
+            PfField(
+                label = "Amount (₹)",
+                value = pending.amountText,
+                onValueChange = vm::setConfirmAmount,
+                numeric = true
+            )
             if (pending.kind == "TRANSFER") {
-                Muted("This money stays yours — it just moves between your accounts.")
+                Muted("Stays yours — it moves between accounts rather than being spent.")
             }
 
             if (pending.needsFrom) {
                 Column {
                     Muted(if (pending.kind == "TRANSFER") "Debit from" else "Paid from")
                     PfSelect(
-                        value = accountName(pending.fromAccountId),
+                        value = label(pending.fromAccountId),
                         options = options,
                         onSelect = { vm.setConfirmFrom(idFor(it)) }
                     )
@@ -107,7 +121,7 @@ private fun ConfirmSheet(vm: FinTrackViewModel) {
                 Column {
                     Muted(if (pending.kind == "TRANSFER") "Credit to" else "Received in")
                     PfSelect(
-                        value = accountName(pending.toAccountId),
+                        value = label(pending.toAccountId),
                         options = options,
                         onSelect = { vm.setConfirmTo(idFor(it)) }
                     )
@@ -555,8 +569,7 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
     Column {
         SectionTitle("Set aside · this month", Modifier.padding(bottom = Space.s1))
         Muted(
-            "Repeating commitments split across the months between payments. " +
-                "Confirming moves the money to your set-aside account — it isn't spent.",
+            "Put by a share each month. It moves to savings rather than being spent.",
             Modifier.padding(bottom = Space.s3)
         )
         PfCard(padding = PaddingValues(Space.s4)) {
@@ -574,17 +587,17 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
                         color = Pf.Text, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold
                     )
                 }
-                Muted("${inr(vm.annualSetAsideDone)} done", size = 13)
+                // Figures, not a bar: how much is left is the useful part.
+                Muted(
+                    "${inr(vm.annualSetAsideDone)} done · " +
+                        "${inr(vm.annualSetAsideMonthly - vm.annualSetAsideDone)} left",
+                    size = 13
+                )
             }
-            ProgressBar(
-                if (vm.annualSetAsideMonthly > 0)
-                    (vm.annualSetAsideDone / vm.annualSetAsideMonthly).toFloat().coerceAtMost(1f)
-                else 0f,
-                Pf.Accent2, height = 6
-            )
             Column(Modifier.padding(top = Space.s2)) {
                 items.forEach { e ->
-                    val done = vm.isConfirmed(e.id)
+                    val put = vm.setAsideDone(e)
+                    val left = vm.setAsideLeft(e)
                     Hairline()
                     Row(
                         Modifier
@@ -603,14 +616,18 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
                                 color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
                             )
                             Muted(
-                                "${inr(e.monthly)}/mo · ${inr(e.amount)} every " +
-                                    if (e.everyMonths == 12) "year" else "${e.everyMonths} months",
+                                if (put > 0) "${inr(put)} of ${inr(e.monthly)} put by · ${inr(left)} left"
+                                else "${inr(e.monthly)}/mo · ${inr(e.amount)} every ${e.everyMonths} months",
                                 Modifier.padding(top = 2.dp, bottom = 6.dp)
                             )
-                            Tag("Set aside", Pf.Accent2_100, Pf.Accent2_800)
+                            Tag(
+                                if (left <= 0.0) "Done" else "Set aside",
+                                Pf.Accent2_100, Pf.Accent2_800
+                            )
                         }
-                        if (done) SecondaryButton("Set aside", { vm.requestConfirm(e) })
-                        else PrimaryButton("Set aside", { vm.requestConfirm(e) })
+                        // Top up while anything is left, undo once it is met.
+                        if (left <= 0.0) SecondaryButton("Undo", { vm.requestConfirm(e) })
+                        else PrimaryButton(if (put > 0) "Add" else "Set aside", { vm.requestConfirm(e) })
                         IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(32.dp)) {
                             Icon(Icons.Default.Delete, "Delete", Modifier.size(16.dp), tint = Pf.Accent400)
                         }

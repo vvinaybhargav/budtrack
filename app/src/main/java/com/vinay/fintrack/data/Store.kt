@@ -34,6 +34,9 @@ data class PersistedState(
     /** Profile this device signs in as, so the picker is skipped on launch.
      *  Device-local: the other phone belongs to the other person. */
     val lastProfile: String = "",
+    /** Day of the month a new cycle starts, for pay that does not arrive on the
+     *  1st. Set-asides and confirmations follow it. */
+    val cycleResetDay: Int = 1,
     val smsImportOn: Boolean = false,
     /** Whether SMS access has ever been requested. Android only reveals that a
      *  permission is permanently denied after a first attempt, so without

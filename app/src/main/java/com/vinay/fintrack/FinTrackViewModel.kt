@@ -20,11 +20,11 @@ import com.vinay.fintrack.data.hashPin
 import com.vinay.fintrack.data.looksLikePlainPin
 import com.vinay.fintrack.data.Seed
 import com.vinay.fintrack.data.SmsImporter
+import com.vinay.fintrack.data.categoryForParty
 import com.vinay.fintrack.data.Store
 import com.vinay.fintrack.data.SyncStatus
 import com.vinay.fintrack.data.parseFirebaseConfig
 import com.vinay.fintrack.data.Txn
-import com.vinay.fintrack.data.currentPeriod
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.isoFromDayFirst
 import com.vinay.fintrack.data.millisOfDate
@@ -46,7 +46,7 @@ const val CARD_PAYMENT = Ledger.CARD_PAYMENT
 data class Draft(
     val person: String = "Me",
     val type: String = "EXPENSE",
-    val category: String = "Other",
+    val category: String = "",
     val amountText: String = "",
     val frequency: String = "MONTHLY",
     val note: String = "",
@@ -144,7 +144,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 category = e.category,
                 fromAccountId = if (credit) "" else account,
                 toAccountId = if (credit) account else "",
-                period = currentPeriod(),
+                period = cycle(),
                 at = System.currentTimeMillis(),
                 note = e.note.ifEmpty { e.category }
             )
@@ -426,6 +426,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun switchProfile() {
         isLocked = true; pinStep = "pick"; activeProfile = null; tab = Tab.HOME
+        // The conversation is one person's, and it is never stored or synced —
+        // it lives only as long as this session.
+        clearChat()
         // Deliberately switching means the picker should come back next launch.
         update { it.copy(lastProfile = "") }
     }
@@ -553,23 +556,42 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val entryId: String = "",
         val cardId: String = "",
         val fromAccountId: String = "",
-        val toAccountId: String = ""
+        val toAccountId: String = "",
+        /** Editable, because a set-aside can be paid in parts — put by ₹1,000
+         *  now and the rest later — and the amount left is only a suggestion. */
+        val amountText: String = ""
     ) {
+        val enteredAmount: Double get() = amountText.toDoubleOrNull() ?: amount
         val needsFrom: Boolean get() = kind == "EXPENSE" || kind == "TRANSFER"
         val needsTo: Boolean get() = kind == "INCOME" || kind == "TRANSFER"
         val isReady: Boolean
-            get() = (!needsFrom || fromAccountId.isNotEmpty()) &&
+            get() = enteredAmount > 0 &&
+                (!needsFrom || fromAccountId.isNotEmpty()) &&
                 (!needsTo || toAccountId.isNotEmpty()) &&
                 (kind != "TRANSFER" || fromAccountId != toAccountId)
     }
 
     var pendingConfirm by mutableStateOf<PendingConfirm?>(null); private set
 
+    /** The cycle we're in, which is the calendar month unless pay arrives on
+     *  some other day and the reset day has been moved. */
+    fun cycle(): String = Ledger.cycleOf(today(), persisted.cycleResetDay)
+
+    val cycleResetDay: Int get() = persisted.cycleResetDay
+
+    fun setCycleResetDay(day: Int) = update { it.copy(cycleResetDay = day.coerceIn(1, 28)) }
+
     fun isConfirmed(entryId: String): Boolean =
-        persisted.txns.any { it.entryId == entryId && it.period == currentPeriod() }
+        persisted.txns.any { it.entryId == entryId && it.month == cycle() }
+
+    /** How much of a set-aside has been put by this cycle — it can be paid in
+     *  parts rather than all at once. */
+    fun setAsideDone(e: Entry): Double = Ledger.setAsideDone(persisted.txns, e.id, cycle())
+
+    fun setAsideLeft(e: Entry): Double = (e.monthly - setAsideDone(e)).coerceAtLeast(0.0)
 
     fun isLoanConfirmed(loanId: String): Boolean =
-        persisted.txns.any { it.loanId == loanId && it.period == currentPeriod() }
+        persisted.txns.any { it.loanId == loanId && it.month == cycle() }
 
     private fun accountIdByName(name: String): String =
         accounts.firstOrNull { it.name == name }?.id ?: accounts.firstOrNull()?.id.orEmpty()
@@ -598,14 +620,23 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Tapping confirm: undo if already confirmed this month, otherwise open the sheet. */
     fun requestConfirm(e: Entry) {
-        if (isConfirmed(e.id)) {
-            removeTxns { it.entryId == e.id && it.period == currentPeriod() }
+        val kind = confirmKindFor(e)
+        // A set-aside can be part-paid, so tapping it again tops it up rather
+        // than undoing what has already been put by.
+        val partial = kind == "TRANSFER" && e.isSetAside
+        if (isConfirmed(e.id) && !partial) {
+            removeTxns { it.entryId == e.id && it.month == cycle() }
             return
         }
-        val kind = confirmKindFor(e)
+        val left = if (partial) setAsideLeft(e) else e.monthly
+        if (partial && left <= 0.0) {
+            removeTxns { it.entryId == e.id && it.month == cycle() }
+            return
+        }
         pendingConfirm = PendingConfirm(
             title = e.note.ifEmpty { e.category },
-            amount = e.monthly,
+            amount = left,
+            amountText = left.toLong().toString(),
             kind = kind,
             category = e.category,
             entryId = e.id,
@@ -620,7 +651,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** Loan EMIs are paid from the account stored on the loan, so no sheet appears. */
     fun confirmLoan(l: Loan) {
         if (isLoanConfirmed(l.id)) {
-            removeTxns { it.loanId == l.id && it.period == currentPeriod() }
+            removeTxns { it.loanId == l.id && it.month == cycle() }
             // Paying advanced the tenure, so undoing has to put the month back.
             update { s ->
                 s.copy(loans = s.loans.map {
@@ -638,7 +669,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             Txn(
                 id = seq, date = today(), kind = "EXPENSE", amount = l.monthlyEmi,
                 category = "EMI", fromAccountId = from, loanId = l.id,
-                period = currentPeriod(), note = l.name,
+                period = cycle(), note = l.name,
                 at = System.currentTimeMillis()
             )
         }
@@ -665,6 +696,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setConfirmFrom(id: String) { pendingConfirm = pendingConfirm?.copy(fromAccountId = id) }
+
+    fun setConfirmAmount(v: String) {
+        pendingConfirm = pendingConfirm?.copy(amountText = v.filter { it.isDigit() || it == '.' })
+    }
     fun setConfirmTo(id: String) { pendingConfirm = pendingConfirm?.copy(toAccountId = id) }
     fun cancelConfirm() { pendingConfirm = null }
 
@@ -673,7 +708,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         if (!p.isReady) return
         addTxn { seq ->
             Txn(
-                id = seq, date = today(), kind = p.kind, amount = p.amount,
+                id = seq, date = today(), kind = p.kind, amount = p.enteredAmount,
                 category = p.category,
                 fromAccountId = if (p.needsFrom) p.fromAccountId else "",
                 toAccountId = if (p.needsTo) p.toAccountId else "",
@@ -681,7 +716,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 // Tagged so undoing a card payment can find it among the
                 // spends imported onto the same card.
                 source = if (p.cardId.isNotEmpty()) CARD_PAYMENT else "",
-                period = currentPeriod(), note = p.title,
+                period = cycle(), note = p.title,
                 at = System.currentTimeMillis()
             )
         }
@@ -786,7 +821,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 toAccountId = if (oneOffIsCredit) account else "",
                 // The month it happened in, not the month you typed it in, so a
                 // backdated payment counts against the right budget.
-                period = date.take(7),
+                period = Ledger.cycleOf(date, cycleResetDay),
                 note = draft.note.ifEmpty { draft.category },
                 // Today's date keeps the current time; a backdated one is
                 // stamped midday, since the hour it happened isn't known.
@@ -1108,6 +1143,15 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     val scopedLoans: List<Loan> get() = visibleLoans.filter { inScope(it.person) }
     val scopedCards: List<Card> get() = visibleCards.filter { inScope(it.owner) }
 
+    /**
+     * Every account, for moving money between them.
+     *
+     * Wider than [visibleAccounts] on purpose: a transfer to the other
+     * profile's account is a real thing households do, and both ends now show
+     * it, so there is no reason to hide the destination.
+     */
+    val transferAccounts: List<Account> get() = accounts
+
     /** Who a new entry is for, following the switch. */
     val scopePerson: String get() = if (bucketView == "JOINT") "Joint" else activeProfile ?: "Me"
 
@@ -1182,7 +1226,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         totalsCache?.let { (source, k, cached) -> if (source === t && k == key) return cached }
         val totals = Ledger.monthTotals(
             t,
-            currentPeriod(),
+            cycle(),
             scopedAccounts.map { it.id }.toSet(),
             scopedCards.map { it.id }.toSet(),
             INVEST_CATEGORIES
@@ -1230,7 +1274,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         // to count joint spending against the same bar.
         val map = Ledger.spendByCategory(
             txns,
-            currentPeriod(),
+            cycle(),
             scopedAccounts.map { it.id }.toSet(),
             scopedCards.map { it.id }.toSet()
         )
@@ -1266,8 +1310,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     val annualSetAsideMonthly: Double get() = annualSetAsides.sumOf { it.monthly }
 
+    /** What has actually been put by, part-payments included, rather than a
+     *  count of the ones fully met. */
     val annualSetAsideDone: Double
-        get() = annualSetAsides.filter { isConfirmed(it.id) }.sumOf { it.monthly }
+        get() = annualSetAsides.sumOf { setAsideDone(it).coerceAtMost(it.monthly) }
 
     fun commitmentKind(e: Entry): String = when (e.category) {
         in INVEST_CATEGORIES -> "Investment"
@@ -1291,6 +1337,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Which side of the household a transaction belongs to, taken from the
      *  account it moved through — transactions have no bucket of their own. */
+    private fun txnPersons(t: Txn): Set<String> = Ledger.personsOf(t, accounts, cards)
+
     private fun txnPerson(t: Txn): String = Ledger.personOf(t, accounts, cards)
 
     /**
@@ -1300,21 +1348,22 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * the other profile's account invisible in both buckets.
      */
     private fun inBucket(t: Txn): Boolean =
-        Ledger.inBucket(txnPerson(t), activeProfile, bucketView == "PERSONAL")
+        Ledger.inBucket(txnPersons(t), activeProfile, bucketView == "PERSONAL")
 
     /** In the other tab — so an empty list can say where things went instead of
      *  looking like nothing was recorded. */
     val otherBucketCount: Int
         get() = txns.count { t ->
-            val p = txnPerson(t)
-            if (bucketView == "PERSONAL") p == "Joint" || p.isEmpty() else p == activeProfile
+            !inBucket(t) && Ledger.inBucket(
+                txnPersons(t), activeProfile, bucketView != "PERSONAL"
+            )
         }
 
-    /** On the other profile's own account, so it belongs on their phone. */
+    /** Concerning neither you nor the household, so it belongs on their phone. */
     val otherProfileTxnCount: Int
         get() = txns.count { t ->
-            val p = txnPerson(t)
-            p.isNotEmpty() && p != "Joint" && p != activeProfile
+            val p = txnPersons(t)
+            p.isNotEmpty() && "Joint" !in p && activeProfile !in p
         }
 
     /** The Transactions screen shows these and nothing else: real recorded
@@ -1629,10 +1678,17 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun loanById(id: String): Loan? = loans.firstOrNull { it.id == id }
     fun txnById(id: String): Txn? = txns.firstOrNull { it.id == id }
 
-    fun categoryNamed(name: String): String =
-        categories.firstOrNull { it.equals(name, true) }
-            ?: categories.firstOrNull { it.contains(name, true) }
-            ?: categories.lastOrNull().orEmpty()
+    /**
+     * Finds the category, or makes one. Never falls back to a catch-all: an
+     * "Other" that swallows everything unrecognised makes budgets meaningless.
+     */
+    fun categoryNamed(name: String): String {
+        categories.firstOrNull { it.equals(name, true) }?.let { return it }
+        categories.firstOrNull { name.contains(it, true) }?.let { return it }
+        val invented = categoryForParty(name, categories)
+        addCategoryNamed(invented)
+        return invented
+    }
 
     /** Records money that has already moved, as the one-time form does. */
     fun addTransactionDirect(
@@ -1651,7 +1707,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             category = category,
             fromAccountId = if (credit) "" else accountId,
             toAccountId = if (credit) accountId else "",
-            period = dateIso.take(7),
+            period = Ledger.cycleOf(dateIso, cycleResetDay),
             note = note,
             at = if (dateIso == today()) System.currentTimeMillis() else millisOfDate(dateIso)
         )
@@ -1762,7 +1818,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     "TRANSFER" -> to
                     else -> ""
                 },
-                entryId = e.id, period = currentPeriod(),
+                entryId = e.id, period = cycle(),
                 note = e.note.ifEmpty { e.category },
                 at = System.currentTimeMillis()
             )

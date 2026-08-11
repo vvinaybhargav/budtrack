@@ -123,7 +123,7 @@ class SmsImporter(private val context: Context) {
                 fromAccountId = if (p.isCredit || card != null) "" else accountId,
                 toAccountId = if (p.isCredit && card == null) accountId else "",
                 cardId = card.orEmpty(),
-                period = p.date.take(7),
+                period = Ledger.cycleOf(p.date, state.cycleResetDay),
                 at = if (p.receivedAt > 0L) p.receivedAt else millisOfDate(p.date),
                 note = p.party,
                 ref = p.ref,
@@ -136,9 +136,16 @@ class SmsImporter(private val context: Context) {
             else "added ${inr(p.amount)} ${p.party}"
         }
 
+        // A category invented from a payee has to join the list, or budgets and
+        // the pickers never see it.
+        val fresh = txns.map { it.category }
+            .filter { it.isNotBlank() && state.categories.none { c -> c.equals(it, true) } }
+            .distinct()
+
         Log.i(TAG, "SMS import: $added added, $matched matched to existing confirmations")
         return state.copy(
             txns = txns,
+            categories = state.categories + fresh,
             cards = state.cards.map { c ->
                 cardSpend[c.id]?.let { c.copy(balance = c.balance + it, paid = false) } ?: c
             },
@@ -190,18 +197,8 @@ class SmsImporter(private val context: Context) {
         }
     }
 
-    private fun categoryFor(party: String, categories: List<String>): String {
-        val p = party.lowercase()
-        categories.firstOrNull { p.contains(it.lowercase()) }?.let { return it }
-        val guess = when {
-            listOf("swiggy", "zomato", "restaurant", "cafe", "eatclub").any { p.contains(it) } -> "Eating Out"
-            listOf("bigbasket", "blinkit", "zepto", "grocer", "dmart", "mart").any { p.contains(it) } -> "Groceries"
-            listOf("electricity", "gas", "water", "broadband", "airtel", "jio", "vodafone").any { p.contains(it) } -> "Utilities"
-            listOf("emi", "loan").any { p.contains(it) } -> "EMI"
-            else -> "Other"
-        }
-        return guess.takeIf { it in categories } ?: categories.lastOrNull().orEmpty()
-    }
+    private fun categoryFor(party: String, categories: List<String>): String =
+        categoryForParty(party, categories)
 
     private companion object {
         const val TAG = "SmsImporter"

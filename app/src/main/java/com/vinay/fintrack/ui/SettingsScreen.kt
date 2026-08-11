@@ -267,6 +267,22 @@ fun SettingsScreen(vm: FinTrackViewModel) {
 
         item {
             Column {
+                // For pay that doesn't arrive on the 1st: set-asides and
+                // confirmations follow this rather than the calendar.
+                Heading("Month starts on")
+                PfSelect(
+                    value = vm.cycleResetDay.toString(),
+                    options = (1..28).map { it.toString() },
+                    onSelect = { vm.setCycleResetDay(it.toIntOrNull() ?: 1) }
+                )
+                Muted("Set-asides and confirmations reset on this day.")
+            }
+        }
+
+        item { Hairline() }
+
+        item {
+            Column {
                 Heading("Default account")
                 PfSelect(
                     value = vm.defaultAccount,

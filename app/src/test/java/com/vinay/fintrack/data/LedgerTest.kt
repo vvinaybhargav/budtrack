@@ -362,3 +362,116 @@ class MonthTotalsTest {
         assertEquals(0.0, m.spent, 0.001)
     }
 }
+
+/** Transfers concern both ends, categories are never a catch-all, and the
+ *  month can start on a day other than the 1st. */
+class TransferAndCycleTest {
+
+    private val joint = Account("a-j", "ICICI Joint", "Joint", "Joint", 0.0)
+    private val mine = Account("a-m", "SBI", "Me", "Me", 0.0)
+    private val hers = Account("a-w", "HDFC", "Wife", "Wife", 0.0)
+    private val accounts = listOf(joint, mine, hers)
+
+    private fun transfer(from: String, to: String) = Txn(
+        id = "t", date = "2026-08-09", kind = "TRANSFER", amount = 5_000.0,
+        fromAccountId = from, toAccountId = to, period = "2026-08"
+    )
+
+    @Test
+    fun `a transfer to the joint account concerns both sides`() {
+        val people = Ledger.personsOf(transfer(mine.id, joint.id), accounts, emptyList())
+        assertEquals(setOf("Me", "Joint"), people)
+        assertTrue(Ledger.inBucket(people, "Me", personalView = true))
+        assertTrue(Ledger.inBucket(people, "Me", personalView = false))
+    }
+
+    /** It is on my phone under Personal, and on hers under hers. */
+    @Test
+    fun `a transfer to the other profile shows for each of them`() {
+        val people = Ledger.personsOf(transfer(mine.id, hers.id), accounts, emptyList())
+        assertTrue(Ledger.inBucket(people, "Me", personalView = true))
+        assertTrue(Ledger.inBucket(people, "Wife", personalView = true))
+        assertFalse(Ledger.inBucket(people, "Me", personalView = false))
+    }
+
+    @Test
+    fun `an ordinary expense still concerns only its own side`() {
+        val spend = Txn(
+            id = "t", date = "2026-08-09", kind = "EXPENSE", amount = 100.0,
+            fromAccountId = mine.id, period = "2026-08"
+        )
+        assertEquals(setOf("Me"), Ledger.personsOf(spend, accounts, emptyList()))
+    }
+
+    // ── cycle ──────────────────────────────────────────────────────────
+
+    @Test
+    fun `a first-of-the-month cycle is just the calendar month`() {
+        assertEquals("2026-08", Ledger.cycleOf("2026-08-01", 1))
+        assertEquals("2026-08", Ledger.cycleOf("2026-08-31", 1))
+    }
+
+    /** Paid on the 5th: the 3rd still belongs to the month before. */
+    @Test
+    fun `before the reset day the cycle is the previous month`() {
+        assertEquals("2026-07", Ledger.cycleOf("2026-08-03", 5))
+        assertEquals("2026-08", Ledger.cycleOf("2026-08-05", 5))
+        assertEquals("2026-08", Ledger.cycleOf("2026-08-28", 5))
+    }
+
+    @Test
+    fun `january rolls back to december of the year before`() {
+        assertEquals("2025-12", Ledger.cycleOf("2026-01-02", 5))
+    }
+
+    // ── set-aside progress ─────────────────────────────────────────────
+
+    @Test
+    fun `parts put by in the same cycle add up`() {
+        val txns = listOf(
+            Txn(id = "1", date = "2026-08-05", kind = "TRANSFER", amount = 1_000.0,
+                entryId = "e1", period = "2026-08"),
+            Txn(id = "2", date = "2026-08-19", kind = "TRANSFER", amount = 2_000.0,
+                entryId = "e1", period = "2026-08")
+        )
+        assertEquals(3_000.0, Ledger.setAsideDone(txns, "e1", "2026-08"), 0.001)
+    }
+
+    @Test
+    fun `last cycle does not count towards this one`() {
+        val txns = listOf(
+            Txn(id = "1", date = "2026-07-05", kind = "TRANSFER", amount = 5_000.0,
+                entryId = "e1", period = "2026-07")
+        )
+        assertEquals(0.0, Ledger.setAsideDone(txns, "e1", "2026-08"), 0.001)
+    }
+
+    // ── categories ─────────────────────────────────────────────────────
+
+    private val cats = listOf("Groceries", "Eating Out", "EMI")
+
+    @Test
+    fun `an existing category is used when it fits`() {
+        assertEquals("Eating Out", categoryForParty("SWIGGY", cats))
+        assertEquals("Groceries", categoryForParty("Blinkit", cats))
+    }
+
+    @Test
+    fun `a category named in the payee wins`() {
+        assertEquals("EMI", categoryForParty("HDFC EMI Aug", cats))
+    }
+
+    /** Never a catch-all: everything unrecognised in one bucket makes budgets
+     *  useless and hides what the money went on. */
+    @Test
+    fun `an unknown payee becomes its own category, never Other`() {
+        val made = categoryForParty("VIJAYA STORES", cats)
+        assertEquals("Vijaya Stores", made)
+        assertFalse(made == "Other")
+    }
+
+    @Test
+    fun `a made-up category is tidied rather than shouted`() {
+        assertEquals("Kirana Shop", categoryForParty("kirana   SHOP", cats))
+    }
+}
