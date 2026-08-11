@@ -31,11 +31,14 @@ enum class Tab { HOME, ENTRIES, ADD, SETTINGS }
 data class Draft(
     val person: String = "Me",
     val type: String = "EXPENSE",
+    /** Kept in step with [person] rather than chosen separately: "Joint" means
+     *  JOINT, a profile name means PERSONAL. */
     val bucket: String = "JOINT",
     val category: String = "Other",
     val amountText: String = "",
     val frequency: String = "MONTHLY",
-    val note: String = ""
+    val note: String = "",
+    val accountId: String = ""
 )
 
 data class NewLoanDraft(
@@ -477,7 +480,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             kind = kind,
             category = e.category,
             entryId = e.id,
-            fromAccountId = if (kind == "INCOME") "" else accountIdByName(defaultAccount)
+            // Starts from the account chosen when the entry was created, so a
+            // personal expense doesn't default to the joint account.
+            fromAccountId = if (kind == "INCOME") ""
+            else e.accountId.ifEmpty { defaultAccountFor(e.person, e.bucket) },
+            toAccountId = if (kind == "INCOME") e.accountId.ifEmpty { defaultAccountFor(e.person, e.bucket) } else ""
         )
     }
 
@@ -495,7 +502,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             }
             return
         }
-        val from = l.accountId.ifEmpty { accountIdByName(defaultAccount) }
+        // EMIs aren't asked for an account, so fall back to the one implied by
+        // whose loan it is.
+        val from = l.accountId.ifEmpty { defaultAccountFor(l.person, "JOINT") }
         addTxn { seq ->
             Txn(
                 id = seq, date = today(), kind = "EXPENSE", amount = l.monthlyEmi,
@@ -564,7 +573,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             s.copy(
                 entries = s.entries + Entry(
                     newId("e"), parsed.person, parsed.type, parsed.bucket,
-                    parsed.category, parsed.amount, parsed.frequency, parsed.note
+                    parsed.category, parsed.amount, parsed.frequency, parsed.note,
+                    defaultAccountFor(parsed.person, parsed.bucket)
                 )
             )
         }
@@ -580,7 +590,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun openEditEntry(e: Entry) {
         editingEntryId = e.id
         tab = Tab.ADD
-        draft = Draft(e.person, e.type, e.bucket, e.category, e.amount.toLong().toString(), e.frequency, e.note)
+        draft = Draft(
+            e.person, e.type, e.bucket, e.category,
+            e.amount.toLong().toString(), e.frequency, e.note, e.accountId
+        )
     }
 
     fun cancelEdit() {
@@ -634,6 +647,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * rather than an entry. As an entry it sat on Home asking to be confirmed
      * every month, and never appeared in Transactions at all.
      */
+    /** Never blank: falls back to the account implied by who it's for. */
+    val draftAccountName: String
+        get() = accounts.firstOrNull {
+            it.id == draft.accountId.ifEmpty { defaultAccountFor(draft.person, draft.bucket) }
+        }?.name.orEmpty()
+
     /** Resolved account for the one-off form, so the picker is never blank and
      *  the fallback follows the Personal/Joint choice. */
     val resolvedOneOffAccount: String
@@ -675,7 +694,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s ->
             val entry = Entry(
                 editingId ?: newId("e"), draft.person, draft.type, draft.bucket,
-                draft.category, amount, draft.frequency, draft.note
+                draft.category, amount, draft.frequency, draft.note,
+                draft.accountId.ifEmpty { defaultAccountFor(draft.person, draft.bucket) }
             )
             if (editingId != null) {
                 s.copy(entries = s.entries.map { if (it.id == entry.id) entry else it })
@@ -1142,4 +1162,18 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }.map { it.category }.distinct()
 
     val draftPersonOptions: List<String> get() = listOfNotNull(activeProfile, "Joint")
+
+    /** The whole of who an entry is for: shared, or this profile's own. */
+    val forOptions: List<String> get() = listOfNotNull("Joint", activeProfile)
+
+    /** Sets person and bucket together — they were never independent, and
+     *  letting them drift produced states that meant nothing. */
+    fun setDraftFor(who: String) {
+        draft = draft.copy(
+            person = who,
+            bucket = if (who == "Joint") "JOINT" else "PERSONAL",
+            // The account follows unless one was chosen deliberately.
+            accountId = if (draft.accountId.isEmpty()) "" else draft.accountId
+        )
+    }
 }

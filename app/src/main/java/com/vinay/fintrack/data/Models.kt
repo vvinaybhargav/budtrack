@@ -14,7 +14,10 @@ data class Entry(
     val category: String,
     val amount: Double,
     val frequency: String, // MONTHLY | ANNUAL | ONE_TIME
-    val note: String = ""
+    val note: String = "",
+    /** Account this is normally paid from, chosen when the entry is created so
+     *  confirming it doesn't start from a guess. */
+    val accountId: String = ""
 ) {
     val monthly: Double get() = if (frequency == "ANNUAL") amount / 12 else amount
 }

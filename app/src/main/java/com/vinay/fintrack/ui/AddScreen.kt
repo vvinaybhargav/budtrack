@@ -197,18 +197,14 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-        PfSelect("Person", vm.draft.person, vm.draftPersonOptions, { person ->
-            vm.draft = vm.draft.copy(person = person, bucket = if (person == "Joint") "JOINT" else vm.draft.bucket)
-        })
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
-            if (isEditing) {
-                PfSelect("Type", vm.draft.type, listOf("EXPENSE", "INCOME", "SAVINGS"), { vm.draft = vm.draft.copy(type = it) }, Modifier.weight(1f))
-            }
+        // One choice, not two: "Joint" and your own name said everything the
+        // separate Person and Bucket selects said between them, and the pair
+        // could be set to combinations that meant nothing.
+        PfSelect("For", vm.draft.person, vm.forOptions, vm::setDraftFor)
+        if (isEditing) {
             PfSelect(
-                "Bucket", vm.draft.bucket, listOf("JOINT", "PERSONAL"),
-                { vm.draft = vm.draft.copy(bucket = it) },
-                Modifier.weight(1f),
-                enabled = vm.draft.person != "Joint"
+                "Type", vm.draft.type, listOf("EXPENSE", "INCOME", "SAVINGS"),
+                { vm.draft = vm.draft.copy(type = it) }
             )
         }
         PfSelect("Category", vm.draft.category, categoryOptions, { vm.draft = vm.draft.copy(category = it) })
@@ -216,6 +212,18 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
         val oneOff = !isEditing && vm.addKind == "ONE_TIME"
         if (!oneOff) {
             PfSelect("Frequency", vm.draft.frequency, listOf("MONTHLY", "ANNUAL"), { vm.draft = vm.draft.copy(frequency = it) })
+            // Which account this is paid from, asked once here so confirming it
+            // later starts from the right account instead of the joint default.
+            PfSelect(
+                "Bank account",
+                vm.draftAccountName,
+                vm.visibleAccounts.map { it.name },
+                { name ->
+                    vm.draft = vm.draft.copy(
+                        accountId = vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty()
+                    )
+                }
+            )
         } else {
             // A one-off is money that already moved, so it needs an account and
             // a direction — it becomes a transaction, not something to confirm

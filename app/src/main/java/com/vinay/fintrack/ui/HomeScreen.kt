@@ -360,15 +360,6 @@ private fun LoansSection(vm: FinTrackViewModel) {
                             PfField(value = vm.loanDraft.emiText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(emiText = it) }, placeholder = "Monthly EMI", numeric = true)
                             PfField(value = vm.loanDraft.totalMonthsText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(totalMonthsText = it) }, placeholder = "Total months (tenure)", numeric = true)
                             PfField(value = vm.loanDraft.remainingMonthsText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(remainingMonthsText = it) }, placeholder = "Months remaining", numeric = true)
-                            Muted("EMI debited from")
-                            PfSelect(
-                                value = vm.accounts.firstOrNull { it.id == vm.loanDraft.accountId }?.name.orEmpty(),
-                                options = vm.visibleAccounts.map { it.name },
-                                onSelect = { name ->
-                                    val id = vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty()
-                                    vm.loanDraft = vm.loanDraft.copy(accountId = id)
-                                }
-                            )
                             EditorActions({ vm.deleteLoan(l.id) }, vm::cancelEditLoan, vm::saveLoan)
                         }
                     } else {
