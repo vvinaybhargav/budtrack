@@ -19,6 +19,10 @@ data class PersistedState(
     val defaultAccount: String = "ICICI Joint",
     val firebaseConfigText: String = "",
     val openaiKeyText: String = "",
+    /** When this device last changed anything. Compared against the remote
+     *  document's updatedAt so a newer local edit isn't overwritten by an older
+     *  snapshot — the failure mode when editing offline. */
+    val localUpdatedAt: Long = 0L,
     /** Epoch millis of the newest SMS already read, so a backfill is incremental. */
     val lastSmsScan: Long = 0L,
     /** References already imported — the duplicate guard against a re-read,

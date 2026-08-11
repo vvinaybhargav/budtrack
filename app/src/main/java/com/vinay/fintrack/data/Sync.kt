@@ -85,13 +85,14 @@ class FirestoreSync(private val context: Context) {
      * it tears down any previous connection first.
      *
      * @param onRemote invoked on the main thread whenever the household document
-     *   changes, including the first read.
+     *   changes, including the first read. The second argument is the remote
+     *   document's updatedAt, for deciding whether it beats the local copy.
      * @param onEmptyRemote invoked when the document doesn't exist yet, so the
      *   caller can seed it from this device.
      */
     fun connect(
         configText: String,
-        onRemote: (PersistedState) -> Unit,
+        onRemote: (PersistedState, Long) -> Unit,
         onEmptyRemote: () -> Unit
     ) {
         disconnect()
@@ -175,7 +176,7 @@ class FirestoreSync(private val context: Context) {
     }
 
     private fun attachListener(
-        onRemote: (PersistedState) -> Unit,
+        onRemote: (PersistedState, Long) -> Unit,
         onEmptyRemote: () -> Unit
     ) {
         txnListener = txnsCollection(db!!).addSnapshotListener { snap, error ->
@@ -225,9 +226,10 @@ class FirestoreSync(private val context: Context) {
                     report(SyncStatus.ERROR, "Remote data didn't match this app's format")
                     Log.w(TAG, "could not decode remote state", e); return@addSnapshotListener
                 }
+                val remoteUpdatedAt = (data["updatedAt"] as? Number)?.toLong() ?: 0L
                 applyingRemote = true
                 try {
-                    onRemote(state)
+                    onRemote(state, remoteUpdatedAt)
                 } finally {
                     applyingRemote = false
                 }
@@ -250,8 +252,10 @@ class FirestoreSync(private val context: Context) {
     }
 
     /** Push local state up. No-op while a remote snapshot is being applied. */
-    fun push(state: PersistedState, byProfile: String) {
-        if (applyingRemote) return
+    /** @param force pushes even while a remote snapshot is being applied, for
+     *  the case where the local copy is the newer one and must win. */
+    fun push(state: PersistedState, byProfile: String, force: Boolean = false) {
+        if (applyingRemote && !force) return
         val target = db ?: return
         val payload = encodeState(state).toMutableMap()
         payload["updatedAt"] = System.currentTimeMillis()

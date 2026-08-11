@@ -84,14 +84,22 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     private fun connectSync() {
         sync.connect(
             persisted.firebaseConfigText,
-            onRemote = { remote ->
-                // Keep this device's own secrets — they're per-device, not household
-                // data — and its transactions, which arrive on their own listener.
-                persisted = remote.copy(
-                    txns = persisted.txns,
-                    firebaseConfigText = persisted.firebaseConfigText,
-                    openaiKeyText = persisted.openaiKeyText
-                ).also { store.save(it) }
+            onRemote = { remote, remoteUpdatedAt ->
+                if (remoteUpdatedAt < persisted.localUpdatedAt) {
+                    // This device has newer edits that never reached the server —
+                    // added while offline, say. Send them rather than losing them.
+                    sync.push(sharable(persisted), activeProfile ?: "", force = true)
+                } else {
+                    // Keep this device's own secrets — they're per-device, not
+                    // household data — and its transactions, which arrive on
+                    // their own listener.
+                    persisted = remote.copy(
+                        txns = persisted.txns,
+                        localUpdatedAt = persisted.localUpdatedAt,
+                        firebaseConfigText = persisted.firebaseConfigText,
+                        openaiKeyText = persisted.openaiKeyText
+                    ).also { store.save(it) }
+                }
                 syncedAt = System.currentTimeMillis()
             },
             // Nothing up there yet — seed it from this device so the console
@@ -183,7 +191,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun update(block: (PersistedState) -> PersistedState) {
-        persisted = block(persisted).also { store.save(it) }
+        // Stamped on every change so an offline edit can be told apart from a
+        // stale server copy when the two meet.
+        persisted = block(persisted)
+            .copy(localUpdatedAt = System.currentTimeMillis())
+            .also { store.save(it) }
         sync.push(sharable(persisted), activeProfile ?: "")
     }
 
@@ -491,7 +503,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         editingEntryId = null
         smartText = ""
         draft = Draft(person = activeProfile ?: "Me")
-        tab = Tab.ENTRIES
+        // Home, not Transactions: an entry is the plan, and Transactions now
+        // lists recorded movements only — landing there looked like a failed save.
+        tab = Tab.HOME
     }
 
     fun addNewLoan() {
