@@ -405,12 +405,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // ── profiles ───────────────────────────────────────────────────────
     // Profiles hold PINs, which are deliberately never synced, so this list is
     // per device: a new profile has to be added on each phone that will use it.
-    var newProfileName by mutableStateOf("")
-    var newProfilePin by mutableStateOf("")
+    // Not named setNewProfileName: a var already generates a setter with that
+    // JVM signature, and the two collide.
+    var newProfileName by mutableStateOf(""); private set
+    var newProfilePin by mutableStateOf(""); private set
     var profileMsg by mutableStateOf(""); private set
 
-    fun setNewProfileName(v: String) { newProfileName = v.take(20); profileMsg = "" }
-    fun setNewProfilePin(v: String) { newProfilePin = v.filter { it.isDigit() }.take(4); profileMsg = "" }
+    fun editProfileName(v: String) { newProfileName = v.take(20); profileMsg = "" }
+    fun editProfilePin(v: String) { newProfilePin = v.filter { it.isDigit() }.take(4); profileMsg = "" }
 
     fun addProfile() {
         val name = newProfileName.trim()

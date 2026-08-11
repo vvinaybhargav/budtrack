@@ -97,13 +97,13 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                 ) {
                     PfField(
                         value = vm.newProfileName,
-                        onValueChange = vm::setNewProfileName,
+                        onValueChange = vm::editProfileName,
                         placeholder = "New profile",
                         modifier = Modifier.weight(1f)
                     )
                     PfField(
                         value = vm.newProfilePin,
-                        onValueChange = vm::setNewProfilePin,
+                        onValueChange = vm::editProfilePin,
                         placeholder = "PIN",
                         numeric = true,
                         modifier = Modifier.width(90.dp)
