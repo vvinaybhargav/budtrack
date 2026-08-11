@@ -30,6 +30,10 @@ import com.vinay.fintrack.data.parseSmartAdd
 
 enum class Tab { HOME, ENTRIES, ADD, SETTINGS }
 
+/** Marks the transaction that settles a card bill, as opposed to the spends
+ *  imported onto that same card. */
+const val CARD_PAYMENT = "cardpay"
+
 data class Draft(
     val person: String = "Me",
     val type: String = "EXPENSE",
@@ -500,9 +504,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun requestCardPayment(c: Card) {
         if (c.paid) {
-            // Undo: drop the payment and restore what it cleared.
-            val paidTxn = persisted.txns.firstOrNull { it.cardId == c.id }
-            removeTxns { it.cardId == c.id }
+            // Only the payment, matched on its source. Matching on the card
+            // alone deleted every spend imported onto it, and restored the
+            // balance from whichever of those happened to come first.
+            val paidTxn = persisted.txns.firstOrNull {
+                it.cardId == c.id && it.source == CARD_PAYMENT
+            }
+            removeTxns { it.cardId == c.id && it.source == CARD_PAYMENT }
             update { s ->
                 s.copy(cards = s.cards.map {
                     if (it.id == c.id) it.copy(paid = false, balance = paidTxn?.amount ?: it.balance)
@@ -660,6 +668,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 fromAccountId = if (p.needsFrom) p.fromAccountId else "",
                 toAccountId = if (p.needsTo) p.toAccountId else "",
                 entryId = p.entryId, cardId = p.cardId,
+                // Tagged so undoing a card payment can find it among the
+                // spends imported onto the same card.
+                source = if (p.cardId.isNotEmpty()) CARD_PAYMENT else "",
                 period = currentPeriod(), note = p.title
             )
         }
@@ -1034,7 +1045,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         editingCardId = null
     }
 
+    /**
+     * A card's transactions go with it. They reference no account, so leaving
+     * them would strand records that belong to nobody and show up under Joint —
+     * and unlike an account's, they cannot be moved somewhere sensible, since
+     * that would alter a real balance.
+     */
     fun deleteCard(id: String) {
+        removeTxns { it.cardId == id }
         update { s -> s.copy(cards = s.cards.filterNot { it.id == id }) }
         editingCardId = null
     }
@@ -1209,27 +1227,41 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Actual money out for this category this month — confirmed transactions only,
      *  not the plan. A budget bar you can't move by planning is the point. */
+    private class SpendCache(
+        val txns: List<Txn>,
+        val accounts: List<Account>,
+        val cards: List<Card>,
+        val profile: String?,
+        val byCategory: Map<String, Double>
+    )
+
     // Keyed on the profile as well as the transactions: which accounts count as
     // "mine" changes when you switch profile, and the totals change with it.
-    private var spendCache: Triple<List<Txn>, String?, Map<String, Double>>? = null
+    private var spendCache: SpendCache? = null
 
     fun spendFor(category: String): Double {
         val txns = persisted.txns
-        spendCache?.let { (source, profile, cached) ->
-            if (source === txns && profile == activeProfile) return cached[category] ?: 0.0
+        spendCache?.let {
+            if (it.txns === txns && it.accounts === persisted.accounts &&
+                it.cards === persisted.cards && it.profile == activeProfile
+            ) return it.byCategory[category] ?: 0.0
         }
         val period = currentPeriod()
         val mine = visibleAccounts.map { it.id }.toSet()
+        val myCards = visibleCards.map { it.id }.toSet()
         val map = HashMap<String, Double>()
         for (t in txns) {
             // A transfer isn't spending — moving money to the set-aside account
             // for car insurance was inflating the car insurance budget.
             if (t.kind == "TRANSFER") continue
-            if (t.month == period && t.fromAccountId in mine) {
-                map[t.category] = (map[t.category] ?: 0.0) + t.amount
-            }
+            if (t.month != period) continue
+            // Card spends have no account, so testing the account alone left
+            // everything bought on a card out of its category's budget.
+            val counts = t.fromAccountId in mine ||
+                (t.cardId.isNotEmpty() && t.cardId in myCards && t.source != CARD_PAYMENT)
+            if (counts) map[t.category] = (map[t.category] ?: 0.0) + t.amount
         }
-        spendCache = Triple(txns, activeProfile, map)
+        spendCache = SpendCache(txns, persisted.accounts, persisted.cards, activeProfile, map)
         return map[category] ?: 0.0
     }
 
