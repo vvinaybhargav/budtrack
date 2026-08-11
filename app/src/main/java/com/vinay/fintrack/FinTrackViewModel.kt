@@ -1443,6 +1443,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── the chat ───────────────────────────────────────────────────────
 
+    /** How much of the conversation is resent each turn. Every request carries
+     *  the whole history, so this bounds both the wait and the cost. */
+    private val KEPT_TURNS = 16
+
     private val assistant = Assistant(this)
 
     /** What the user sees. The model's own transcript, including tool calls
@@ -1453,7 +1457,62 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // with the setter this var already generates.
     var chatInput by mutableStateOf("")
 
-    private var assistantHistory: kotlinx.serialization.json.JsonArray? = null
+    /** The model's transcript, without the system message — that is rebuilt
+     *  each turn so its figures are current. */
+    private var assistantHistory: List<kotlinx.serialization.json.JsonElement>? = null
+
+    /**
+     * Everything the assistant would otherwise spend a round trip fetching.
+     * Deliberately excludes individual transactions, which are unbounded and
+     * are what list_transactions is for.
+     */
+    private fun liveContext(): String = buildString {
+        appendLine("Total balance ${inr(totalBalance)}. This month: income ${inr(monthlyIncome)}, " +
+            "expenses ${inr(monthlyExpense)}, savings ${inr(monthlySavings)}, " +
+            "investments ${inr(monthlyInvestment)}.")
+        appendLine("Accounts:")
+        visibleAccounts.forEach {
+            appendLine("  ${it.name} = ${inr(balanceOf(it))} (${it.person}" +
+                (if (it.numberTail.isNotBlank()) ", ends ${it.numberTail}" else "") + ")")
+        }
+        if (visibleCards.isNotEmpty()) {
+            appendLine("Cards:")
+            visibleCards.forEach {
+                appendLine("  ${it.name} owes ${inr(it.balance)} of ${inr(it.limit)}, due ${it.due}" +
+                    if (it.paid) " (paid)" else "")
+            }
+        }
+        if (commitments.isNotEmpty()) {
+            appendLine("Monthly commitments:")
+            commitments.forEach {
+                appendLine("  [${it.id}] ${it.category} ${inr(it.amount)}" +
+                    (if (it.note.isNotBlank()) " (${it.note})" else "") +
+                    if (isConfirmed(it.id)) " — done" else "")
+            }
+        }
+        if (annualSetAsides.isNotEmpty()) {
+            appendLine("Set-asides (need ${inr(annualSetAsideMonthly)}/mo, " +
+                "${inr(annualSetAsideDone)} done):")
+            annualSetAsides.forEach {
+                appendLine("  [${it.id}] ${it.category} ${inr(it.amount)} every " +
+                    "${it.everyMonths} months = ${inr(it.monthly)}/mo" +
+                    if (isConfirmed(it.id)) " — done" else "")
+            }
+        }
+        if (visibleLoans.isNotEmpty()) {
+            appendLine("Loans:")
+            visibleLoans.forEach {
+                appendLine("  [${it.id}] ${it.name} ${inr(it.monthlyEmi)}/mo, " +
+                    "${it.remainingMonths}/${it.totalMonths} months left" +
+                    if (isLoanConfirmed(it.id)) " — paid" else "")
+            }
+        }
+        if (budgets.isNotEmpty()) {
+            appendLine("Budgets (spent of limit):")
+            budgets.forEach { (cat, limit) -> appendLine("  $cat ${inr(spendFor(cat))}/${inr(limit)}") }
+        }
+        appendLine("Categories: ${categories.joinToString(", ")}")
+    }
 
     val chatReady: Boolean get() = persisted.openaiKeyText.isNotBlank()
 
@@ -1479,23 +1538,29 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         markUndoPoint()
 
         val key = persisted.openaiKeyText
-        val history = assistantHistory ?: kotlinx.serialization.json.buildJsonArray {
-            add(
-                kotlinx.serialization.json.buildJsonObject {
-                    put("role", "system")
-                    put(
-                        "content",
-                        AssistantTools.systemPrompt(
-                            activeProfile.orEmpty(),
-                            if (bucketView == "JOINT") "joint" else "personal",
-                            prettyDate(today())
-                        )
-                    )
-                }
+
+        // Rebuilt every turn rather than kept in the history, so the figures are
+        // never stale — and so most questions are answered in one round trip
+        // instead of two, since the model doesn't have to fetch what's here.
+        val system = kotlinx.serialization.json.buildJsonObject {
+            put("role", "system")
+            put(
+                "content",
+                AssistantTools.systemPrompt(
+                    activeProfile.orEmpty(),
+                    if (bucketView == "JOINT") "joint" else "personal",
+                    prettyDate(today()),
+                    liveContext()
+                )
             )
         }
+
+        // Older turns are dropped: every request resends the whole conversation,
+        // so an unbounded one gets slower and dearer with each message.
+        val kept = assistantHistory.orEmpty().takeLast(KEPT_TURNS)
         val withUser = kotlinx.serialization.json.buildJsonArray {
-            history.forEach { add(it) }
+            add(system)
+            kept.forEach { add(it) }
             add(
                 kotlinx.serialization.json.buildJsonObject {
                     put("role", "user"); put("content", text)
@@ -1508,7 +1573,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 outcome
                     .onSuccess {
-                        assistantHistory = it.history
+                        // Without the system message, which is rebuilt each turn.
+                        assistantHistory = it.history.drop(1)
                         chat = chat + ChatMessage("assistant", it.reply)
                         if (!it.changed) undoPoint = null
                     }

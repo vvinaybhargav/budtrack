@@ -37,6 +37,11 @@ class OpenAi(private val apiKey: String, private val model: String = DEFAULT_MOD
             put("tools", tools)
             put("tool_choice", "auto")
             put("temperature", 0.2)
+            // A phone-sized answer. Generation is the slowest part of the wait,
+            // and it is charged by the token.
+            put("max_tokens", 500)
+            // Several tool calls in one reply rather than a round trip each.
+            put("parallel_tool_calls", true)
         }
 
         val conn = (URL(ENDPOINT).openConnection() as HttpURLConnection).apply {
@@ -46,6 +51,8 @@ class OpenAi(private val apiKey: String, private val model: String = DEFAULT_MOD
             readTimeout = 60_000
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Authorization", "Bearer $apiKey")
+            // Keeps the TLS handshake out of the second call of a tool round trip.
+            setRequestProperty("Connection", "keep-alive")
         }
 
         return try {
@@ -65,7 +72,9 @@ class OpenAi(private val apiKey: String, private val model: String = DEFAULT_MOD
                 ?: throw Failure("OpenAI returned no reply.")
             first["message"] as? JsonObject ?: throw Failure("OpenAI returned no message.")
         } finally {
-            conn.disconnect()
+            // Not disconnect(): that closes the socket, so the next call in a
+            // tool round trip would pay for a fresh TLS handshake.
+            runCatching { conn.inputStream?.close() }
         }
     }
 
