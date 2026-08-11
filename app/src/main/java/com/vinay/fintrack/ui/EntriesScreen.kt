@@ -29,7 +29,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.inr
-import com.vinay.fintrack.data.prettyDate
 
 @Composable
 fun EntriesScreen(vm: FinTrackViewModel) {
@@ -150,7 +149,7 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                                 if (t.source == "sms") OutlineTag("SMS")
                             }
                             Muted(
-                                "${prettyDate(t.date)} · ${t.category}",
+                                "${t.whenText} · ${t.category}",
                                 Modifier.padding(top = 2.dp)
                             )
                             Muted(vm.txnAccountLabel(t))
@@ -202,7 +201,7 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                 txn.note.ifEmpty { txn.category },
                 color = Pf.Text, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold
             )
-            Muted("${prettyDate(txn.date)} · ${inr(txn.amount)}")
+            Muted("${txn.whenText} · ${inr(txn.amount)}")
 
             Column {
                 Muted("Account")

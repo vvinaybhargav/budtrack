@@ -20,7 +20,10 @@ data class ParsedSms(
     /** Just the amount as the message wrote it, for tracing a misparse. The
      *  whole body was being stored and synced, and bank texts carry account
      *  numbers and balances. */
-    val amountText: String
+    val amountText: String,
+    /** When the bank sent it — the real time of the payment, better than the
+     *  moment the app happened to read the message. */
+    val receivedAt: Long = 0L
 ) {
     /** A reference, or failing that the account, is what separates a real
      *  transaction message from an advert that happens to mention rupees. */

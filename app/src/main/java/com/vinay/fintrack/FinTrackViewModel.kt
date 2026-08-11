@@ -137,6 +137,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 fromAccountId = if (credit) "" else account,
                 toAccountId = if (credit) account else "",
                 period = currentPeriod(),
+                at = System.currentTimeMillis(),
                 note = e.note.ifEmpty { e.category }
             )
         }
@@ -630,7 +631,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             Txn(
                 id = seq, date = today(), kind = "EXPENSE", amount = l.monthlyEmi,
                 category = "EMI", fromAccountId = from, loanId = l.id,
-                period = currentPeriod(), note = l.name
+                period = currentPeriod(), note = l.name,
+                at = System.currentTimeMillis()
             )
         }
         // Otherwise "42 of 84 months paid" never moved however often you paid.
@@ -672,7 +674,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 // Tagged so undoing a card payment can find it among the
                 // spends imported onto the same card.
                 source = if (p.cardId.isNotEmpty()) CARD_PAYMENT else "",
-                period = currentPeriod(), note = p.title
+                period = currentPeriod(), note = p.title,
+                at = System.currentTimeMillis()
             )
         }
         if (p.cardId.isNotEmpty()) {
@@ -836,7 +839,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 // The month it happened in, not the month you typed it in, so a
                 // backdated payment counts against the right budget.
                 period = date.take(7),
-                note = draft.note.ifEmpty { draft.category }
+                note = draft.note.ifEmpty { draft.category },
+                // Today's date keeps the current time; a backdated one is
+                // stamped midday, since the hour it happened isn't known.
+                at = if (date == today()) System.currentTimeMillis() else millisOfDate(date)
             )
         }
         draft = Draft(person = scopePerson)
@@ -1202,7 +1208,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     val totalBalance: Double get() = scopedAccounts.sumOf { balanceOf(it) }
 
     val txns: List<Txn> get() = persisted.txns
-    val recentTxns: List<Txn> get() = persisted.txns.sortedByDescending { it.date + it.id }.take(30)
+    val recentTxns: List<Txn> get() = persisted.txns.sortedByDescending { it.sortKey }.take(30)
 
     /** "ICICI Joint → Sinking Fund" for a transfer, a single account name otherwise. */
     fun txnAccountLabel(t: Txn): String {
@@ -1334,7 +1340,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                         t.note.contains(entriesSearch, true) ||
                         t.ref.contains(entriesSearch, true))
             }
-            .sortedByDescending { it.date + it.id }
+            .sortedByDescending { it.sortKey }
 
     val txnChips: List<String>
         get() = txns.filter { inBucket(it) }.map { it.category }.distinct()

@@ -33,7 +33,7 @@ class SmsImporter(private val context: Context) {
             store.save(state.copy(smsLog = note(state, "already had ${inr(parsed.amount)} ${parsed.party}")))
             return false
         }
-        store.save(apply(state, listOf(parsed), maxOf(state.lastSmsScan, receivedAt)))
+        store.save(apply(state, listOf(parsed.copy(receivedAt = receivedAt)), maxOf(state.lastSmsScan, receivedAt)))
         return true
     }
 
@@ -70,7 +70,7 @@ class SmsImporter(private val context: Context) {
                     val at = c.getLong(dateCol)
                     newest = maxOf(newest, at)
                     if (!looksLikeBankSender(sender)) continue
-                    parseBankSms(body, sender)?.let { found += it }
+                    parseBankSms(body, sender)?.let { found += it.copy(receivedAt = at) }
                 }
             }
         }.onFailure { Log.w(TAG, "inbox read failed", it) }
@@ -124,6 +124,7 @@ class SmsImporter(private val context: Context) {
                 toAccountId = if (p.isCredit && card == null) accountId else "",
                 cardId = card.orEmpty(),
                 period = p.date.take(7),
+                at = if (p.receivedAt > 0L) p.receivedAt else millisOfDate(p.date),
                 note = p.party,
                 ref = p.ref,
                 source = "sms",

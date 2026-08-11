@@ -248,3 +248,32 @@ class LedgerTest {
         assertFalse(Ledger.isSamePayment(confirmed, 500.0, "2026-08-09", isCredit = true))
     }
 }
+
+/** Timestamps: recorded automatically, and used for ordering. */
+class TxnTimeTest {
+
+    private fun at(millis: Long, date: String = "2026-08-11") =
+        Txn(id = "t", date = date, kind = "EXPENSE", amount = 1.0, at = millis)
+
+    @Test
+    fun `a stamped transaction sorts by its own time`() {
+        val morning = at(1_754_900_000_000)
+        val evening = at(1_754_940_000_000)
+        assertTrue(evening.sortKey > morning.sortKey)
+    }
+
+    /** Records written before the field existed must still order sensibly. */
+    @Test
+    fun `an untimed transaction falls back to its date`() {
+        val older = Txn(id = "a", date = "2026-08-01", kind = "EXPENSE", amount = 1.0)
+        val newer = Txn(id = "b", date = "2026-08-11", kind = "EXPENSE", amount = 1.0)
+        assertTrue(newer.sortKey > older.sortKey)
+        assertTrue(older.sortKey > 0L)
+    }
+
+    @Test
+    fun `the time is shown only when one was recorded`() {
+        assertTrue(at(1_754_940_000_000).whenText.contains(","))
+        assertFalse(Txn(id = "a", date = "2026-08-11", kind = "EXPENSE", amount = 1.0).whenText.contains(","))
+    }
+}

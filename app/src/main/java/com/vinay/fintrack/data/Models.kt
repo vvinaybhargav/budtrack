@@ -89,9 +89,20 @@ data class Txn(
     /** "sms" when read from a bank alert, empty when entered by hand. */
     val source: String = "",
     /** The amount exactly as the source wrote it, for tracing a misparse. */
-    val rawAmountText: String = ""
+    val rawAmountText: String = "",
+    /** When it happened, to the minute. Recorded automatically: the date alone
+     *  left several payments on one day with no order between them. Zero for
+     *  anything written before this field, which falls back to the date. */
+    val at: Long = 0L
 ) {
     val month: String get() = period.ifEmpty { date.take(7) }
+
+    /** Newest-first ordering that still works for older, untimed records. */
+    val sortKey: Long get() = if (at > 0L) at else millisOfDate(date)
+
+    /** "11 Aug 2026, 14:35", or just the date when no time was recorded. */
+    val whenText: String
+        get() = if (at > 0L) "${prettyDate(date)}, ${clockOf(at)}" else prettyDate(date)
 }
 
 @Serializable
@@ -144,6 +155,20 @@ fun prettyMonth(period: String): String =
     runCatching {
         java.text.SimpleDateFormat("MMM yyyy", Locale("en", "IN")).format(isoMonth.parse(period)!!)
     }.getOrDefault(period)
+
+private val clockFmt = java.text.SimpleDateFormat("HH:mm", Locale("en", "IN"))
+
+/** 24-hour, matching how the build timestamps read. */
+fun clockOf(millis: Long): String = clockFmt.format(java.util.Date(millis))
+
+/** Midday on the given date, so a date-only record sorts inside its own day. */
+fun millisOfDate(iso: String): Long =
+    runCatching {
+        val c = Calendar.getInstance()
+        c.time = isoDate.parse(iso)!!
+        c.set(Calendar.HOUR_OF_DAY, 12)
+        c.timeInMillis
+    }.getOrDefault(0L)
 
 private val dayFirst = java.text.SimpleDateFormat("dd-MM-yyyy", Locale("en", "IN"))
 
