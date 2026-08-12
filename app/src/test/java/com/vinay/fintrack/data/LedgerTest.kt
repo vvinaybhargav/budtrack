@@ -995,3 +995,45 @@ class PayeeCategoryTest {
         assertEquals(UNCATEGORISED, categoryForParty("", categories))
     }
 }
+
+/**
+ * Categories are kinds of spending you could set a budget against — groceries,
+ * home bills, petrol. Never the name of a shop.
+ */
+class StandardCategoryTest {
+
+    /** Every category the payee rules can produce has to be a real one, or the
+     *  rules quietly invent categories through the back door. */
+    @Test
+    fun `every rule lands on a standard category`() {
+        val landed = listOf(
+            "swiggy" to "Eating Out",
+            "bigbasket" to "Groceries",
+            "tsspdcl" to "Utilities",
+            "indianoil petrol" to "Fuel",
+            "uber" to "Travel",
+            "flipkart" to "Shopping",
+            "apollo pharmacy" to "Health"
+        )
+        landed.forEach { (payee, expected) ->
+            assertEquals(expected, categoryForParty(payee, emptyList()))
+            assertTrue("$expected is not a standard category", expected in STANDARD_CATEGORIES)
+        }
+    }
+
+    @Test
+    fun `the seeded list contains every standard category`() {
+        STANDARD_CATEGORIES.forEach {
+            assertTrue("$it missing from the seed", it in Seed.categoriesMedium)
+        }
+    }
+
+    /** A shop is not a kind of spending. */
+    @Test
+    fun `no shop name is a category`() {
+        listOf("Sri Balaji Traders", "VIJAYA STORES", "Eastern Power D").forEach {
+            assertFalse(it in STANDARD_CATEGORIES)
+            assertFalse(it in Seed.categoriesMedium)
+        }
+    }
+}

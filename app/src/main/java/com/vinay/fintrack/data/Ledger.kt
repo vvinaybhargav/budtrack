@@ -408,6 +408,17 @@ object Ledger {
  */
 const val UNCATEGORISED = "Uncategorised"
 
+/**
+ * The everyday kinds of spending, which the payee rules below can land on.
+ *
+ * Every one of these is something you could set a budget against. A shop is
+ * not on this list and never becomes one.
+ */
+val STANDARD_CATEGORIES = listOf(
+    "Groceries", "Eating Out", "Utilities", "Home Expenses",
+    "Fuel", "Travel", "Shopping", "Health", "EMI", UNCATEGORISED
+)
+
 fun categoryForParty(
     party: String,
     categories: List<String>,

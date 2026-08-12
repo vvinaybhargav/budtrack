@@ -320,9 +320,17 @@ object Seed {
         "Car Insurance" to 3800.0
     )
 
+    /**
+     * Kinds of spending, not places you spent it.
+     *
+     * Every category the payee rules can land on is here, so a petrol payment
+     * finds Fuel rather than creating it, and the list stays a set of budgets
+     * you could actually keep.
+     */
     val categoriesMedium = listOf(
-        "EMI", "Health Insurance", "Car Insurance", "LIC", "Music Classes", "RD", "FD",
-        "PPF", "SIP", "Home Expenses", "Groceries", "Eating Out", "Utilities"
+        "Groceries", "Eating Out", "Utilities", "Home Expenses", "Fuel", "Travel",
+        "Shopping", "Health", "EMI", "Health Insurance", "Car Insurance", "LIC",
+        "Music Classes", "RD", "FD", "PPF", "SIP", UNCATEGORISED
     )
 }
 

@@ -31,6 +31,7 @@ import com.vinay.fintrack.data.Store
 import com.vinay.fintrack.data.SyncStatus
 import com.vinay.fintrack.data.parseFirebaseConfig
 import com.vinay.fintrack.data.Txn
+import com.vinay.fintrack.data.STANDARD_CATEGORIES
 import com.vinay.fintrack.data.UNCATEGORISED
 import com.vinay.fintrack.data.payeeKey
 import com.vinay.fintrack.data.inr
@@ -1875,7 +1876,24 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         migrateOneTimeEntries()
         migrateDuplicateEmiEntries()
         migratePlainPins()
+        addStandardCategories()
         if (persisted.firebaseConfigText.isNotBlank()) connectSync()
+    }
+
+    /**
+     * Adds the everyday kinds of spending that were missing.
+     *
+     * The payee rules file petrol under Fuel and a chemist under Health, but
+     * those did not exist in an older list, so each was created the first time
+     * it was needed and the order looked arbitrary. Nothing is renamed or
+     * removed — only the gaps are filled.
+     */
+    private fun addStandardCategories() {
+        val missing = STANDARD_CATEGORIES.filterNot { s ->
+            persisted.categories.any { it.equals(s, true) }
+        }
+        if (missing.isEmpty()) return
+        update { it.copy(categories = it.categories + missing) }
     }
 
     /** Ticked on the lock screen, applied when the PIN is accepted. Replaces a
@@ -2406,12 +2424,21 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * Finds the category, or makes one. Never falls back to a catch-all: an
      * "Other" that swallows everything unrecognised makes budgets meaningless.
      */
+    /**
+     * The category for a name the assistant supplied.
+     *
+     * Only ever an existing category, or one of the standard kinds the payee
+     * rules recognise — "petrol" becomes Fuel. Anything else is left
+     * Uncategorised rather than becoming a category of its own: a payee is not
+     * a category, and a list of shops is not a set of budgets. Adding a real
+     * new category is add_category, which is a deliberate act.
+     */
     fun categoryNamed(name: String): String {
         categories.firstOrNull { it.equals(name, true) }?.let { return it }
         categories.firstOrNull { name.contains(it, true) }?.let { return it }
-        val invented = categoryForParty(name, categories)
-        addCategoryNamed(invented)
-        return invented
+        val resolved = categoryForParty(name, categories)
+        if (resolved !in categories) addCategoryNamed(resolved)
+        return resolved
     }
 
     /** Records money that has already moved, as the one-time form does. */
