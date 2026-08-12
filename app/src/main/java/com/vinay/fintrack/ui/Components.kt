@@ -230,7 +230,8 @@ fun PfField(
     modifier: Modifier = Modifier,
     placeholder: String = "",
     numeric: Boolean = false,
-    singleLine: Boolean = true
+    singleLine: Boolean = true,
+    trailingIcon: @Composable (() -> Unit)? = null
 ) {
     Column(modifier) {
         if (label != null) {
@@ -245,6 +246,7 @@ fun PfField(
             shape = Radius.Sm,
             textStyle = androidx.compose.ui.text.TextStyle(color = Pf.Text, fontSize = 14.sp),
             keyboardOptions = if (numeric) KeyboardOptions(keyboardType = KeyboardType.Number) else KeyboardOptions.Default,
+            trailingIcon = trailingIcon,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = Pf.Surface2,
                 unfocusedContainerColor = Pf.Surface2,

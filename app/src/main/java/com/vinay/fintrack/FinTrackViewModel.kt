@@ -726,13 +726,16 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s -> s.copy(salaries = s.salaries + (activeProfile.orEmpty() to amount)) }
     }
 
+    fun salaryResetDayFor(person: String): Int =
+        persisted.salaryDays[person] ?: persisted.cycleResetDay
+
     /**
      * The cycle a given person is on. Two salaries rarely land on the same
      * day, so whether something is still owed this month depends on whose it
      * is — not on who happens to be holding the phone.
      */
     fun cycleFor(person: String): String =
-        Ledger.cycleOf(today(), persisted.salaryDays[person] ?: persisted.cycleResetDay)
+        Ledger.cycleOf(today(), salaryResetDayFor(person))
 
     fun isConfirmed(entryId: String): Boolean {
         val owner = entryById(entryId)?.person ?: activeProfile.orEmpty()
@@ -760,7 +763,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun canPaySetAside(e: Entry): Boolean {
         if (e.closed || !e.isSetAside) return false
         val dueThisCycleOrPast = e.nextDue.isNotEmpty() &&
-            Ledger.instalmentsUntil(today(), e.nextDue) <= 1
+            Ledger.instalmentsUntil(today(), e.nextDue, salaryResetDayFor(e.person)) <= 1
         return dueThisCycleOrPast || setAsidePot(e) >= e.amount - 0.5
     }
 
@@ -1057,8 +1060,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * rather than an entry. As an entry it sat on Home asking to be confirmed
      * every month, and never appeared in Transactions at all.
      */
-    /** The due date as the form has it so far, or empty if it isn't a date yet. */
-    val draftDueIso: String get() = draft.dueText.toIntOrNull()?.let { resolveNextDueDate(it, today()) } ?: ""
+    val draftDueIso: String get() {
+        val parsed = isoFromDayFirst(draft.dueText)
+        if (parsed != null) return parsed
+        val day = draft.dueText.toIntOrNull()
+        if (day != null && day in 1..31) return resolveNextDueDate(day, today())
+        return ""
+    }
 
     /** "5 months, 17 days" for the line under the field. */
     val draftDueIn: String
@@ -1073,7 +1081,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * only holds if you started a full year early.
      */
     val draftInstalments: Int
-        get() = if (draftDueIso.isNotEmpty()) Ledger.instalmentsUntil(today(), draftDueIso)
+        get() = if (draftDueIso.isNotEmpty()) Ledger.instalmentsUntil(today(), draftDueIso, salaryResetDayFor(draft.person))
         else draft.periodMonths.coerceAtLeast(1)
 
     /** Never blank: falls back to the account implied by who it's for. */
@@ -1736,7 +1744,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             persisted.salaries[activeProfile.orEmpty()] ?: 0.0
         }
-        return calculateSixMonthOutlook(salary, scopedLoans, scopedEntries, today())
+        return calculateSixMonthOutlook(salary, scopedLoans, scopedEntries, today(), persisted.salaryDays)
     }
 
     /** "Sep 2026" from an ISO date. */

@@ -911,7 +911,7 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
                             )
                             Muted(
                                 if (e.nextDue.isNotEmpty()) {
-                                    val n = Ledger.instalmentsUntil(today(), e.nextDue)
+                                    val n = Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))
                                     "${inr(pot)} of ${inr(e.amount)} saved · due " +
                                         "${prettyDate(e.nextDue)}, $n month${if (n == 1) "" else "s"} to go"
                                 } else {

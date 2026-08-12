@@ -53,11 +53,13 @@ data class Entry(
      * would give, which would leave you ₹27,500 short on the day.
      */
     val monthly: Double
-        get() = when {
-            frequency == "ONE_TIME" -> amount
-            dueDate.isNotEmpty() -> Ledger.shareUntilDue(amount, today(), nextDue)
-            else -> Ledger.monthlyShare(amount, everyMonths)
-        }
+        get() = monthly(1)
+
+    fun monthly(resetDay: Int): Double = when {
+        frequency == "ONE_TIME" -> amount
+        dueDate.isNotEmpty() -> Ledger.shareUntilDue(amount, today(), nextDue, resetDay)
+        else -> Ledger.monthlyShare(amount, everyMonths)
+    }
 
     /** Anything that isn't monthly needs putting aside between payments. */
     val isSetAside: Boolean get() = frequency != "ONE_TIME" && everyMonths > 1

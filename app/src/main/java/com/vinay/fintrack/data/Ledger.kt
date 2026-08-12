@@ -328,11 +328,47 @@ object Ledger {
      * before the day rather than on it, and being early costs nothing while
      * being short costs the whole point of saving up.
      */
-    fun instalmentsUntil(todayIso: String, dueIso: String): Int {
+    fun instalmentsUntil(todayIso: String, dueIso: String, resetDay: Int = 1): Int {
         if (dueIso.isEmpty()) return 1
-        val now = monthIndex(todayIso) ?: return 1
-        val due = monthIndex(dueIso) ?: return 1
-        return (due - now).coerceAtLeast(1)
+        if (todayIso >= dueIso) return 1
+        
+        val partsToday = todayIso.split("-")
+        val partsDue = dueIso.split("-")
+        if (partsToday.size < 3 || partsDue.size < 3) return 1
+        
+        val startYear = partsToday[0].toIntOrNull() ?: return 1
+        val startMonth = partsToday[1].toIntOrNull() ?: return 1
+        val endYear = partsDue[0].toIntOrNull() ?: return 1
+        val endMonth = partsDue[1].toIntOrNull() ?: return 1
+        
+        var count = 0
+        var currYear = startYear
+        var currMonth = startMonth
+        
+        val endLimit = endYear * 12 + endMonth
+        
+        while (currYear * 12 + currMonth <= endLimit) {
+            val calendar = java.util.Calendar.getInstance()
+            calendar.set(java.util.Calendar.YEAR, currYear)
+            calendar.set(java.util.Calendar.MONTH, currMonth - 1)
+            val maxDay = calendar.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+            val day = minOf(resetDay, maxDay)
+            
+            val paydayIso = "%04d-%02d-%02d".format(currYear, currMonth, day)
+            
+            if (paydayIso > todayIso && paydayIso <= dueIso) {
+                count++
+            }
+            
+            if (currMonth == 12) {
+                currMonth = 1
+                currYear++
+            } else {
+                currMonth++
+            }
+        }
+        
+        return count.coerceAtLeast(1)
     }
 
     /**
@@ -376,8 +412,8 @@ object Ledger {
     private fun isLeap(year: Int) = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 
     /** The amount split over the months genuinely left, never over more. */
-    fun shareUntilDue(amount: Double, todayIso: String, dueIso: String): Double =
-        monthlyShare(amount, instalmentsUntil(todayIso, dueIso))
+    fun shareUntilDue(amount: Double, todayIso: String, dueIso: String, resetDay: Int = 1): Double =
+        monthlyShare(amount, instalmentsUntil(todayIso, dueIso, resetDay))
 
     private fun monthIndex(dateIso: String): Int? {
         val parts = dateIso.split("-")

@@ -19,6 +19,13 @@ import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.INVEST_PICKABLE
 import com.vinay.fintrack.data.inr
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
+import java.util.Calendar
+import androidx.compose.runtime.remember
 
 // Recurring and Set aside are separate kinds: one is paid every month, the
 // other every few months and put by in between. They behave differently enough
@@ -220,13 +227,47 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             // monthly share, and a recurring bill uses it to say when it is
             // next payable rather than sitting there confirmable all month.
             if (isEditing || vm.addKind == "SET_ASIDE" || vm.addKind == "RECURRING") {
-                PfField(
-                    "Due day of month (1-31)",
-                    vm.draft.dueText,
-                    { vm.draft = vm.draft.copy(dueText = it) },
-                    placeholder = "e.g. 29",
-                    numeric = true
-                )
+                val context = LocalContext.current
+                val calendar = Calendar.getInstance()
+                val datePickerDialog = remember {
+                    android.app.DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            vm.draft = vm.draft.copy(dueText = "%02d-%02d-%04d".format(dayOfMonth, month + 1, year))
+                        },
+                        calendar.get(Calendar.YEAR),
+                        calendar.get(Calendar.MONTH),
+                        calendar.get(Calendar.DAY_OF_MONTH)
+                    )
+                }
+
+                if (vm.addKind == "SET_ASIDE") {
+                    PfField(
+                        "Due date (dd/mm/yy or use calendar)",
+                        vm.draft.dueText,
+                        { vm.draft = vm.draft.copy(dueText = it) },
+                        placeholder = "e.g. 22/10/26",
+                        numeric = false,
+                        trailingIcon = {
+                            IconButton(onClick = { datePickerDialog.show() }) {
+                                Icon(
+                                    imageVector = Icons.Default.DateRange,
+                                    contentDescription = "Choose Date",
+                                    tint = Pf.Accent400
+                                )
+                            }
+                        }
+                    )
+                } else {
+                    PfField(
+                        "Due day of month (1-31)",
+                        vm.draft.dueText,
+                        { vm.draft = vm.draft.copy(dueText = it) },
+                        placeholder = "e.g. 29",
+                        numeric = true
+                    )
+                }
+
                 val amount = vm.draft.amountText.toDoubleOrNull() ?: 0.0
                 val due = vm.draftDueIso
                 val setAside = isEditing || vm.addKind == "SET_ASIDE"
@@ -244,10 +285,11 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
                     }
                     due.isNotEmpty() -> Muted("Due in ${vm.draftDueIn}. Add the amount.")
                     vm.draft.dueText.isNotBlank() ->
-                        Muted("Enter a valid day number (1-31).")
+                        if (setAside) Muted("Enter a valid date (dd/mm/yy) or use the calendar.")
+                        else Muted("Enter a valid day number (1-31).")
                     setAside ->
-                        Muted("Give the day of month it is due and the full amount; the monthly " +
-                            "share is worked out from the months left.")
+                        Muted("Give the due date and the full amount; the monthly " +
+                            "share is worked out from the months left based on your salary reset day.")
                     else -> Muted("The day it comes out each month, if you know it.")
                 }
                 // Only a set-aside splits an amount over months, and only when no

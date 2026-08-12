@@ -48,7 +48,8 @@ fun calculateSixMonthOutlook(
     salaryAmount: Double,
     loans: List<Loan>,
     entries: List<Entry>,
-    todayIso: String = today()
+    todayIso: String = today(),
+    resetDays: Map<String, Int> = emptyMap()
 ): SixMonthOutlook {
     val monthlySalary = salaryAmount
     val totalSalary = salaryAmount * 6.0
@@ -57,29 +58,27 @@ fun calculateSixMonthOutlook(
     // Monthly is active loan EMIs + any EMI category commitments
     val monthlyLoans = loans.sumOf { it.monthlyEmi } + entries.filter {
         it.type == "EXPENSE" && (it.category == "EMI" || it.category.lowercase().contains("emi") || it.category.lowercase().contains("loan"))
-    }.sumOf { it.monthly }
+    }.sumOf { it.monthly(resetDays[it.person] ?: 1) }
 
     for (m in 1..6) {
         val activeLoansEmi = loans.filter { it.remainingMonths >= m }.sumOf { it.monthlyEmi }
         val emiBills = entries.filter {
             it.type == "EXPENSE" && (it.category == "EMI" || it.category.lowercase().contains("emi") || it.category.lowercase().contains("loan"))
-        }.sumOf { it.monthly }
+        }.sumOf { it.monthly(resetDays[it.person] ?: 1) }
         totalLoans += activeLoansEmi + emiBills
     }
 
     val monthlyRecurring = entries.filter {
         it.type == "EXPENSE" && !it.isSetAside &&
                 it.category != "EMI" && !it.category.lowercase().contains("emi") && !it.category.lowercase().contains("loan")
-    }.sumOf { it.monthly }
+    }.sumOf { it.monthly(resetDays[it.person] ?: 1) }
     val totalRecurring = monthlyRecurring * 6.0
 
     var totalSetAside = 0.0
     val monthlySetAside = entries.filter {
         it.type == "SAVINGS" || (it.type == "EXPENSE" && it.isSetAside)
     }.sumOf { e ->
-        val due = Ledger.nextDue(e.dueDate, e.everyMonths, todayIso)
-        if (due.isEmpty()) Ledger.monthlyShare(e.amount, e.everyMonths)
-        else Ledger.shareUntilDue(e.amount, todayIso, due)
+        e.monthly(resetDays[e.person] ?: 1)
     }
 
     for (m in 1..6) {
@@ -89,7 +88,7 @@ fun calculateSixMonthOutlook(
         }.sumOf { e ->
             val due = Ledger.nextDue(e.dueDate, e.everyMonths, on)
             if (due.isEmpty()) Ledger.monthlyShare(e.amount, e.everyMonths)
-            else Ledger.shareUntilDue(e.amount, on, due)
+            else Ledger.shareUntilDue(e.amount, on, due, resetDays[e.person] ?: 1)
         }
         totalSetAside += setAsideInMonth
     }

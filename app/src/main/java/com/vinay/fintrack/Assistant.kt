@@ -466,7 +466,7 @@ class Assistant(private val vm: FinTrackViewModel) {
             e.nextDue.isNotEmpty() ->
                 "Added ${e.category} ${inr(e.amount)} due ${prettyDate(e.nextDue)} on the " +
                     "$side side — ${inr(e.monthly)} a month over the " +
-                    "${Ledger.instalmentsUntil(today(), e.nextDue)} months left."
+                    "${Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))} months left."
             e.everyMonths > 1 ->
                 "Added ${e.category} ${inr(e.amount)} every ${e.everyMonths} months on the " +
                     "$side side — ${inr(e.monthly)} to set aside each month."
