@@ -487,18 +487,24 @@ class TransferAndCycleTest {
         assertEquals("EMI", categoryForParty("HDFC EMI Aug", cats))
     }
 
-    /** Never a catch-all: everything unrecognised in one bucket makes budgets
-     *  useless and hides what the money went on. */
+    /**
+     * Neither a catch-all nor a new category named after the shop.
+     *
+     * It used to become "Vijaya Stores", which put billers in the category list
+     * instead of kinds of spending. Left unsorted for one correction to settle.
+     */
     @Test
-    fun `an unknown payee becomes its own category, never Other`() {
+    fun `an unrecognised payee is left unsorted`() {
         val made = categoryForParty("VIJAYA STORES", cats)
-        assertEquals("Vijaya Stores", made)
+        assertEquals(UNCATEGORISED, made)
         assertFalse(made == "Other")
     }
 
+    /** And filing it once settles it. */
     @Test
-    fun `a made-up category is tidied rather than shouted`() {
-        assertEquals("Kirana Shop", categoryForParty("kirana   SHOP", cats))
+    fun `filing it once settles that payee`() {
+        val learned = mapOf(payeeKey("VIJAYA STORES") to "Groceries")
+        assertEquals("Groceries", categoryForParty("vijaya stores", cats + "Groceries", learned))
     }
 }
 
@@ -529,11 +535,13 @@ class RealMessageTest {
         assertEquals("2026-08-12", p.date)
     }
 
+    /** The payee is read from the message, and an electricity biller is
+     *  recognised as Utilities without being taught. */
     @Test
     fun `its category comes from the payee, not the shortcode`() {
         val p = parseBankSms(icici, "AD-ICICIT-S")!!
         val category = categoryForParty(p.party, listOf("Groceries", "Utilities"))
-        assertEquals("Eastern Power D", category)
+        assertEquals("Utilities", category)
     }
 
     /** Better plainly unsorted than filed under something meaningless. */
@@ -934,11 +942,16 @@ class PayeeCategoryTest {
 
     private val categories = listOf("Groceries", "Utilities", "Eating Out", "Shopping")
 
-    /** The whole complaint: it used to invent "Eastern Power D" as a category,
-     *  so the list filled with billers instead of kinds of spending. */
+    /**
+     * The whole complaint: it used to invent the payee as a category, so the
+     * list filled with billers instead of kinds of spending.
+     *
+     * A payee nothing recognises — Eastern Power is matched as Utilities by the
+     * keyword table, which is the right answer for it and no test of this rule.
+     */
     @Test
     fun `an unknown payee is left unsorted, not made into a category`() {
-        assertEquals(UNCATEGORISED, categoryForParty("Eastern Power D", categories))
+        assertEquals(UNCATEGORISED, categoryForParty("Sri Balaji Traders", categories))
     }
 
     /** Once you have filed it, every later payment follows. */
@@ -959,8 +972,8 @@ class PayeeCategoryTest {
     /** A category since deleted must not come back from the learned map. */
     @Test
     fun `a remembered category that no longer exists is ignored`() {
-        val learned = mapOf(payeeKey("Eastern Power") to "Old Category")
-        assertEquals(UNCATEGORISED, categoryForParty("Eastern Power", categories, learned))
+        val learned = mapOf(payeeKey("Sri Balaji Traders") to "Old Category")
+        assertEquals(UNCATEGORISED, categoryForParty("Sri Balaji Traders", categories, learned))
     }
 
     /** Electricity boards are recognised without being taught. */

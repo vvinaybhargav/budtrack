@@ -354,7 +354,10 @@ private fun BudgetsSection(vm: FinTrackViewModel) {
                 Muted("No budgets set. Add one in Settings to track a category here.")
             }
             Column(verticalArrangement = Arrangement.spacedBy(Space.s4)) {
-                vm.budgets.forEach { (cat, limit) ->
+                // The limit itself is not read here: what the bar measures
+                // against is the allowance below, which is the limit plus
+                // whatever last month left over.
+                vm.budgets.forEach { (cat, _) ->
                     val spend = vm.spendFor(cat)
                     // The allowance, which is the budget plus whatever last
                     // month left over when rollover is on.
