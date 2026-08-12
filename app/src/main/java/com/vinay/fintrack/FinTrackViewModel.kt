@@ -343,7 +343,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         importedRefs = emptySet(),
         lastSmsScan = 0L,
         lastProfile = "",
-        smsAsked = false
+        smsAsked = false,
+        // The conversation is yours and quotes balances and payees; it has no
+        // business in a document the household shares.
+        chats = emptyMap()
     )
 
     /** Remote state with this device's own fields kept — the mirror of
@@ -359,7 +362,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         lastSmsScan = persisted.lastSmsScan,
         smsImportOn = persisted.smsImportOn,
         lastProfile = persisted.lastProfile,
-        smsAsked = persisted.smsAsked
+        smsAsked = persisted.smsAsked,
+        chats = persisted.chats
     )
 
     override fun onCleared() {
@@ -1894,12 +1898,82 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      *  the whole history, so this bounds both the wait and the cost. */
     private val KEPT_TURNS = 16
 
+    /** Three steps back, matching what the store keeps. */
+    private val UNDO_DEPTH = 3
+
+    /** Enough to scroll back through, capped so the store cannot grow forever. */
+    private val KEPT_MESSAGES = 100
+
     private val assistant = Assistant(this)
 
-    /** What the user sees. The model's own transcript, including tool calls
-     *  and their results, is kept separately in [assistantHistory]. */
-    var chat by mutableStateOf(listOf<ChatMessage>()); private set
+    /**
+     * What the user sees, per profile and kept on disk.
+     *
+     * The model's own transcript, including tool calls and their results, is
+     * separate — see [assistantHistory]. That one is rebuilt from this on
+     * launch rather than stored, since tool plumbing is not worth persisting
+     * and the plain exchange is enough for the model to follow a thread.
+     */
+    val chat: List<ChatMessage>
+        get() = persisted.chats[activeProfile.orEmpty()].orEmpty()
+
+    private fun appendChat(message: ChatMessage) {
+        val who = activeProfile.orEmpty()
+        update { s ->
+            s.copy(chats = s.chats + (who to (s.chats[who].orEmpty() + message).takeLast(KEPT_MESSAGES)))
+        }
+    }
     var chatBusy by mutableStateOf(false); private set
+
+    /**
+     * What the assistant is doing right now, shown while it works.
+     *
+     * The reply arrives in one piece at the end of the whole tool loop, so
+     * without this the screen sits blank for several seconds and looks stuck.
+     * Saying "Reading your accounts…" costs nothing and answers the only
+     * question the wait raises.
+     */
+    var chatStatus by mutableStateOf(""); private set
+
+    /** Called from the tool loop, on the main thread. */
+    fun reportChatStep(step: String) { chatStatus = step }
+
+    /**
+     * A deletion the assistant wants to make, waiting for you.
+     *
+     * The tool descriptions asked the model to confirm first, but that was a
+     * sentence in a prompt rather than a rule — nothing stopped it deleting
+     * outright, and "tidy up my old transactions" could take a lot with it.
+     * Now the tool describes what would go and the button here is what does it.
+     */
+    class PendingDeletion(
+        val what: String,
+        val detail: String,
+        private val run: () -> Unit
+    ) {
+        fun execute() = run()
+    }
+
+    var pendingDeletion by mutableStateOf<PendingDeletion?>(null); private set
+
+    /** Called by the delete tools instead of deleting. */
+    fun proposeDeletion(what: String, detail: String, run: () -> Unit) {
+        pendingDeletion = PendingDeletion(what, detail, run)
+    }
+
+    fun confirmDeletion() {
+        val p = pendingDeletion ?: return
+        markUndoPoint()
+        p.execute()
+        pendingDeletion = null
+        appendChat(ChatMessage("assistant", "Deleted ${p.what}."))
+    }
+
+    fun cancelDeletion() {
+        val p = pendingDeletion ?: return
+        pendingDeletion = null
+        appendChat(ChatMessage("assistant", "Left ${p.what} alone."))
+    }
     // Assigned directly by the screen. A setChatInput function would collide
     // with the setter this var already generates.
     var chatInput by mutableStateOf("")
@@ -1996,9 +2070,26 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     val chatReady: Boolean get() = persisted.openaiKeyText.isNotBlank()
 
     fun clearChat() {
-        chat = emptyList()
+        val who = activeProfile.orEmpty()
+        update { s -> s.copy(chats = s.chats - who) }
         assistantHistory = null
     }
+
+    /**
+     * Rebuilds the model's transcript from the visible conversation.
+     *
+     * Called when the stored chat is there but the transcript is not — after a
+     * restart, or on switching profile. Only the plain exchange is restored;
+     * tool calls and their replies are dropped, which is safe because a tool
+     * reply is only ever valid immediately after the request that asked for it.
+     */
+    private fun historyFromChat(): List<kotlinx.serialization.json.JsonElement> =
+        chat.map { m ->
+            kotlinx.serialization.json.buildJsonObject {
+                put("role", if (m.role == "user") "user" else "assistant")
+                put("content", m.text)
+            }
+        }
 
     /**
      * Sends a message and applies whatever the assistant decides to do. Runs off
@@ -2008,12 +2099,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val text = chatInput.trim()
         if (text.isEmpty() || chatBusy) return
         if (!chatReady) {
-            chat = chat + ChatMessage("assistant", "Add an OpenAI key in Settings first.")
+            appendChat(ChatMessage("assistant", "Add an OpenAI key in Settings first."))
             return
         }
         chatInput = ""
-        chat = chat + ChatMessage("user", text)
+        appendChat(ChatMessage("user", text))
         chatBusy = true
+        chatStatus = "Thinking…"
         markUndoPoint()
 
         val key = persisted.openaiKeyText
@@ -2036,7 +2128,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
         // Older turns are dropped: every request resends the whole conversation,
         // so an unbounded one gets slower and dearer with each message.
-        val kept = trimHistory(assistantHistory.orEmpty())
+        // After a restart the transcript is empty while the conversation on
+        // screen is not; rebuild it so a follow-up like "change that to 5000"
+        // still has something to refer to.
+        val kept = trimHistory(assistantHistory ?: historyFromChat())
         val withUser = kotlinx.serialization.json.buildJsonArray {
             add(system)
             kept.forEach { add(it) }
@@ -2054,17 +2149,20 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     .onSuccess {
                         // Without the system message, which is rebuilt each turn.
                         assistantHistory = it.history.drop(1)
-                        chat = chat + ChatMessage("assistant", it.reply)
-                        if (!it.changed) undoPoint = null
+                        appendChat(ChatMessage("assistant", it.reply))
+                        if (!it.changed) dropUndoPoint()
                     }
                     .onFailure { e ->
-                        undoPoint = null
-                        chat = chat + ChatMessage(
-                            "assistant",
-                            e.message ?: "Something went wrong talking to OpenAI."
+                        dropUndoPoint()
+                        appendChat(
+                            ChatMessage(
+                                "assistant",
+                                e.message ?: "Something went wrong talking to OpenAI."
+                            )
                         )
                     }
                 chatBusy = false
+                chatStatus = ""
             }
         }.start()
     }
@@ -2073,17 +2171,38 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // The same paths the screens use, so a change made in chat syncs, moves
     // balances and respects profiles exactly as a tap would.
 
-    /** State before the assistant's last change, so a mistake is recoverable. */
-    private var undoPoint: PersistedState? = null
+    /**
+     * States to undo back to, newest last.
+     *
+     * Kept on disk and several deep. A single in-memory snapshot was cleared by
+     * the next message and lost when the app closed, so a mistake noticed one
+     * message later — or the next morning — could not be taken back at all.
+     */
+    private var undoStack: List<PersistedState> = store.loadUndo()
 
-    val canUndoAssistant: Boolean get() = undoPoint != null
+    val canUndoAssistant: Boolean get() = undoStack.isNotEmpty()
 
-    fun markUndoPoint() { undoPoint = persisted }
+    fun markUndoPoint() {
+        undoStack = (undoStack + persisted).takeLast(UNDO_DEPTH)
+        store.saveUndo(undoStack)
+    }
+
+    /** Drops the point just taken, for a turn that changed nothing — an undo
+     *  that restores identical state is only confusing. */
+    private fun dropUndoPoint() {
+        if (undoStack.isEmpty()) return
+        undoStack = undoStack.dropLast(1)
+        store.saveUndo(undoStack)
+    }
 
     fun undoAssistant(): Boolean {
-        val prev = undoPoint ?: return false
-        persisted = prev.also { ownRevision = store.save(it) }
-        undoPoint = null
+        val prev = undoStack.lastOrNull() ?: return false
+        // The chat itself is not rolled back: undo is for the money, and losing
+        // the conversation that explains what happened helps nobody.
+        val chats = persisted.chats
+        persisted = prev.copy(chats = chats).also { ownRevision = store.save(it) }
+        undoStack = undoStack.dropLast(1)
+        store.saveUndo(undoStack)
         pushNow()
         return true
     }

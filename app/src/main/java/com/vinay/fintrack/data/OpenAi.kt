@@ -39,7 +39,9 @@ class OpenAi(private val apiKey: String, private val model: String = DEFAULT_MOD
             put("temperature", 0.2)
             // A phone-sized answer. Generation is the slowest part of the wait,
             // and it is charged by the token.
-            put("max_tokens", 500)
+            // 500 cut longer answers off mid-sentence — a list of transactions
+            // or an explanation of a set-aside runs past it easily.
+            put("max_tokens", 1200)
             // Several tool calls in one reply rather than a round trip each.
             put("parallel_tool_calls", true)
         }

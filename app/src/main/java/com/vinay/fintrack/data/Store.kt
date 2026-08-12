@@ -3,6 +3,7 @@ package com.vinay.fintrack.data
 import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 @Serializable
@@ -57,7 +58,15 @@ data class PersistedState(
      *  Device-local and never synced: bank texts carry account numbers and
      *  balances, and this exists so you can check what was read, not so it can
      *  travel. Capped, oldest dropped first. */
-    val smsBodies: Map<String, String> = emptyMap()
+    val smsBodies: Map<String, String> = emptyMap(),
+    /**
+     * The chat, per profile.
+     *
+     * Device-local and never synced: it is your own working conversation, and
+     * it quotes balances and payees that have no business in a shared
+     * document. Kept so closing the app does not wipe it.
+     */
+    val chats: Map<String, List<ChatMessage>> = emptyMap()
 )
 
 class Store(context: Context) {
@@ -101,9 +110,35 @@ class Store(context: Context) {
         prefs.unregisterOnSharedPreferenceChangeListener(listener)
     }
 
+    /**
+     * Snapshots to undo back to, newest last, at most [MAX_UNDO].
+     *
+     * Its own key rather than a field on the state: undo history is this
+     * device's, it must not sync, and it must not be part of what a snapshot
+     * itself contains.
+     */
+    fun saveUndo(states: List<PersistedState>) {
+        val kept = states.takeLast(MAX_UNDO)
+        prefs.edit()
+            .putString(UNDO, json.encodeToString(ListSerializer(PersistedState.serializer()), kept))
+            .apply()
+    }
+
+    fun loadUndo(): List<PersistedState> {
+        val raw = prefs.getString(UNDO, null) ?: return emptyList()
+        return runCatching {
+            json.decodeFromString(ListSerializer(PersistedState.serializer()), raw)
+        }.getOrElse { emptyList() }
+    }
+
     private companion object {
         // v2: account balances became opening balances, confirmations became txns.
         const val KEY = "state_v2"
         const val REV = "state_rev"
+        const val UNDO = "state_undo"
+
+        // Three steps back. Enough to catch a mistake you noticed a message or
+        // two later, without storing the whole app several times over.
+        const val MAX_UNDO = 3
     }
 }

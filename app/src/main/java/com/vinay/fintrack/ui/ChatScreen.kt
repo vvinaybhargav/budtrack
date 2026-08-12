@@ -77,7 +77,43 @@ fun ChatScreen(vm: FinTrackViewModel) {
                 }
             }
 
-            if (vm.chatBusy) item { Muted("Thinking…", Modifier.padding(top = Space.s1)) }
+            // Says what it is doing rather than just that it is busy: the reply
+            // lands in one piece at the end, so several seconds of blank screen
+            // otherwise looks like nothing is happening.
+            if (vm.chatBusy) {
+                item {
+                    Muted(
+                        vm.chatStatus.ifEmpty { "Thinking…" },
+                        Modifier.padding(top = Space.s1)
+                    )
+                }
+            }
+
+            // A deletion waits here for a tap. The model can ask; only this
+            // button does it.
+            vm.pendingDeletion?.let { p ->
+                item {
+                    Column(
+                        Modifier
+                            .padding(top = Space.s2)
+                            .fillMaxWidth()
+                            .background(Pf.Surface2, Radius.Lg)
+                            .padding(Space.s3)
+                    ) {
+                        Text(
+                            "Delete ${p.what}?",
+                            color = Pf.Text,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Muted(p.detail, Modifier.padding(top = 2.dp, bottom = Space.s3))
+                        Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                            PrimaryButton("Delete", vm::confirmDeletion)
+                            SecondaryButton("Keep it", vm::cancelDeletion)
+                        }
+                    }
+                }
+            }
 
             // Only after something was actually changed.
             if (vm.canUndoAssistant && !vm.chatBusy) {

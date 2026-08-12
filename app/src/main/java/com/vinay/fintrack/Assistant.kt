@@ -61,7 +61,10 @@ class Assistant(private val vm: FinTrackViewModel) {
                     .getOrDefault(JsonObject(emptyMap()))
 
                 if (name in WRITERS) changed = true
-                val result = onMain { dispatch(name, args) }
+                val result = onMain {
+                    vm.reportChatStep(stepLabel(name))
+                    dispatch(name, args)
+                }
 
                 next = next + buildJsonObject {
                     put("role", "tool")
@@ -81,6 +84,22 @@ class Assistant(private val vm: FinTrackViewModel) {
 
     class Result(val reply: String, val history: JsonArray, val changed: Boolean)
 
+    /** Plain English for the line shown while a tool runs. */
+    private fun stepLabel(tool: String): String = when (tool) {
+        "get_overview" -> "Checking your totals…"
+        "list_accounts" -> "Reading your accounts…"
+        "list_commitments" -> "Reading your commitments…"
+        "list_transactions" -> "Looking through your transactions…"
+        "add_transaction" -> "Recording it…"
+        "edit_transaction", "edit_commitment", "update_account" -> "Making the change…"
+        "delete_transaction", "delete_commitment" -> "Checking what that would remove…"
+        "add_commitment", "add_account", "add_card", "add_loan" -> "Adding it…"
+        "confirm_commitment" -> "Confirming it…"
+        "set_budget", "add_category", "set_default_account", "set_salary_date" ->
+            "Updating your settings…"
+        else -> "Working…"
+    }
+
     // ── running the tools ──────────────────────────────────────────────
 
     private fun dispatch(name: String, a: JsonObject): String = runCatching {
@@ -95,8 +114,10 @@ class Assistant(private val vm: FinTrackViewModel) {
             "delete_transaction" -> {
                 val t = vm.txnById(a.str("id").orEmpty())
                     ?: return@runCatching "No transaction with that id."
-                vm.deleteTxn(t.id)
-                "Deleted ${inr(t.amount)} · ${t.note.ifEmpty { t.category }}."
+                val what = "${inr(t.amount)} · ${t.note.ifEmpty { t.category }}"
+                vm.proposeDeletion(what, "${t.whenText} · ${t.category}") { vm.deleteTxn(t.id) }
+                "Waiting for the user to confirm deleting $what. Do not call this " +
+                    "again; tell them to tap Delete to go ahead."
             }
 
             "add_commitment" -> addCommitment(a)
@@ -113,8 +134,10 @@ class Assistant(private val vm: FinTrackViewModel) {
             "delete_commitment" -> {
                 val e = vm.entryById(a.str("id").orEmpty())
                     ?: return@runCatching "No commitment with that id."
-                vm.deleteEntry(e.id)
-                "Deleted the ${e.category} commitment."
+                val what = "the ${e.category} commitment"
+                vm.proposeDeletion(what, "${inr(e.amount)} · ${e.person}") { vm.deleteEntry(e.id) }
+                "Waiting for the user to confirm deleting $what. Do not call this " +
+                    "again; tell them to tap Delete to go ahead."
             }
             "confirm_commitment" -> vm.confirmDirect(
                 a.str("id").orEmpty(),
