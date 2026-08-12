@@ -475,3 +475,65 @@ class TransferAndCycleTest {
         assertEquals("Kirana Shop", categoryForParty("kirana   SHOP", cats))
     }
 }
+
+/**
+ * Real messages that were read wrongly. The ICICI one below produced a payee
+ * of "AD-ICICIT-S" — the bank's shortcode — which then became the category
+ * "Ad-icicit-s" and the transaction's name.
+ */
+class RealMessageTest {
+
+    private val icici =
+        "ICICI Bank Acct XX391 debited for Rs 914.00 on 12-Aug-26; Eastern Power D " +
+            "credited. UPI:881425363233. Call 18002662 for dispute. SMS BLOCK 391 to 9215676766."
+
+    @Test
+    fun `the payee is the name before credited, not the sender`() {
+        val p = parseBankSms(icici, "AD-ICICIT-S")!!
+        assertEquals("Eastern Power D", p.party)
+        assertFalse(p.party.contains("ICICIT"))
+    }
+
+    @Test
+    fun `it reads as a debit of the stated amount from the stated account`() {
+        val p = parseBankSms(icici, "AD-ICICIT-S")!!
+        assertEquals(914.0, p.amount, 0.001)
+        assertFalse(p.isCredit)
+        assertEquals("391", p.accountTail)
+        assertEquals("2026-08-12", p.date)
+    }
+
+    @Test
+    fun `its category comes from the payee, not the shortcode`() {
+        val p = parseBankSms(icici, "AD-ICICIT-S")!!
+        val category = categoryForParty(p.party, listOf("Groceries", "Utilities"))
+        assertEquals("Eastern Power D", category)
+    }
+
+    /** Better plainly unsorted than filed under something meaningless. */
+    @Test
+    fun `a sender id never becomes a category`() {
+        assertEquals(UNCATEGORISED, categoryForParty("AD-ICICIT-S", listOf("Groceries")))
+        assertEquals(UNCATEGORISED, categoryForParty("VM-HDFCBK", listOf("Groceries")))
+        assertEquals(UNCATEGORISED, categoryForParty("", listOf("Groceries")))
+    }
+
+    @Test
+    fun `a card spend takes the merchant after at`() {
+        val p = parseBankSms(
+            "Rs.2,450.00 spent on HDFC Bank Card XX4321 at SWIGGY on 09-08-26. Txn 553311224488",
+            "AD-HDFCBK"
+        )!!
+        assertEquals("SWIGGY", p.party)
+        assertEquals("Eating Out", categoryForParty(p.party, listOf("Eating Out")))
+    }
+
+    @Test
+    fun `a UPI payee still wins`() {
+        val p = parseBankSms(
+            "Rs.450.00 debited from a/c XX1234 on 09-08-26 to VPA swiggy@ybl. UPI Ref 423456789012",
+            "AD-HDFCBK"
+        )!!
+        assertEquals("swiggy@ybl", p.party)
+    }
+}

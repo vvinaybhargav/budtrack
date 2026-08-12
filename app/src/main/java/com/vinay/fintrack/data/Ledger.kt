@@ -202,9 +202,13 @@ object Ledger {
  * useless and hides what the money actually went on. A new category named after
  * the payee is at least true, and can be renamed or merged later.
  */
+const val UNCATEGORISED = "Uncategorised"
+
 fun categoryForParty(party: String, categories: List<String>): String {
     val p = party.lowercase().trim()
-    if (p.isEmpty()) return categories.firstOrNull().orEmpty()
+    // No payee to go on. Left plainly unsorted rather than named after whatever
+    // string happened to be handy — the bank's shortcode became "Ad-icicit-s".
+    if (p.isEmpty()) return UNCATEGORISED
 
     // An existing category named in the payee wins outright.
     categories.firstOrNull { it.isNotBlank() && p.contains(it.lowercase()) }?.let { return it }
@@ -223,9 +227,17 @@ fun categoryForParty(party: String, categories: List<String>): String {
         if (needles.any { p.contains(it) }) return name
     }
 
-    // Nothing fits: name it after the payee rather than burying it in Other.
-    return titleCase(party)
+    // Nothing fits: name it after the payee rather than burying it in Other —
+    // unless the "payee" is really a bank shortcode, in which case there is
+    // nothing worth naming.
+    val named = titleCase(party)
+    return if (looksLikeSenderId(named)) UNCATEGORISED else named
 }
+
+/** "AD-ICICIT-S", "VM-HDFCBK" and the like. */
+private fun looksLikeSenderId(name: String): Boolean =
+    Regex("""^[A-Za-z]{2}[- ][A-Za-z]{4,}""").containsMatchIn(name) ||
+        name.length < 3
 
 /** "SWIGGY" and "swiggy limited" both become "Swiggy Limited". */
 private fun titleCase(raw: String): String =

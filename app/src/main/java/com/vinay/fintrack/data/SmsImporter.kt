@@ -126,7 +126,7 @@ class SmsImporter(private val context: Context) {
                 cardId = card.orEmpty(),
                 period = Ledger.cycleOf(p.date, state.cycleResetDay),
                 at = if (p.receivedAt > 0L) p.receivedAt else millisOfDate(p.date),
-                note = p.party,
+                note = p.party.ifEmpty { if (p.isCredit) "Credit" else "Payment" },
                 ref = p.ref,
                 source = "sms",
                 rawAmountText = p.amountText
@@ -134,8 +134,9 @@ class SmsImporter(private val context: Context) {
             bodies[txns.last().id] = p.body
             if (card != null && !p.isCredit) cardSpend[card] = (cardSpend[card] ?: 0.0) + p.amount
             added++
-            log += if (card != null) "added ${inr(p.amount)} ${p.party} to the card"
-            else "added ${inr(p.amount)} ${p.party}"
+            val who = p.party.ifEmpty { "unnamed payment" }
+            log += if (card != null) "added ${inr(p.amount)} $who to the card"
+            else "added ${inr(p.amount)} $who"
         }
 
         // A category invented from a payee has to join the list, or budgets and
