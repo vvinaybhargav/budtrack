@@ -249,9 +249,20 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
             DebouncedField(
                 value = txn.note,
                 onSettled = vm::setTxnNote,
-                label = "Description",
+                label = "Description (optional)",
                 placeholder = txn.category,
                 allowBlank = true
+            )
+            // Writing one files the row by itself, so say so rather than
+            // leaving a second button to press.
+            Muted(
+                when {
+                    vm.categorisingTxnId == txn.id -> "Finding a category…"
+                    vm.categoriseNote.isNotEmpty() -> vm.categoriseNote
+                    txn.category == "Uncategorised" ->
+                        "Describe it and it will be filed for you."
+                    else -> "Leave it, or describe it in your own words."
+                }
             )
             DebouncedField(
                 value = if (txn.amount > 0) txn.amount.toLong().toString() else "",

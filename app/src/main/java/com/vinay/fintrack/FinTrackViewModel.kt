@@ -1796,8 +1796,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         if (txns.none { it.id == id }) return
         tab = Tab.ENTRIES
         editingTxnId = id
+        categoriseNote = ""
     }
-    fun cancelEditTxn() { editingTxnId = null }
+
+    fun cancelEditTxn() {
+        editingTxnId = null
+        categoriseNote = ""
+    }
 
     private fun replaceTxn(updated: Txn) {
         update { s -> s.copy(txns = s.txns.map { if (it.id == updated.id) updated else it }) }
@@ -1938,10 +1943,74 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         moved.forEach { sync.upsertTxn(it.copy(category = category)) }
     }
 
-    /** The description. An imported one is named after whatever the bank
-     *  called the payee, which is rarely what you would have called it. */
+    /**
+     * The description, and the category that follows from it.
+     *
+     * Optional: leave it and the row keeps whatever the bank called the payee.
+     * But describing something is exactly the moment its category becomes
+     * obvious, so writing one files it — no second button, no second save.
+     * Only when it is still unfiled: a category you chose is never overruled.
+     */
     fun setTxnNote(note: String) {
-        editingTxn?.let { replaceTxn(it.copy(note = note.trim())) }
+        val txn = editingTxn ?: return
+        val text = note.trim()
+        replaceTxn(txn.copy(note = text))
+        if (text.isNotBlank() && (txn.category == UNCATEGORISED || txn.category.isBlank())) {
+            categoriseFromDescription(txn.id, text)
+        }
+    }
+
+    /** Shown in the edit sheet while a description is being filed. */
+    var categorisingTxnId by mutableStateOf(""); private set
+    var categoriseNote by mutableStateOf(""); private set
+
+    /**
+     * Asks for one description's category, in the background.
+     *
+     * A single short question, so it costs almost nothing and finishes while
+     * you are still looking at the row. The answer is learned as well as
+     * applied, so the same payee is never asked about twice.
+     */
+    private fun categoriseFromDescription(txnId: String, description: String) {
+        if (!chatReady || categorisingTxnId.isNotEmpty()) return
+        val known = categories.filterNot { it == UNCATEGORISED }
+        if (known.isEmpty()) return
+
+        categorisingTxnId = txnId
+        categoriseNote = "Finding a category…"
+        val key = persisted.openaiKeyText
+
+        Thread {
+            val outcome = runCatching {
+                OpenAi(key).ask(
+                    instruction = "You file Indian payments into spending categories. " +
+                        "Answer with ONE category from this list and nothing else: " +
+                        known.joinToString(", ") +
+                        ". If none genuinely fits, answer exactly $UNCATEGORISED.",
+                    question = description,
+                    maxTokens = 20
+                )
+            }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                categorisingTxnId = ""
+                val answer = outcome.getOrNull()?.trim().orEmpty()
+                val category = known.firstOrNull { it.equals(answer, true) }
+                val current = txns.firstOrNull { it.id == txnId }
+                // Only if it is still unfiled: you may have chosen one yourself
+                // while this was in flight, and that choice wins.
+                if (category == null || current == null ||
+                    (current.category != UNCATEGORISED && current.category.isNotBlank())
+                ) {
+                    categoriseNote = if (outcome.isFailure) "Couldn't reach OpenAI — pick one."
+                    else if (category == null) "Nothing fitted — pick one."
+                    else ""
+                    return@post
+                }
+                replaceTxn(current.copy(category = category))
+                learnPayeeCategory(current.note, category)
+                categoriseNote = "Filed under $category."
+            }
+        }.start()
     }
 
     /** For when the bank's figure was read wrongly, or a cash amount changed. */
