@@ -47,6 +47,7 @@ data class PersistedState(
      * to [cycleResetDay] for anyone without one set.
      */
     val salaryDays: Map<String, Int> = emptyMap(),
+    val salaries: Map<String, Double> = emptyMap(),
     val smsImportOn: Boolean = false,
     /** Whether SMS access has ever been requested. Android only reveals that a
      *  permission is permanently denied after a first attempt, so without

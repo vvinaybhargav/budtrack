@@ -94,7 +94,9 @@ data class Loan(
      */
     val cardId: String = "",
     /** The day the EMI comes out, as YYYY-MM-DD. Empty when it isn't known. */
-    val dueDate: String = ""
+    val dueDate: String = "",
+    val dueDay: Int = 0,
+    val lastProcessedMonth: String = ""
 ) {
     /** The next EMI date, rolled past any already gone. Monthly by definition. */
     val nextDue: String get() = Ledger.nextDue(dueDate, 1, today())

@@ -115,10 +115,11 @@ private fun LoanForm(vm: FinTrackViewModel) {
         // instalments, which is the same arrangement paid to a different place.
         PfSelect("Paid from", vm.newLoanSourceName, vm.emiSourceOptions, vm::setLoanSource)
         PfField(
-            "First EMI due on",
+            "Due day of month (1-31)",
             vm.newLoanDraft.dueText,
             { vm.newLoanDraft = vm.newLoanDraft.copy(dueText = it) },
-            placeholder = "dd-mm-yyyy, e.g. 05-09-2026"
+            placeholder = "e.g. 15",
+            numeric = true
         )
         Muted(
             if (vm.newLoanDraft.cardId.isNotEmpty())
@@ -166,7 +167,7 @@ private fun CardForm(vm: FinTrackViewModel) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
             PfField("Minimum due (₹)", vm.newCardDraft.minDueText, { vm.newCardDraft = vm.newCardDraft.copy(minDueText = it) }, Modifier.weight(1f), "e.g. 2200", numeric = true)
-            PfField("Bill due on", vm.newCardDraft.dueText, { vm.newCardDraft = vm.newCardDraft.copy(dueText = it) }, Modifier.weight(1f), "e.g. 18-09-2026")
+            PfField("Due day of month (1-31)", vm.newCardDraft.dueText, { vm.newCardDraft = vm.newCardDraft.copy(dueText = it) }, Modifier.weight(1f), "e.g. 18", numeric = true)
         }
         PfField(
             "Last digits of the card",
@@ -220,10 +221,11 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             // next payable rather than sitting there confirmable all month.
             if (isEditing || vm.addKind == "SET_ASIDE" || vm.addKind == "RECURRING") {
                 PfField(
-                    "Due on",
+                    "Due day of month (1-31)",
                     vm.draft.dueText,
                     { vm.draft = vm.draft.copy(dueText = it) },
-                    placeholder = "dd-mm-yyyy, e.g. 29-01-2027"
+                    placeholder = "e.g. 29",
+                    numeric = true
                 )
                 val amount = vm.draft.amountText.toDoubleOrNull() ?: 0.0
                 val due = vm.draftDueIso
@@ -242,9 +244,9 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
                     }
                     due.isNotEmpty() -> Muted("Due in ${vm.draftDueIn}. Add the amount.")
                     vm.draft.dueText.isNotBlank() ->
-                        Muted("That isn't a date yet — write it as 29-01-2027.")
+                        Muted("Enter a valid day number (1-31).")
                     setAside ->
-                        Muted("Give the date it is due and the full amount; the monthly " +
+                        Muted("Give the day of month it is due and the full amount; the monthly " +
                             "share is worked out from the months left.")
                     else -> Muted("The day it comes out each month, if you know it.")
                 }

@@ -8,6 +8,8 @@ import android.content.Intent
 import android.util.Log
 import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.Store
+import com.vinay.fintrack.data.Txn
+import com.vinay.fintrack.data.resolveNextDueDate
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.today
@@ -71,8 +73,97 @@ object DueReminder {
      * paid is how people stop reading notifications.
      */
     fun check(context: Context) {
-        val state = Store(context).load()
+        val store = Store(context)
+        var state = store.load()
         val now = today()
+        var stateChanged = false
+
+        val updatedLoans = state.loans.map { l ->
+            if (l.remainingMonths <= 0 || l.dueDay <= 0) return@map l
+            val currentMonth = now.take(7) // "yyyy-MM"
+            
+            val parts = now.split("-")
+            val y = parts[0].toIntOrNull() ?: return@map l
+            val m = parts[1].toIntOrNull() ?: return@map l
+            
+            val calendar = Calendar.getInstance()
+            calendar.set(Calendar.YEAR, y)
+            calendar.set(Calendar.MONTH, m - 1)
+            val maxDay = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+            val clampDay = minOf(l.dueDay, maxDay)
+            val currentMonthDueDate = "%04d-%02d-%02d".format(y, m, clampDay)
+            
+            val days = Ledger.daysBetween(now, currentMonthDueDate)
+            
+            if (days == 1) {
+                Notifier.notifyDue(
+                    context,
+                    "${l.name} due tomorrow",
+                    "${l.name} due tomorrow. ₹${l.monthlyEmi.toLong()} will be paid automatically.",
+                    l.id
+                )
+                l
+            } else if (days == 0 && l.lastProcessedMonth != currentMonth) {
+                val accountId = if (l.onCard) "" else {
+                    state.accounts.firstOrNull { it.id == l.accountId }?.id
+                        ?: state.accounts.firstOrNull { it.name == state.defaultAccount }?.id
+                        ?: ""
+                }
+                
+                val txnId = com.vinay.fintrack.data.newId("t")
+                val newTxn = Txn(
+                    id = txnId,
+                    date = now,
+                    kind = "EXPENSE",
+                    amount = l.monthlyEmi,
+                    category = "EMI",
+                    fromAccountId = accountId,
+                    cardId = l.cardId,
+                    loanId = l.id,
+                    period = Ledger.cycleOf(now, state.salaryDays[l.person] ?: state.cycleResetDay),
+                    note = l.name,
+                    at = System.currentTimeMillis()
+                )
+                
+                val updatedRemaining = maxOf(0, l.remainingMonths - 1)
+                val nextDueDate = resolveNextDueDate(l.dueDay, Ledger.addMonths(now, 1))
+                
+                if (l.onCard) {
+                    state = state.copy(
+                        cards = state.cards.map {
+                            if (it.id == l.cardId) it.copy(balance = it.balance + l.monthlyEmi, paid = false)
+                            else it
+                        }
+                    )
+                }
+                
+                state = state.copy(txns = state.txns + newTxn)
+                stateChanged = true
+                
+                Notifier.notifyDue(
+                    context,
+                    "Loan Auto-Paid",
+                    "Auto-paid: ₹${l.monthlyEmi.toLong()} for ${l.name}.",
+                    l.id
+                )
+                
+                l.copy(
+                    remainingMonths = updatedRemaining,
+                    lastProcessedMonth = currentMonth,
+                    dueDate = nextDueDate
+                )
+            } else {
+                l
+            }
+        }
+
+        if (stateChanged) {
+            state = state.copy(
+                loans = updatedLoans,
+                localUpdatedAt = System.currentTimeMillis()
+            )
+            store.save(state)
+        }
 
         for (e in state.entries) {
             if (e.closed || e.nextDue.isEmpty()) continue
@@ -108,6 +199,7 @@ object DueReminder {
 
         for (l in state.loans) {
             if (l.remainingMonths <= 0 || l.nextDue.isEmpty()) continue
+            if (l.dueDay > 0) continue // Skip if auto-processed
             val days = Ledger.daysBetween(now, l.nextDue)
             if (days < 0 || days > DAYS_AHEAD) continue
             val cycle = Ledger.cycleOf(now, state.salaryDays[l.person] ?: state.cycleResetDay)

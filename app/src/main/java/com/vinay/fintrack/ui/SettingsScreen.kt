@@ -287,20 +287,35 @@ fun SettingsScreen(vm: FinTrackViewModel) {
 
         item {
             Column {
-                // For pay that doesn't arrive on the 1st: set-asides and
-                // confirmations follow this rather than the calendar.
-                Heading("Salary date · ${vm.activeProfile.orEmpty()}")
-                PfSelect(
-                    value = vm.cycleResetDay.toString(),
-                    options = (1..28).map { it.toString() },
-                    onSelect = { vm.setCycleResetDay(it.toIntOrNull() ?: 1) }
-                )
+                Heading("Salary settings · ${vm.activeProfile.orEmpty()}")
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s3)
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Muted("Salary reset day")
+                        PfSelect(
+                            value = vm.cycleResetDay.toString(),
+                            options = (1..28).map { it.toString() },
+                            onSelect = { vm.setCycleResetDay(it.toIntOrNull() ?: 1) }
+                        )
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Muted("Monthly Salary Amount")
+                        PfField(
+                            value = if (vm.salaryAmount > 0.0) vm.salaryAmount.toLong().toString() else "",
+                            onValueChange = {
+                                val amt = it.toDoubleOrNull() ?: 0.0
+                                vm.setSalaryAmount(amt)
+                            },
+                            numeric = true,
+                            placeholder = "e.g. 120000"
+                        )
+                    }
+                }
                 Muted(
-                    "Your month turns over on this day. Everything confirmed — " +
-                        "recurring bills, EMIs and set-asides — becomes payable " +
-                        "again on it."
+                    "Your month turns over on this day. Salary amount is used to project your 6-month outlook surplus."
                 )
-                // Each person's own, since two salaries rarely land together.
                 val others = vm.salaryDaysByProfile.filter { it.first != vm.activeProfile }
                 if (others.isNotEmpty()) {
                     Muted(

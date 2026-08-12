@@ -44,6 +44,9 @@ import com.vinay.fintrack.data.today
 import com.vinay.fintrack.data.todayDayFirst
 import com.vinay.fintrack.data.ownerLabel
 import com.vinay.fintrack.data.prettyDate
+import com.vinay.fintrack.data.resolveNextDueDate
+import com.vinay.fintrack.data.calculateSixMonthOutlook
+import com.vinay.fintrack.data.SixMonthOutlook
 // The String overload of put is an extension; without it the member overload
 // takes over and only accepts a JsonElement.
 import kotlinx.serialization.json.put
@@ -716,6 +719,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     val salaryDaysByProfile: List<Pair<String, Int>>
         get() = profileNames.map { it to (persisted.salaryDays[it] ?: persisted.cycleResetDay) }
 
+    val salaryAmount: Double
+        get() = persisted.salaries[activeProfile.orEmpty()] ?: 0.0
+
+    fun setSalaryAmount(amount: Double) {
+        update { s -> s.copy(salaries = s.salaries + (activeProfile.orEmpty() to amount)) }
+    }
+
     /**
      * The cycle a given person is on. Two salaries rarely land on the same
      * day, so whether something is still owed this month depends on whose it
@@ -1000,7 +1010,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             note = e.note,
             accountId = e.accountId,
             periodMonths = e.everyMonths,
-            dueText = if (e.dueDate.isEmpty()) "" else dayFirstOf(e.dueDate)
+            dueText = if (e.dueDate.isEmpty()) "" else e.dueDate.split("-").getOrNull(2)?.toIntOrNull()?.toString() ?: ""
         )
     }
 
@@ -1048,7 +1058,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * every month, and never appeared in Transactions at all.
      */
     /** The due date as the form has it so far, or empty if it isn't a date yet. */
-    val draftDueIso: String get() = isoFromDayFirst(draft.dueText).orEmpty()
+    val draftDueIso: String get() = draft.dueText.toIntOrNull()?.let { resolveNextDueDate(it, today()) } ?: ""
 
     /** "5 months, 17 days" for the line under the field. */
     val draftDueIn: String
@@ -1197,6 +1207,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         if (newLoanDraft.name.isBlank() || emi <= 0 || total <= 0) return
         val remaining = newLoanDraft.remainingMonthsText.toIntOrNull() ?: total
         val onCard = newLoanDraft.cardId.isNotEmpty()
+        val dueDay = newLoanDraft.dueText.toIntOrNull() ?: 0
+        val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
         update { s ->
             s.copy(
                 loans = s.loans + Loan(
@@ -1209,7 +1221,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     accountId = if (onCard) "" else
                         newLoanDraft.accountId.ifEmpty { accountIdByName(defaultAccount) },
                     cardId = newLoanDraft.cardId,
-                    dueDate = isoFromDayFirst(newLoanDraft.dueText).orEmpty()
+                    dueDate = resolvedDueDate,
+                    dueDay = dueDay,
+                    lastProcessedMonth = ""
                 )
             )
         }
@@ -1235,6 +1249,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun addNewCard() {
         val limit = newCardDraft.limitText.toDoubleOrNull() ?: return
         if (newCardDraft.name.isBlank() || limit <= 0) return
+        val dueDay = newCardDraft.dueText.toIntOrNull() ?: 0
+        val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
         update { s ->
             s.copy(
                 cards = s.cards + Card(
@@ -1246,7 +1262,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     minDue = newCardDraft.minDueText.toDoubleOrNull() ?: 0.0,
                     due = newCardDraft.due,
                     numberTail = newCardDraft.numberTail,
-                    dueDate = isoFromDayFirst(newCardDraft.dueText).orEmpty()
+                    dueDate = resolvedDueDate
                 )
             )
         }
@@ -1322,7 +1338,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             remainingMonthsText = l.remainingMonths.toString(),
             accountId = l.accountId,
             cardId = l.cardId,
-            dueText = if (l.dueDate.isEmpty()) "" else dayFirstOf(l.dueDate)
+            dueText = if (l.dueDay > 0) l.dueDay.toString() else ""
         )
     }
 
@@ -1330,6 +1346,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveLoan() {
         val id = editingLoanId ?: return
+        val dueDay = loanDraft.dueText.toIntOrNull() ?: 0
+        val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
         update { s ->
             s.copy(loans = s.loans.map {
                 if (it.id == id) it.copy(
@@ -1339,7 +1357,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     remainingMonths = loanDraft.remainingMonthsText.toIntOrNull() ?: 0,
                     accountId = if (loanDraft.cardId.isNotEmpty()) "" else loanDraft.accountId,
                     cardId = loanDraft.cardId,
-                    dueDate = isoFromDayFirst(loanDraft.dueText).orEmpty()
+                    dueDate = resolvedDueDate,
+                    dueDay = dueDay
                 ) else it
             })
         }
@@ -1361,7 +1380,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             minDueText = c.minDue.toLong().toString(),
             due = c.due,
             numberTail = c.numberTail,
-            dueText = if (c.dueDate.isEmpty()) "" else dayFirstOf(c.dueDate)
+            dueText = if (c.dueDate.isEmpty()) "" else c.dueDate.split("-").getOrNull(2)?.toIntOrNull()?.toString() ?: ""
         )
     }
 
@@ -1369,6 +1388,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveCard() {
         val id = editingCardId ?: return
+        val dueDay = cardDraft.dueText.toIntOrNull() ?: 0
+        val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
         update { s ->
             s.copy(cards = s.cards.map {
                 if (it.id == id) it.copy(
@@ -1378,7 +1399,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     minDue = cardDraft.minDueText.toDoubleOrNull() ?: 0.0,
                     due = cardDraft.due,
                     numberTail = cardDraft.numberTail,
-                    dueDate = isoFromDayFirst(cardDraft.dueText).orEmpty()
+                    dueDate = resolvedDueDate
                 ) else it
             })
         }
@@ -1661,16 +1682,74 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * spread the same bill over — so seeing next month now is the difference
      * between noticing in advance and noticing on the day.
      */
-    val nextMonthOut: Double
-        get() {
-            val nextMonth = Ledger.addMonths(today(), 1)
-            val setAside = annualSetAsides.sumOf { e ->
-                val due = Ledger.nextDue(e.dueDate, e.everyMonths, nextMonth)
-                if (due.isEmpty()) Ledger.monthlyShare(e.amount, e.everyMonths)
-                else Ledger.shareUntilDue(e.amount, nextMonth, due)
-            }
-            return Ledger.paise(plannedRecurring + setAside + plannedLoans)
+    val nextMonthOut: Double get() = outlook(1).firstOrNull()?.out ?: 0.0
+
+    /** One month ahead: what it asks for, and what would be left of it. */
+    class OutlookMonth(
+        val label: String,
+        val recurring: Double,
+        val loans: Double,
+        val setAside: Double,
+        val income: Double,
+        /** A loan that makes its last payment this month, worth seeing coming. */
+        val loanEnding: String
+    ) {
+        val out: Double get() = Ledger.paise(recurring + loans + setAside)
+        val left: Double get() = Ledger.paise(income - out)
+    }
+
+    /**
+     * The months ahead, from what is already known.
+     *
+     * Recurring bills, EMIs and set-asides are the parts of a month you can
+     * actually see coming, and none of them stays still: a set-aside's share
+     * climbs as its due date nears and drops back once paid, and an EMI stops
+     * altogether when the loan runs out. Spending is left out — an average of
+     * past months would look like a forecast without being one.
+     */
+    fun outlook(months: Int = 6): List<OutlookMonth> = (1..months).map { ahead ->
+        val on = Ledger.addMonths(today(), ahead)
+
+        val setAside = annualSetAsides.sumOf { e ->
+            val due = Ledger.nextDue(e.dueDate, e.everyMonths, on)
+            if (due.isEmpty()) Ledger.monthlyShare(e.amount, e.everyMonths)
+            else Ledger.shareUntilDue(e.amount, on, due)
         }
+        // Still paying only while instalments remain: an EMI that ends in March
+        // must not go on being subtracted in April.
+        val running = scopedLoans.filter { it.remainingMonths > ahead }
+        val ending = scopedLoans.firstOrNull { it.remainingMonths == ahead }
+
+        OutlookMonth(
+            label = monthLabel(on),
+            recurring = plannedRecurring,
+            loans = Ledger.paise(running.sumOf { it.monthlyEmi }),
+            setAside = Ledger.paise(setAside),
+            income = plannedIncome,
+            loanEnding = ending?.name.orEmpty()
+        )
+    }
+
+    fun getSixMonthOutlook(): SixMonthOutlook {
+        val salary = if (bucketView == "JOINT") {
+            persisted.salaries.values.sum()
+        } else {
+            persisted.salaries[activeProfile.orEmpty()] ?: 0.0
+        }
+        return calculateSixMonthOutlook(salary, scopedLoans, scopedEntries, today())
+    }
+
+    /** "Sep 2026" from an ISO date. */
+    private fun monthLabel(iso: String): String {
+        val parts = iso.split("-")
+        if (parts.size < 2) return iso
+        val names = listOf(
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+        )
+        val month = parts[1].toIntOrNull()?.minus(1)?.coerceIn(0, 11) ?: return iso
+        return "${names[month]} ${parts[0]}"
+    }
 
     // Keyed on the side as well: the figures are for whichever the switch is on,
     // and using the visible accounts mixed personal and joint together whatever

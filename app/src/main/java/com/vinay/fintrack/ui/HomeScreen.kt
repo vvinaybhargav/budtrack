@@ -56,6 +56,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
         item { CardsSection(vm) }
         item { CommitmentsSection(vm) }
         item { AnnualSetAsidesSection(vm) }
+        item { OutlookSection(vm) }
     }
     ConfirmSheet(vm)
 }
@@ -312,6 +313,124 @@ private fun AccountsSection(vm: FinTrackViewModel) {
  * them accounts for. Overlapping them would subtract a confirmed bill twice and
  * make the figure at the bottom worthless.
  */
+/**
+ * The next six months, from what is already known.
+ *
+ * Only the knowable parts: recurring bills, EMIs while they still run, and
+ * each set-aside's share for that month. Spending is left out on purpose — an
+ * average of past months would look like a forecast without being one, and a
+ * figure you cannot rely on is worse here than a missing one.
+ */
+@Composable
+private fun OutlookSection(vm: FinTrackViewModel) {
+    val outlook = vm.getSixMonthOutlook()
+    Column {
+        SectionTitle("Next 6 Months Outlook · ${vm.bucketLabel}", Modifier.padding(bottom = Space.s1))
+        Muted(
+            "Estimated surplus based on your salary, active EMIs, recurring bills, and set-asides.",
+            Modifier.padding(bottom = Space.s3)
+        )
+        
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Pf.Surface.copy(alpha = 0.85f),
+                            Pf.Surface2.copy(alpha = 0.95f)
+                        )
+                    ),
+                    Radius.Xl
+                )
+                .border(1.dp, Pf.Hairline, Radius.Xl)
+                .padding(Space.s4)
+        ) {
+            Column {
+                Text(
+                    "PROJECTED 6-MONTH SURPLUS",
+                    color = Pf.Muted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+                
+                val surplusColor = if (outlook.totalSurplus >= 0) {
+                    Color(0xFF00BFA5) // Teal
+                } else {
+                    Color(0xFFFF5252) // Orange-Red
+                }
+                
+                Text(
+                    inr(outlook.totalSurplus),
+                    Modifier.padding(top = 4.dp, bottom = Space.s4),
+                    color = surplusColor,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                
+                Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+                    Row(Modifier.fillMaxWidth()) {
+                        Text("Category", Modifier.weight(1.5f), color = Pf.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Monthly", Modifier.weight(1f), color = Pf.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                        Text("6-Month Total", Modifier.weight(1.2f), color = Pf.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                    }
+                    
+                    Hairline()
+                    
+                    GridRow("Salary", outlook.monthlySalary, outlook.totalSalary, false)
+                    GridRow("Loans & EMIs", -outlook.monthlyLoans, -outlook.totalLoans, true)
+                    GridRow("Recurring Bills", -outlook.monthlyRecurring, -outlook.totalRecurring, true)
+                    GridRow("Set Aside", -outlook.monthlySetAside, -outlook.totalSetAside, true)
+                    
+                    Hairline()
+                    
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Net Surplus", Modifier.weight(1.5f), color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            inr(outlook.monthlySurplus),
+                            Modifier.weight(1f),
+                            color = if (outlook.monthlySurplus >= 0) Color(0xFF00BFA5) else Color(0xFFFF5252),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End
+                        )
+                        Text(
+                            inr(outlook.totalSurplus),
+                            Modifier.weight(1.2f),
+                            color = surplusColor,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GridRow(label: String, monthly: Double, total: Double, isExpense: Boolean) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1.5f), color = Pf.Text, fontSize = 13.sp)
+        Text(
+            inr(kotlin.math.abs(monthly)),
+            Modifier.weight(1f),
+            color = if (isExpense) Pf.Text else Color(0xFF00BFA5),
+            fontSize = 13.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End
+        )
+        Text(
+            inr(kotlin.math.abs(total)),
+            Modifier.weight(1.2f),
+            color = if (isExpense) Pf.Text else Color(0xFF00BFA5),
+            fontSize = 13.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End
+        )
+    }
+}
+
 @Composable
 private fun MonthPlan(vm: FinTrackViewModel) {
     val left = vm.monthLeft
@@ -499,7 +618,8 @@ private fun LoansSection(vm: FinTrackViewModel) {
                             PfField(
                                 value = vm.loanDraft.dueText,
                                 onValueChange = { vm.loanDraft = vm.loanDraft.copy(dueText = it) },
-                                placeholder = "EMI due on, e.g. 05-09-2026"
+                                placeholder = "Due day of month (1-31)",
+                                numeric = true
                             )
                             EditorActions({ vm.deleteLoan(l.id) }, vm::cancelEditLoan, vm::saveLoan)
                         }
@@ -517,9 +637,10 @@ private fun LoansSection(vm: FinTrackViewModel) {
                                         l.name,
                                         color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
                                     )
+                                    val dueDayText = if (l.dueDay > 0) " · Due day ${l.dueDay}" else ""
                                     Muted(
                                         "${inr(l.monthlyEmi)}/mo · ${l.remainingMonths} of " +
-                                            "${l.totalMonths} months left" +
+                                            "${l.totalMonths} months left$dueDayText" +
                                             if (l.nextDue.isEmpty()) ""
                                             else " · due in ${Ledger.untilText(today(), l.nextDue)}",
                                         Modifier.padding(top = 2.dp, bottom = 6.dp)
@@ -593,7 +714,7 @@ private fun CardsSection(vm: FinTrackViewModel) {
                             PfField(value = vm.cardDraft.balanceText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(balanceText = it) }, placeholder = "Current balance", numeric = true)
                             PfField(value = vm.cardDraft.minDueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(minDueText = it) }, placeholder = "Minimum due", numeric = true)
                             // A real date, so the bill can be reminded about.
-                            PfField(value = vm.cardDraft.dueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(dueText = it) }, placeholder = "Bill due on, e.g. 18-09-2026")
+                            PfField(value = vm.cardDraft.dueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(dueText = it) }, placeholder = "Due day of month (1-31)", numeric = true)
                             // Lets a card spend in a bank SMS find this card.
                             PfField(value = vm.cardDraft.numberTail, onValueChange = { vm.cardDraft = vm.cardDraft.copy(numberTail = it) }, placeholder = "Last 3-4 digits of the card", numeric = true)
                             EditorActions({ vm.deleteCard(c.id) }, vm::cancelEditCard, vm::saveCard)
