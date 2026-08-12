@@ -26,8 +26,14 @@ import java.util.Calendar
  */
 object DueReminder {
 
-    /** Reminds this many days ahead, so there is time to move money. */
-    private const val DAYS_AHEAD = 3
+    /**
+     * How far ahead to warn: the day before, and again on the day itself.
+     *
+     * Three days meant four notifications for one bill, which is how a reminder
+     * becomes something you swipe away without reading. One night's warning is
+     * enough to move money.
+     */
+    private const val DAYS_AHEAD = 1
 
     private const val REQUEST = 4711
 
