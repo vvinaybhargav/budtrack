@@ -30,10 +30,18 @@ data class ParsedSms(
      *  transaction message from an advert that happens to mention rupees. */
     val isUsable: Boolean get() = amount > 0 && (ref.isNotEmpty() || accountTail.isNotEmpty())
 
-    /** Stable id for de-duplication when the bank omits a reference. */
+    /**
+     * Stable id for de-duplication when the bank omits a reference.
+     *
+     * The direction is part of the key. Moving money between your own banks
+     * sends two messages under one reference — debited there, credited here —
+     * and they are not a duplicate: dropping the second lost the other half of
+     * the transfer.
+     */
     val dedupeKey: String
-        get() = if (ref.isNotEmpty()) ref
-        else "$date|${"%.2f".format(amount)}|$accountTail|${party.take(12)}"
+        get() = (if (ref.isNotEmpty()) ref
+        else "$date|${"%.2f".format(amount)}|$accountTail|${party.take(12)}") +
+            if (isCredit) "|c" else "|d"
 }
 
 private val AMOUNT = Regex("""(?:rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)

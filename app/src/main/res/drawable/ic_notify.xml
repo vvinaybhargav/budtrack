@@ -1,0 +1,12 @@
+<!-- The status bar tints this to a flat silhouette, so it is one solid shape
+     with no colour of its own: a wallet, at the 24dp icon size Android expects. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M19,7L18,7L18,6a3,3 0,0 0,-3 -3L5,3a3,3 0,0 0,-3 3v12a3,3 0,0 0,3 3h14a3,3 0,0 0,3 -3v-8A3,3 0,0 0,19 7zM5,5h10a1,1 0,0 1,1 1v1L5,7a1,1 0,0 1,0 -2zM19,15h-2a1,1 0,0 1,0 -2h2z" />
+</vector>

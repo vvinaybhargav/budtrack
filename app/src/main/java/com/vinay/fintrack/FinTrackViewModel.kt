@@ -1461,6 +1461,19 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun smsBodyFor(id: String): String = persisted.smsBodies[id].orEmpty()
 
     fun startEditTxn(id: String) { editingTxnId = id }
+
+    /**
+     * Opens an imported transaction from its notification.
+     *
+     * The transaction may sit in the other profile's bucket, so the list behind
+     * the sheet can be empty — the sheet is still shown. Being unable to reach
+     * a payment you were just told about would defeat the notification.
+     */
+    fun openImportedTxn(id: String) {
+        if (txns.none { it.id == id }) return
+        tab = Tab.ENTRIES
+        editingTxnId = id
+    }
     fun cancelEditTxn() { editingTxnId = null }
 
     private fun replaceTxn(updated: Txn) {

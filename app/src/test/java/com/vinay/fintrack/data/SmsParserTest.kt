@@ -2,6 +2,7 @@ package com.vinay.fintrack.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -260,5 +261,43 @@ class CardTailTest {
         assertEquals(2450.0, p!!.amount, 0.001)
         assertEquals("4321", p.accountTail)
         assertEquals(AccountMatch.One("cc1"), matchCardByTail(cards, p.accountTail))
+    }
+}
+
+/** Moving money between your own banks: two messages, one reference. */
+class SelfTransferTest {
+
+    private val debit = parseBankSms(
+        "Rs.5000.00 debited from SBI A/c XX8305 on 12-08-26. UPI Ref 445566778899",
+        "AD-SBIINB"
+    )!!
+    private val credit = parseBankSms(
+        "ICICI Bank Acct XX391 credited with Rs 5000.00 on 12-Aug-26. UPI Ref 445566778899",
+        "AD-ICICIT"
+    )!!
+
+    /** The half that arrives second must not be mistaken for the same message
+     *  arriving twice — that dropped one end of every transfer. */
+    @Test
+    fun `the two halves are not duplicates of each other`() {
+        assertNotEquals(debit.dedupeKey, credit.dedupeKey)
+    }
+
+    /** But a message genuinely re-read still is one. */
+    @Test
+    fun `the same message read twice is still a duplicate`() {
+        val again = parseBankSms(
+            "Rs.5000.00 debited from SBI A/c XX8305 on 12-08-26. UPI Ref 445566778899",
+            "AD-SBIINB"
+        )!!
+        assertEquals(debit.dedupeKey, again.dedupeKey)
+    }
+
+    @Test
+    fun `each half knows its own direction and account`() {
+        assertFalse(debit.isCredit)
+        assertTrue(credit.isCredit)
+        assertEquals("8305", debit.accountTail)
+        assertEquals("391", credit.accountTail)
     }
 }

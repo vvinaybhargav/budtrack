@@ -403,6 +403,7 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
     val context = LocalContext.current
     val activity = context as? Activity
     var hasPermission by remember { mutableStateOf(hasSmsPermission(context)) }
+    var canNotify by remember { mutableStateOf(hasNotifyPermission(context)) }
 
     /**
      * Android's three states, which the app has to tell apart:
@@ -424,7 +425,10 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) hasPermission = hasSmsPermission(context)
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasPermission = hasSmsPermission(context)
+                canNotify = hasNotifyPermission(context)
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -432,9 +436,12 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { grants ->
+    ) { _ ->
         vm.markSmsAsked()
-        hasPermission = grants.values.all { it }
+        // Only the SMS grants decide this. Notifications are asked for in the
+        // same breath, and turning those down is no reason to call import off.
+        hasPermission = hasSmsPermission(context)
+        canNotify = hasNotifyPermission(context)
         if (hasPermission) vm.setSmsImport(true)
     }
 
@@ -460,9 +467,7 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
         ) {
             if (!hasPermission && !blocked) {
                 PrimaryButton("Allow SMS access", onClick = {
-                    permissionLauncher.launch(
-                        arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS)
-                    )
+                    permissionLauncher.launch(smsPermissions())
                 })
             } else if (!hasPermission) {
                 PrimaryButton("Open permissions", onClick = {
@@ -486,6 +491,19 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
                 )
                 // For imports made before the account digits were filled in.
                 SecondaryButton("Re-check accounts", vm::rematchImports)
+            }
+        }
+
+        // SMS access granted before notifications existed as a separate ask, so
+        // there has to be a way to catch up without turning the feature off.
+        if (hasPermission && !canNotify) {
+            Column(Modifier.padding(top = Space.s3)) {
+                Muted("Notifications are off, so imports happen silently.")
+                Row(Modifier.padding(top = Space.s2)) {
+                    SecondaryButton("Notify me on import", onClick = {
+                        permissionLauncher.launch(smsPermissions())
+                    })
+                }
             }
         }
 
@@ -544,6 +562,27 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
                 "the default account.",
             Modifier.padding(top = Space.s2)
         )
+    }
+}
+
+/** Below Android 13 the manifest entry is the whole story. */
+private fun hasNotifyPermission(context: android.content.Context): Boolean =
+    android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(
+            context, Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+
+/**
+ * Asked for together, since they are one feature: reading the bank's message,
+ * and telling you what it became. Notifications only became a permission in
+ * Android 13 — requesting it below that fails the whole batch.
+ */
+private fun smsPermissions(): Array<String> {
+    val base = arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS)
+    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+        base + Manifest.permission.POST_NOTIFICATIONS
+    } else {
+        base
     }
 }
 

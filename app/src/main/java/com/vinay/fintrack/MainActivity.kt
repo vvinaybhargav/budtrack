@@ -1,5 +1,6 @@
 package com.vinay.fintrack
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vinay.fintrack.sms.Notifier
 import com.vinay.fintrack.ui.AddScreen
 import com.vinay.fintrack.ui.ChatScreen
 import com.vinay.fintrack.ui.EntriesScreen
@@ -66,11 +68,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Already running when the notification is tapped: without this the
+     *  activity keeps its original intent and nothing opens. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
     /** The SMS receiver records payments while the app is closed, so pick up
      *  whatever it wrote rather than showing stale state. */
     override fun onResume() {
         super.onResume()
         vm.refreshFromDisk()
+        openTappedTransaction()
+    }
+
+    /**
+     * Runs after the reload above, because a transaction imported while the app
+     * was closed isn't in memory until then.
+     *
+     * The extra is consumed, or rotating the screen would reopen the sheet
+     * every time.
+     */
+    private fun openTappedTransaction() {
+        val id = intent?.getStringExtra(Notifier.EXTRA_TXN_ID) ?: return
+        intent.removeExtra(Notifier.EXTRA_TXN_ID)
+        vm.openImportedTxn(id)
     }
 }
 

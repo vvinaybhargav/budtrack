@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.Telephony
 import android.util.Log
+import com.vinay.fintrack.sms.Notifier
 
 /**
  * Turns bank SMS into transactions. Runs from the broadcast receiver as
@@ -33,7 +34,18 @@ class SmsImporter(private val context: Context) {
             store.save(state.copy(smsLog = note(state, "already had ${inr(parsed.amount)} ${parsed.party}")))
             return false
         }
-        store.save(apply(state, listOf(parsed.copy(receivedAt = receivedAt)), maxOf(state.lastSmsScan, receivedAt)))
+        val after = apply(state, listOf(parsed.copy(receivedAt = receivedAt)), maxOf(state.lastSmsScan, receivedAt))
+        store.save(after)
+
+        // Announce whatever the message became — a new transaction, or the
+        // second half joining a transfer. Both are worth seeing: the point of
+        // the notification is catching a wrong account while the payment is
+        // still fresh in your mind.
+        for (t in after.txns) {
+            val before = state.txns.firstOrNull { it.id == t.id }
+            if (before == null) Notifier.notifyImported(context, t, isNew = true)
+            else if (before != t) Notifier.notifyImported(context, t, isNew = false)
+        }
         return true
     }
 
@@ -117,6 +129,27 @@ class SmsImporter(private val context: Context) {
                 ?: (matchCardByBank(state.cards, p.body) as? AccountMatch.One))?.accountId
             val accountId =
                 if (card != null) "" else accountFor(state, p.accountTail, p.body, log)
+
+            // Money moved between your own banks arrives as two messages, one
+            // from each side. Joining them into a single transfer keeps it out
+            // of the month's spending and income — nothing was earned or spent,
+            // it only changed hands — and shows it to both profiles at once.
+            val otherLeg = if (card != null) null else otherLegOf(txns, p, accountId)
+            if (otherLeg != null) {
+                txns[txns.indexOf(otherLeg)] = otherLeg.copy(
+                    kind = "TRANSFER",
+                    fromAccountId = if (p.isCredit) otherLeg.fromAccountId else accountId,
+                    toAccountId = if (p.isCredit) accountId else otherLeg.toAccountId,
+                    note = "Transfer"
+                )
+                bodies[otherLeg.id] = listOfNotNull(
+                    state.smsBodies[otherLeg.id], bodies[otherLeg.id], p.body
+                ).distinct().joinToString("\n\n")
+                matched++
+                log += "joined ${inr(p.amount)} into one transfer between your accounts"
+                continue
+            }
+
             txns += Txn(
                 id = newId("t"),
                 date = p.date,
@@ -169,6 +202,28 @@ class SmsImporter(private val context: Context) {
     private fun matchingConfirmed(txns: List<Txn>, p: ParsedSms): Txn? =
         txns.firstOrNull { Ledger.isSamePayment(it, p.amount, p.date, p.isCredit) }
 
+    /**
+     * The already-imported half of the same transfer: the bank's own reference,
+     * the same amount, the opposite direction, and a different account.
+     *
+     * The reference is required. Without it this would join any two unrelated
+     * payments that happened to be for the same amount on the same day, and a
+     * wrong transfer is worse than two honest rows.
+     */
+    private fun otherLegOf(txns: List<Txn>, p: ParsedSms, accountId: String): Txn? {
+        if (p.ref.isEmpty() || accountId.isEmpty()) return null
+        return txns.firstOrNull { t ->
+            t.ref == p.ref &&
+                t.source == "sms" &&
+                t.cardId.isEmpty() &&
+                kotlin.math.abs(t.amount - p.amount) < 0.5 &&
+                t.kind == (if (p.isCredit) "EXPENSE" else "INCOME") &&
+                // The far end must be a different account, or this is one
+                // message the bank sent twice rather than two halves.
+                t.fromAccountId.ifEmpty { t.toAccountId } != accountId
+        }
+    }
+
     /** Unbounded growth in SharedPreferences helps nobody; recent keys are
      *  enough to stop a re-read duplicating. */
     private fun capRefs(refs: Set<String>): Set<String> =
@@ -180,10 +235,12 @@ class SmsImporter(private val context: Context) {
         else bodies.entries.toList().takeLast(MAX_BODIES).associate { it.key to it.value }
 
     /**
-     * The account the message names, or the default when it can't be told
-     * apart. An ambiguous match is reported rather than guessed: putting a
+     * The account the message names, or your own when it cannot be told.
+     *
+     * An ambiguous match falls back rather than being guessed at: putting a
      * personal payment on the joint account is exactly the mistake that makes
-     * the buckets untrustworthy.
+     * the buckets untrustworthy, so nothing reaches the joint account without
+     * naming it.
      */
     private fun accountFor(
         state: PersistedState,
@@ -191,11 +248,17 @@ class SmsImporter(private val context: Context) {
         body: String,
         log: MutableList<String>
     ): String {
-        // A joint account first. The default is household-wide, so if one person
-        // sets their own account as the default the other's unmatched messages
-        // would land in it — and "first account in the list" is worse still.
-        val fallback = state.accounts.firstOrNull { it.person == "Joint" }?.id
-            ?: state.accounts.firstOrNull { it.person == state.lastProfile }?.id
+        // Your own account, not the joint one.
+        //
+        // The joint account is named and numbered, so a message that belongs to
+        // it says so and is matched below. Anything left over is by definition
+        // not the joint account — sending it there anyway made "I couldn't tell"
+        // indistinguishable from "the household paid this", and quietly charged
+        // personal spending to the shared side.
+        val fallback = state.accounts.firstOrNull {
+            it.person != "Joint" && it.person == state.lastProfile
+        }?.id
+            ?: state.accounts.firstOrNull { it.person != "Joint" }?.id
             ?: state.accounts.firstOrNull { it.name == state.defaultAccount }?.id
             ?: state.accounts.firstOrNull()?.id.orEmpty()
 
@@ -219,7 +282,7 @@ class SmsImporter(private val context: Context) {
             }
             AccountMatch.None -> {
                 if (tail.isNotEmpty()) {
-                    log += "…$tail matches no account — filed to the shared one"
+                    log += "…$tail matches no account — filed to your own"
                 }
                 fallback
             }
