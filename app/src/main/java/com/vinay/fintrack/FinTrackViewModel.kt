@@ -1783,7 +1783,29 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** The bank message an imported transaction came from, if it's still kept. */
     fun smsBodyFor(id: String): String = persisted.smsBodies[id].orEmpty()
 
-    fun startEditTxn(id: String) { editingTxnId = id }
+    fun startEditTxn(id: String) {
+        editingTxnId = id
+        // Or the previous row's "Filed under Groceries." greets this one.
+        categoriseNote = ""
+    }
+
+    /**
+     * The payee to learn a category against — the bank's name for them, not
+     * your description of the payment.
+     *
+     * Rewriting a description to "milk and eggs" replaces the note, so learning
+     * from the note taught the app about that phrase. The next message from the
+     * same shop still says SRI BALAJI TRADERS and matched nothing, and the
+     * lesson was never used again. The original name is recovered from the
+     * message the row came from.
+     */
+    private fun payeeOf(t: Txn): String {
+        val body = persisted.smsBodies[t.id].orEmpty()
+        if (body.isNotEmpty()) {
+            parseBankSms(body)?.party?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        return t.note
+    }
 
     /**
      * Opens an imported transaction from its notification.
@@ -1858,7 +1880,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun sortCategoriesWithAi() {
         if (sortingCategories) return
         if (!chatReady) { sortMessage = "Add an OpenAI key in Settings first."; return }
-        val payees = uncategorisedTxns.map { it.note }
+        // The bank's name for them, so what comes back is learned against the
+        // string a future message will actually carry.
+        val payees = uncategorisedTxns.map { payeeOf(it) }
             .filter { it.isNotBlank() }
             .distinctBy { payeeKey(it) }
             .take(40)
@@ -1921,23 +1945,21 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun setTxnCategory(category: String) {
         val txn = editingTxn ?: return
         replaceTxn(txn.copy(category = category))
-        learnPayeeCategory(txn.note, category)
+        learnPayeeCategory(payeeOf(txn), category)
     }
 
     /** Teaches the payee, then re-files anything unsorted from the same one. */
     private fun learnPayeeCategory(payee: String, category: String) {
         val key = payeeKey(payee)
         if (key.isBlank() || category.isBlank() || category == UNCATEGORISED) return
-        val moved = persisted.txns.filter {
-            it.category == UNCATEGORISED && payeeKey(it.note) == key
-        }
+        // Matched on the bank's name too, not the note: a row whose description
+        // you rewrote is still the same shop, and should move with the rest.
+        val same = { t: Txn -> t.category == UNCATEGORISED && payeeKey(payeeOf(t)) == key }
+        val moved = persisted.txns.filter(same)
         update { s ->
             s.copy(
                 payeeCategories = s.payeeCategories + (key to category),
-                txns = s.txns.map {
-                    if (it.category == UNCATEGORISED && payeeKey(it.note) == key)
-                        it.copy(category = category) else it
-                }
+                txns = s.txns.map { if (same(it)) it.copy(category = category) else it }
             )
         }
         moved.forEach { sync.upsertTxn(it.copy(category = category)) }
@@ -2007,7 +2029,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     return@post
                 }
                 replaceTxn(current.copy(category = category))
-                learnPayeeCategory(current.note, category)
+                learnPayeeCategory(payeeOf(current), category)
                 categoriseNote = "Filed under $category."
             }
         }.start()
@@ -2536,11 +2558,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun rememberPayeeCategory(payee: String, category: String): Int {
         val key = payeeKey(payee)
         if (key.isBlank() || category.isBlank()) return 0
-        val moved = persisted.txns.filter {
-            it.category == UNCATEGORISED && payeeKey(it.note) == key
+        val moved = persisted.txns.count {
+            it.category == UNCATEGORISED && payeeKey(payeeOf(it)) == key
         }
         learnPayeeCategory(payee, category)
-        return moved.size
+        return moved
     }
 
     fun cardNamed(name: String): Card? =
