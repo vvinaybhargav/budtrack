@@ -527,7 +527,7 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
                     enabled = !vm.scanning
                 )
                 // For imports made before the account digits were filled in.
-                SecondaryButton("Re-check accounts", vm::rematchImports)
+                SecondaryButton("Re-check accounts", { vm.rematchImports() })
             }
         }
 

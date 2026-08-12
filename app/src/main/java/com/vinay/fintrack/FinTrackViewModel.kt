@@ -245,10 +245,19 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * one at a time. The stored message is re-read for its account number and
      * the transaction moved — nothing else about it changes.
      */
-    fun rematchImports() {
+    /**
+     * Re-files imports onto the account their message names.
+     *
+     * [onlyUnfiled] limits it to rows that have no account at all. The button
+     * in Settings re-checks everything, which is what it is for; running after
+     * you set one account must not quietly move rows you had corrected by hand
+     * back to what the digits say.
+     */
+    fun rematchImports(onlyUnfiled: Boolean = false) {
         val moved = mutableListOf<Txn>()
         persisted.txns.forEach { t ->
             if (t.source.isEmpty()) return@forEach
+            if (onlyUnfiled && !needsAccount(t)) return@forEach
             val body = persisted.smsBodies[t.id].orEmpty()
             if (body.isEmpty()) return@forEach
             val tail = parseBankSms(body)?.accountTail.orEmpty()
@@ -276,8 +285,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         if (moved.isEmpty()) {
-            scanNote = "Nothing to move — the imports already match, or those " +
-                "accounts have no digits set."
+            // Silent when it ran by itself: a note nobody asked for, saying
+            // nothing happened, is just noise on the screen.
+            if (!onlyUnfiled) {
+                scanNote = "Nothing to move — the imports already match, or those " +
+                    "accounts have no digits set."
+            }
             return
         }
         val byId = moved.associateBy { it.id }
@@ -1711,7 +1724,16 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * the other profile's account invisible in both buckets.
      */
     private fun inBucket(t: Txn): Boolean =
-        Ledger.inBucket(txnPersons(t), activeProfile, bucketView == "PERSONAL")
+        // A row with no account yet belongs to neither side — it has no account
+        // to take a side from — so it shows on both. It was appearing only under
+        // Joint, which meant the "needs an account" line could sit above a list
+        // that did not contain any of them.
+        needsAccount(t) ||
+            Ledger.inBucket(txnPersons(t), activeProfile, bucketView == "PERSONAL")
+
+    private fun needsAccount(t: Txn): Boolean =
+        t.source.startsWith("sms") && t.cardId.isEmpty() &&
+            t.fromAccountId.isEmpty() && t.toAccountId.isEmpty()
 
     /** In the other tab — so an empty list can say where things went instead of
      *  looking like nothing was recorded. */
@@ -1804,8 +1826,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 if (it.id == accountId) it.copy(numberTail = digits) else it
             })
         }
-        // Everything else waiting on the same digits can be filed now too.
-        rematchImports()
+        // Everything else still waiting on an account can be filed now. Only
+        // those: rows you have already placed by hand stay where you put them.
+        rematchImports(onlyUnfiled = true)
     }
 
     /** Transactions the rules could not file. */
@@ -1879,11 +1902,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun clearSortMessage() { sortMessage = "" }
 
     /** Imported rows with no account yet — the only ones that need you. */
-    val txnsNeedingAccount: List<Txn>
-        get() = txns.filter {
-            it.source.startsWith("sms") && it.cardId.isEmpty() &&
-                it.fromAccountId.isEmpty() && it.toAccountId.isEmpty()
-        }
+    val txnsNeedingAccount: List<Txn> get() = txns.filter { needsAccount(it) }
 
     /**
      * Files a transaction, and remembers the choice.
