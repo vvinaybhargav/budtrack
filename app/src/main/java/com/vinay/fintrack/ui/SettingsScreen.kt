@@ -207,6 +207,24 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             Column {
                 Heading("Budgets")
                 Muted("A monthly limit per category.")
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = Space.s3),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Muted("Carry last month's leftover")
+                    if (vm.budgetRollover) {
+                        SecondaryButton("On", { vm.setBudgetRollover(false) })
+                    } else {
+                        SecondaryButton("Off", { vm.setBudgetRollover(true) })
+                    }
+                }
+                Muted(
+                    "Underspend adds to next month; overspend takes from it. Off " +
+                        "means every month starts at the same figure."
+                )
                 Column(
                     Modifier.padding(top = Space.s3),
                     verticalArrangement = Arrangement.spacedBy(Space.s2)

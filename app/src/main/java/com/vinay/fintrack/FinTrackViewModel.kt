@@ -92,7 +92,9 @@ data class NewCardDraft(
     val name: String = "", val owner: String = "Me", val limitText: String = "",
     val balanceText: String = "", val minDueText: String = "", val due: String = "",
     /** Last digits as the bank's SMS shows them, for matching card spends. */
-    val numberTail: String = ""
+    val numberTail: String = "",
+    /** Bill date as the form takes it (dd-mm-yyyy), so it can be reminded about. */
+    val dueText: String = ""
 )
 
 class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
@@ -1206,7 +1208,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     balance = newCardDraft.balanceText.toDoubleOrNull() ?: 0.0,
                     minDue = newCardDraft.minDueText.toDoubleOrNull() ?: 0.0,
                     due = newCardDraft.due,
-                    numberTail = newCardDraft.numberTail
+                    numberTail = newCardDraft.numberTail,
+                    dueDate = isoFromDayFirst(newCardDraft.dueText).orEmpty()
                 )
             )
         }
@@ -1314,8 +1317,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun startEditCard(c: Card) {
         editingCardId = c.id
         cardDraft = NewCardDraft(
-            c.name, c.owner, c.limit.toLong().toString(), c.balance.toLong().toString(),
-            c.minDue.toLong().toString(), c.due, c.numberTail
+            name = c.name,
+            owner = c.owner,
+            limitText = c.limit.toLong().toString(),
+            balanceText = c.balance.toLong().toString(),
+            minDueText = c.minDue.toLong().toString(),
+            due = c.due,
+            numberTail = c.numberTail,
+            dueText = if (c.dueDate.isEmpty()) "" else dayFirstOf(c.dueDate)
         )
     }
 
@@ -1331,7 +1340,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     balance = cardDraft.balanceText.toDoubleOrNull() ?: 0.0,
                     minDue = cardDraft.minDueText.toDoubleOrNull() ?: 0.0,
                     due = cardDraft.due,
-                    numberTail = cardDraft.numberTail
+                    numberTail = cardDraft.numberTail,
+                    dueDate = isoFromDayFirst(cardDraft.dueText).orEmpty()
                 ) else it
             })
         }
@@ -1394,6 +1404,41 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s -> s.copy(budgets = s.budgets + (cat to amount)) }
 
     fun removeBudget(cat: String) = update { s -> s.copy(budgets = s.budgets - cat) }
+
+    val budgetRollover: Boolean get() = persisted.budgetRollover
+
+    fun setBudgetRollover(on: Boolean) = update { s -> s.copy(budgetRollover = on) }
+
+    /**
+     * What this category may spend this month — the budget, plus last month's
+     * leftover when rollover is on.
+     *
+     * Overspending carries too. Carrying only the underspend would make the
+     * figure flattering rather than honest, and a budget you cannot fall behind
+     * on is not a budget.
+     */
+    fun allowanceFor(category: String): Double {
+        val budget = budgets[category] ?: 0.0
+        if (!budgetRollover) return budget
+        return Ledger.allowance(budget, spentIn(Ledger.cycleBefore(cycle(), 1), category))
+    }
+
+    /** Carried in from last month: positive if you underspent, negative if not. */
+    fun rolloverFor(category: String): Double =
+        if (!budgetRollover) 0.0 else allowanceFor(category) - (budgets[category] ?: 0.0)
+
+    /** What the last three months spent on this category, oldest first. */
+    fun spendTrendFor(category: String): List<Double> = Ledger.spendTrend(
+        persisted.txns, cycle(), category,
+        scopedAccounts.map { it.id }.toSet(),
+        scopedCards.map { it.id }.toSet()
+    )
+
+    private fun spentIn(period: String, category: String): Double = Ledger.spendByCategory(
+        persisted.txns, period,
+        scopedAccounts.map { it.id }.toSet(),
+        scopedCards.map { it.id }.toSet()
+    )[category] ?: 0.0
 
     fun addBudgetFromDraft() {
         val cat = budgetDraftCategory.ifBlank { return }

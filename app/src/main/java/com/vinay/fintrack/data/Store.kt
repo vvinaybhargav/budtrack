@@ -15,6 +15,9 @@ data class PersistedState(
      *  separately — so un-confirming is just deleting the transaction. */
     val txns: List<Txn> = emptyList(),
     val budgets: Map<String, Double> = Seed.budgets,
+    /** Carry last month's leftover into this month's budget. Off by default:
+     *  it changes what every bar means, so it should be a deliberate choice. */
+    val budgetRollover: Boolean = false,
     /** Joint isn't one of these — it's a view you switch to on Home, not
      *  something you sign in to. */
     val profiles: Map<String, String> = mapOf("Me" to "1234", "Wife" to "1234"),

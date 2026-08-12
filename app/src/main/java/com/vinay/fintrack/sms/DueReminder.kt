@@ -120,6 +120,21 @@ object DueReminder {
                 l.id
             )
         }
+
+        // The card bill is the one payment with a real late fee attached, and
+        // until its date became a date it was the only thing unwarnable.
+        for (c in state.cards) {
+            if (c.paid || c.balance <= 0.0 || c.nextDue.isEmpty()) continue
+            val days = Ledger.daysBetween(now, c.nextDue)
+            if (days < 0 || days > DAYS_AHEAD) continue
+            Notifier.notifyDue(
+                context,
+                "${c.name} bill ${whenWord(days)} · ${inr(c.balance)}",
+                "Due ${prettyDate(c.nextDue)}." +
+                    if (c.minDue > 0) " Minimum ${inr(c.minDue)}." else "",
+                c.id
+            )
+        }
     }
 
     private fun whenWord(days: Int): String = when (days) {

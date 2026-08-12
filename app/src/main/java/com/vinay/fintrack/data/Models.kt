@@ -158,8 +158,22 @@ data class Card(
     val paid: Boolean = false,
     /** Last digits as the bank writes them ("Card XX4321"). A card spend is
      *  matched on these, and adds to the card rather than to any account. */
-    val numberTail: String = ""
-)
+    val numberTail: String = "",
+    /**
+     * The bill date as YYYY-MM-DD, rolled forward monthly.
+     *
+     * [due] before this was free text like "18 Sep", which reads fine and can be
+     * compared to nothing — so the one payment with a real late fee attached was
+     * the only thing the app could not warn about.
+     */
+    val dueDate: String = ""
+) {
+    /** The next bill date, past any already gone. Cards bill monthly. */
+    val nextDue: String get() = Ledger.nextDue(dueDate, 1, today())
+
+    /** What to show: the real date when there is one, else the old free text. */
+    val dueText: String get() = if (nextDue.isNotEmpty()) prettyDate(nextDue) else due
+}
 
 @Serializable
 data class ChatMessage(val role: String, val text: String)

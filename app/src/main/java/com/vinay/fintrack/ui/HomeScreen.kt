@@ -356,7 +356,11 @@ private fun BudgetsSection(vm: FinTrackViewModel) {
             Column(verticalArrangement = Arrangement.spacedBy(Space.s4)) {
                 vm.budgets.forEach { (cat, limit) ->
                     val spend = vm.spendFor(cat)
-                    val pct = safeFraction(spend, limit)
+                    // The allowance, which is the budget plus whatever last
+                    // month left over when rollover is on.
+                    val allowed = vm.allowanceFor(cat)
+                    val carried = vm.rolloverFor(cat)
+                    val pct = safeFraction(spend, allowed)
                     Column {
                         Row(
                             Modifier
@@ -365,9 +369,28 @@ private fun BudgetsSection(vm: FinTrackViewModel) {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(cat, color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Muted("${inr(spend)} / ${inr(limit)}", size = 13)
+                            Muted("${inr(spend)} / ${inr(allowed)}", size = 13)
                         }
                         ProgressBar(pct, if (pct >= ALERT_PCT) Pf.Accent else Pf.Text)
+                        // Says where the extra room came from, or where it went.
+                        if (carried != 0.0) {
+                            Muted(
+                                if (carried > 0) "${inr(carried)} carried over from last month"
+                                else "${inr(-carried)} overspent last month, carried in",
+                                Modifier.padding(top = 4.dp),
+                                size = 12
+                            )
+                        }
+                        // Three months of history: one bar says nothing about
+                        // whether a category is drifting.
+                        val trend = vm.spendTrendFor(cat)
+                        if (trend.any { it > 0.0 }) {
+                            Muted(
+                                "Last 3 months: " + trend.joinToString(" · ") { inr(it) },
+                                Modifier.padding(top = 2.dp),
+                                size = 12
+                            )
+                        }
                     }
                 }
             }
@@ -493,7 +516,8 @@ private fun CardsSection(vm: FinTrackViewModel) {
                             PfField(value = vm.cardDraft.limitText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(limitText = it) }, placeholder = "Credit limit", numeric = true)
                             PfField(value = vm.cardDraft.balanceText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(balanceText = it) }, placeholder = "Current balance", numeric = true)
                             PfField(value = vm.cardDraft.minDueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(minDueText = it) }, placeholder = "Minimum due", numeric = true)
-                            PfField(value = vm.cardDraft.due, onValueChange = { vm.cardDraft = vm.cardDraft.copy(due = it) }, placeholder = "Due date")
+                            // A real date, so the bill can be reminded about.
+                            PfField(value = vm.cardDraft.dueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(dueText = it) }, placeholder = "Bill due on, e.g. 18-09-2026")
                             // Lets a card spend in a bank SMS find this card.
                             PfField(value = vm.cardDraft.numberTail, onValueChange = { vm.cardDraft = vm.cardDraft.copy(numberTail = it) }, placeholder = "Last 3-4 digits of the card", numeric = true)
                             EditorActions({ vm.deleteCard(c.id) }, vm::cancelEditCard, vm::saveCard)
@@ -514,7 +538,9 @@ private fun CardsSection(vm: FinTrackViewModel) {
                                         color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
                                     )
                                     Muted(
-                                        "${inr(c.balance)} of ${inr(c.limit)} · due ${c.due}",
+                                        "${inr(c.balance)} of ${inr(c.limit)} · due ${c.dueText}" +
+                                            (if (c.nextDue.isEmpty() || c.paid) ""
+                                            else " · in ${Ledger.untilText(today(), c.nextDue)}"),
                                         Modifier.padding(top = 2.dp, bottom = 6.dp)
                                     )
                                     OutlineTag("Card")

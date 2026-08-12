@@ -166,7 +166,7 @@ private fun CardForm(vm: FinTrackViewModel) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
             PfField("Minimum due (₹)", vm.newCardDraft.minDueText, { vm.newCardDraft = vm.newCardDraft.copy(minDueText = it) }, Modifier.weight(1f), "e.g. 2200", numeric = true)
-            PfField("Due date", vm.newCardDraft.due, { vm.newCardDraft = vm.newCardDraft.copy(due = it) }, Modifier.weight(1f), "e.g. 18 Sep")
+            PfField("Bill due on", vm.newCardDraft.dueText, { vm.newCardDraft = vm.newCardDraft.copy(dueText = it) }, Modifier.weight(1f), "e.g. 18-09-2026")
         }
         PfField(
             "Last digits of the card",

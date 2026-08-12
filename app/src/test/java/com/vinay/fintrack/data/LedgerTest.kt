@@ -850,3 +850,78 @@ class SetAsidePotTest {
         assertEquals(11_000.0, Ledger.setAsidePot(listOf(put(11_000.0, "2026-08"), other), "e1"), 0.001)
     }
 }
+
+/** Carrying a budget's leftover, and reading it against recent months. */
+class BudgetRolloverTest {
+
+    private val mine = Account("a-me", "SBI", "Me", "Me", 0.0)
+    private val ids = setOf(mine.id)
+
+    private fun spend(amount: Double, period: String, category: String = "Groceries") = Txn(
+        id = "t$period$amount", date = "$period-09", kind = "EXPENSE", amount = amount,
+        category = category, fromAccountId = mine.id, period = period
+    )
+
+    /** Underspending ₹2,000 buys ₹2,000 of room. */
+    @Test
+    fun `an underspend adds to this month`() {
+        assertEquals(12_000.0, Ledger.allowance(10_000.0, 8_000.0), 0.001)
+    }
+
+    /** And overspending costs it — carrying only the good half would make the
+     *  number flattering rather than useful. */
+    @Test
+    fun `an overspend takes from this month`() {
+        assertEquals(8_000.0, Ledger.allowance(10_000.0, 12_000.0), 0.001)
+    }
+
+    @Test
+    fun `spending exactly the budget changes nothing`() {
+        assertEquals(10_000.0, Ledger.allowance(10_000.0, 10_000.0), 0.001)
+    }
+
+    @Test
+    fun `walking back a cycle crosses the year end`() {
+        assertEquals("2026-07", Ledger.cycleBefore("2026-08", 1))
+        assertEquals("2025-12", Ledger.cycleBefore("2026-01", 1))
+        assertEquals("2025-08", Ledger.cycleBefore("2026-08", 12))
+    }
+
+    @Test
+    fun `the trend reads oldest first and fills gaps with zero`() {
+        val trend = Ledger.spendTrend(
+            listOf(spend(4_000.0, "2026-05"), spend(6_000.0, "2026-07")),
+            "2026-08", "Groceries", ids, emptySet()
+        )
+        assertEquals(listOf(4_000.0, 0.0, 6_000.0), trend)
+    }
+}
+
+/** Rounding at the aggregates, so error has nowhere to accumulate. */
+class PaiseTest {
+
+    private val mine = Account("a-me", "SBI", "Me", "Me", 0.0)
+
+    /** A tenth of a rupee is not representable, so a hundred of them do not
+     *  add to ten without help. */
+    @Test
+    fun `a hundred ten-paise amounts make exactly ten rupees`() {
+        val txns = (1..100).map {
+            Txn(id = "t$it", date = "2026-08-09", kind = "INCOME", amount = 0.1,
+                toAccountId = mine.id, period = "2026-08")
+        }
+        assertEquals(10.0, Ledger.balances(listOf(mine), txns)[mine.id]!!, 0.0)
+    }
+
+    @Test
+    fun `rounding is to the nearest paisa, not down`() {
+        assertEquals(0.13, Ledger.paise(0.125), 0.0)
+        assertEquals(1.0, Ledger.paise(0.999), 0.0)
+        assertEquals(-2.5, Ledger.paise(-2.5), 0.0)
+    }
+
+    @Test
+    fun `a plain amount is untouched`() {
+        assertEquals(55_000.0, Ledger.paise(55_000.0), 0.0)
+    }
+}

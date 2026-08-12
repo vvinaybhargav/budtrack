@@ -15,6 +15,21 @@ object Ledger {
     const val CARD_PAYMENT = "cardpay"
 
     /**
+     * Rounds to the nearest paisa.
+     *
+     * Amounts are stored as Double, and a Double cannot hold 0.1 exactly. One
+     * amount is fine — it displays correctly and always has. Adding hundreds of
+     * them is where it tells: the error accumulates, and a year of transactions
+     * can leave a balance a few paise adrift from the sum of its parts, which is
+     * the kind of discrepancy nobody can ever explain.
+     *
+     * Applied at every aggregate below rather than to stored values, so no data
+     * has to be migrated and no figure changes — the drift simply has nowhere to
+     * collect.
+     */
+    fun paise(value: Double): Double = Math.round(value * 100.0) / 100.0
+
+    /**
      * Every account's balance in one pass: its opening figure plus what came in,
      * minus what went out. Derived rather than stored, so undoing anything
      * reverses itself without inverse bookkeeping.
@@ -26,7 +41,7 @@ object Ledger {
             if (t.fromAccountId.isNotEmpty()) map[t.fromAccountId]?.let { map[t.fromAccountId] = it - t.amount }
             if (t.toAccountId.isNotEmpty()) map[t.toAccountId]?.let { map[t.toAccountId] = it + t.amount }
         }
-        return map
+        return map.mapValues { paise(it.value) }
     }
 
     /**
@@ -98,7 +113,7 @@ object Ledger {
      * Transfers in, payments out. The bill itself is an expense tagged with the
      * same entry, so paying it empties the pot without any separate bookkeeping.
      */
-    fun setAsidePot(txns: List<Txn>, entryId: String): Double =
+    fun setAsidePot(txns: List<Txn>, entryId: String): Double = paise(
         txns.filter { it.entryId == entryId }
             .sumOf {
                 when (it.kind) {
@@ -107,11 +122,13 @@ object Ledger {
                     else -> 0.0
                 }
             }
+    )
 
     /** How much has already been put by for a set-aside this cycle. */
-    fun setAsideDone(txns: List<Txn>, entryId: String, cycle: String): Double =
+    fun setAsideDone(txns: List<Txn>, entryId: String, cycle: String): Double = paise(
         txns.filter { it.entryId == entryId && it.month == cycle && it.kind == "TRANSFER" }
             .sumOf { it.amount }
+    )
 
     /**
      * Real money out per category this month.
@@ -142,7 +159,49 @@ object Ledger {
             val delta = if (credit) -t.amount else t.amount
             map[t.category] = (map[t.category] ?: 0.0) + delta
         }
-        return map
+        return map.mapValues { paise(it.value) }
+    }
+
+    /**
+     * The cycle [back] months before [cycle]. "2026-08" back 1 is "2026-07".
+     *
+     * Cycles are labelled by month even when they start on the 24th, so walking
+     * back is plain month arithmetic on the label.
+     */
+    fun cycleBefore(cycle: String, back: Int): String {
+        val parts = cycle.split("-")
+        if (parts.size < 2) return cycle
+        val year = parts[0].toIntOrNull() ?: return cycle
+        val month = parts[1].toIntOrNull() ?: return cycle
+        val zero = year * 12 + (month - 1) - back
+        return "%04d-%02d".format(zero / 12, (zero % 12) + 1)
+    }
+
+    /**
+     * What a category may spend this month, with last month's leftover added.
+     *
+     * A budget that resets to the same figure regardless of how the last month
+     * went says nothing about whether you are ahead or behind. Underspending
+     * ₹2,000 on groceries should buy you ₹2,000 of room, and overspending should
+     * cost you it — carrying only the good half would make the number flattering
+     * rather than useful.
+     *
+     * Only one month is carried. Compounding a year of small underspends turns a
+     * budget into a licence.
+     */
+    fun allowance(budget: Double, spentLastCycle: Double): Double =
+        paise(budget + (budget - spentLastCycle))
+
+    /** What each of the last [months] cycles spent on a category, oldest first. */
+    fun spendTrend(
+        txns: List<Txn>,
+        cycle: String,
+        category: String,
+        accountIds: Set<String>,
+        cardIds: Set<String>,
+        months: Int = 3
+    ): List<Double> = (months downTo 1).map { back ->
+        spendByCategory(txns, cycleBefore(cycle, back), accountIds, cardIds)[category] ?: 0.0
     }
 
     /** Money that actually moved this month, as opposed to what was planned. */
@@ -203,7 +262,7 @@ object Ledger {
                 }
             }
         }
-        return MonthTotals(income, spent, saved, invested)
+        return MonthTotals(paise(income), paise(spent), paise(saved), paise(invested))
     }
 
     /**
