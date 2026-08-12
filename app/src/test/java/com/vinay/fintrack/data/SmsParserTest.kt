@@ -303,3 +303,48 @@ class SelfTransferTest {
         assertEquals("391", credit.accountTail)
     }
 }
+
+/** Refunds and reversals, which credit an account without being earnings. */
+class RefundSmsTest {
+
+    @Test
+    fun `a refund is recognised as one`() {
+        val p = parseBankSms(
+            "Rs.2,000.00 credited to your A/c XX1234 on 12-08-26 as refund for " +
+                "order 402-91. UPI Ref 556677889900",
+            "AD-HDFCBK"
+        )!!
+        assertTrue(p.isCredit)
+        assertTrue(p.isRefund)
+    }
+
+    @Test
+    fun `a reversal counts too`() {
+        val p = parseBankSms(
+            "Rs.450.00 reversed to A/c XX1234 on 12-08-26. Ref 112233445566",
+            "AD-ICICIT"
+        )!!
+        assertTrue(p.isRefund)
+    }
+
+    /** A salary is not a refund, however it is worded. */
+    @Test
+    fun `ordinary income is not a refund`() {
+        val p = parseBankSms(
+            "Rs.120000.00 credited to A/c XX1234 on 28-08-26 by SALARY. Ref 998877665544",
+            "AD-HDFCBK"
+        )!!
+        assertTrue(p.isCredit)
+        assertFalse(p.isRefund)
+    }
+
+    /** A debit that mentions a reversal is a charge, not money coming back. */
+    @Test
+    fun `a debit is never a refund`() {
+        val p = parseBankSms(
+            "Rs.50.00 debited from A/c XX1234 as reversal charges. Ref 443322110099",
+            "AD-HDFCBK"
+        )!!
+        assertFalse(p.isRefund)
+    }
+}

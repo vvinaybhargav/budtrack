@@ -174,6 +174,15 @@ object AssistantTools {
             put("due_date", str("The day the EMI comes out, as YYYY-MM-DD."))
             required("name", "emi", "total_months")
         })
+        add(tool(
+            "set_salary_date",
+            "Set the day of the month a profile is paid. Everything confirmed — " +
+                "recurring bills, EMIs, set-asides — becomes payable again on it."
+        ) {
+            put("day", int("Day of the month, 1 to 28. Required."))
+            put("profile", str("Whose salary date. Defaults to the current profile."))
+            required("day")
+        })
         add(tool("update_account", "Change an account's name, balance or digits.") {
             put("name", str("Current account name. Required."))
             put("new_name", str("New name."))

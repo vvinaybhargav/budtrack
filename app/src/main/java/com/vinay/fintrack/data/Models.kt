@@ -23,7 +23,13 @@ data class Entry(
     val periodMonths: Int = 0,
     /** When the bill is actually due, as YYYY-MM-DD. Empty means it isn't
      *  known, and the amount is simply split over [everyMonths]. */
-    val dueDate: String = ""
+    val dueDate: String = "",
+    /**
+     * Finished with. A set-aside that has been saved up and paid, or a bill that
+     * has stopped: kept for its history rather than deleted, but off Home and
+     * out of the month's plan.
+     */
+    val closed: Boolean = false
 ) {
     val everyMonths: Int
         get() = when {
@@ -100,12 +106,15 @@ data class Loan(
  * An actual movement of money, unlike [Entry] which is only the recurring plan.
  * EXPENSE debits [fromAccountId]; INCOME credits [toAccountId]; TRANSFER does both
  * — that is how an annual set-aside keeps the money yours.
+ *
+ * REFUND also credits an account, but it is money coming back rather than money
+ * earned: it reduces what the month spent instead of adding to what it received.
  */
 @Serializable
 data class Txn(
     val id: String,
     val date: String,                 // yyyy-MM-dd
-    val kind: String,                 // EXPENSE | INCOME | TRANSFER
+    val kind: String,                 // EXPENSE | INCOME | TRANSFER | REFUND
     val amount: Double,
     val category: String = "",
     val fromAccountId: String = "",

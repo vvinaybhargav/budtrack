@@ -428,13 +428,22 @@ private fun LoansSection(vm: FinTrackViewModel) {
                                     // Says where it is charged, since a card EMI
                                     // moves no bank balance until the bill.
                                     Muted(vm.emiSourceLabel(l), Modifier.padding(bottom = 6.dp))
-                                    if (l.onCard) OutlineTag("Card EMI") else OutlineTag("Loan")
+                                    when {
+                                        vm.isLoanCleared(l) -> Tag("Paid off", Pf.Accent2_100, Pf.Accent2_800)
+                                        l.onCard -> OutlineTag("Card EMI")
+                                        else -> OutlineTag("Loan")
+                                    }
                                 }
                                 // No account prompt — the loan already knows where the EMI comes from.
-                                if (vm.isLoanConfirmed(l.id)) {
-                                    SecondaryButton("Paid", { vm.confirmLoan(l) })
-                                } else {
-                                    PrimaryButton("Pay EMI", { vm.confirmLoan(l) })
+                                when {
+                                    // Nothing left to pay: offer to clear it out
+                                    // rather than leave a finished loan on Home
+                                    // asking for another instalment.
+                                    vm.isLoanCleared(l) ->
+                                        SecondaryButton("Remove", { vm.deleteLoan(l.id) })
+                                    vm.isLoanConfirmed(l.id) ->
+                                        SecondaryButton("Paid", { vm.confirmLoan(l) })
+                                    else -> PrimaryButton("Pay EMI", { vm.confirmLoan(l) })
                                 }
                                 IconButton(onClick = { vm.startEditLoan(l) }, modifier = Modifier.size(32.dp)) {
                                     Icon(Icons.Default.Edit, "Edit loan", Modifier.size(16.dp), tint = Pf.Accent400)
@@ -667,9 +676,10 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
                             // With a due date, say the date and how many months
                             // are left to reach it — that is what makes the
                             // monthly figure make sense.
+                            val pot = vm.setAsidePot(e)
                             val plan = if (e.nextDue.isNotEmpty()) {
                                 val n = Ledger.instalmentsUntil(today(), e.nextDue)
-                                "${inr(e.monthly)}/mo · ${inr(e.amount)} due " +
+                                "${inr(pot)} of ${inr(e.amount)} saved · due " +
                                     "${prettyDate(e.nextDue)}, $n month${if (n == 1) "" else "s"} to go"
                             } else {
                                 "${inr(e.monthly)}/mo · ${inr(e.amount)} every ${e.everyMonths} months"
@@ -684,9 +694,16 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
                                 Pf.Accent2_100, Pf.Accent2_800
                             )
                         }
-                        // Top up while anything is left, undo once it is met.
-                        if (left <= 0.0) SecondaryButton("Undo", { vm.requestConfirm(e) })
-                        else PrimaryButton(if (put > 0) "Add" else "Set aside", { vm.requestConfirm(e) })
+                        // Once the bill is actually due, paying it is the useful
+                        // action — the saving was only ever the means to it.
+                        if (vm.canPaySetAside(e)) {
+                            PrimaryButton("Pay ${inr(e.amount)}", { vm.paySetAside(e) })
+                        } else if (left <= 0.0) {
+                            // Top up while anything is left, undo once it is met.
+                            SecondaryButton("Undo", { vm.requestConfirm(e) })
+                        } else {
+                            PrimaryButton(if (put > 0) "Add" else "Set aside", { vm.requestConfirm(e) })
+                        }
                         IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(32.dp)) {
                             Icon(Icons.Default.Delete, "Delete", Modifier.size(16.dp), tint = Pf.Accent400)
                         }

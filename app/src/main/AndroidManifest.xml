@@ -13,6 +13,10 @@
          to see a payment was filed before opening the app and scrolling. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Due-date reminders are a daily alarm, and alarms do not survive a
+         reboot; without this a restart silently ends them. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -32,6 +36,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Daily check for a bill coming up, plus a re-schedule after a
+             restart. -->
+        <receiver
+            android:name=".sms.DueReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Fires on each incoming bank alert, so a payment is recorded without
              the app being opened. -->

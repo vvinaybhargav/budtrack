@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vinay.fintrack.sms.DueReminder
 import com.vinay.fintrack.sms.Notifier
 import com.vinay.fintrack.ui.AddScreen
 import com.vinay.fintrack.ui.ChatScreen
@@ -54,6 +55,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Re-armed on every launch: an inexact repeating alarm is cheap to set,
+        // and this covers the app being force-stopped or updated, which cancels
+        // whatever was pending.
+        DueReminder.schedule(applicationContext)
         setContent {
             FinTrackTheme {
                 Box(

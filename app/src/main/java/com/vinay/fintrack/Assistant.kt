@@ -147,6 +147,13 @@ class Assistant(private val vm: FinTrackViewModel) {
                 "Added ${l.name}, ${inr(l.monthlyEmi)} a month — ${vm.emiSourceLabel(l)}" +
                     (if (l.nextDue.isNotEmpty()) ", due ${prettyDate(l.nextDue)}" else "") + "."
             }
+            "set_salary_date" -> {
+                val day = a.int("day") ?: return@runCatching "Which day of the month?"
+                val who = vm.setSalaryDate(a.str("profile").orEmpty(), day)
+                    ?: return@runCatching "No profile by that name."
+                "$who is paid on day $day. Everything confirmed becomes payable " +
+                    "again then."
+            }
             "update_account" -> {
                 val acc = vm.accountNamed(a.str("name").orEmpty())
                     ?: return@runCatching "No account by that name."
@@ -383,7 +390,7 @@ class Assistant(private val vm: FinTrackViewModel) {
         val WRITERS = setOf(
             "add_transaction", "edit_transaction", "delete_transaction",
             "add_commitment", "edit_commitment", "delete_commitment", "confirm_commitment",
-            "add_account", "add_card", "add_loan", "update_account",
+            "add_account", "add_card", "add_loan", "update_account", "set_salary_date",
             "set_budget", "add_category", "set_default_account"
         )
     }

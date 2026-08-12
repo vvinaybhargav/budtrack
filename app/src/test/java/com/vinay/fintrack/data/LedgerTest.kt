@@ -760,3 +760,93 @@ class PerProfileCycleTest {
         assertEquals("2026-08", Ledger.cycleOf("2026-08-01", 1))
     }
 }
+
+/** A returned purchase is money back, not money made. */
+class RefundTest {
+
+    private val mine = Account("a-me", "SBI", "Me", "Me", 50_000.0)
+    private val ids = setOf(mine.id)
+
+    private fun t(kind: String, amount: Double, category: String = "Shopping") = Txn(
+        id = "t$kind$amount", date = "2026-08-09", kind = kind, amount = amount,
+        category = category,
+        fromAccountId = if (kind == "EXPENSE") mine.id else "",
+        toAccountId = if (kind != "EXPENSE") mine.id else "",
+        period = "2026-08"
+    )
+
+    /** Buy for ₹2,000, return it, and the month spent nothing — rather than
+     *  spending ₹2,000 and mysteriously earning ₹2,000. */
+    @Test
+    fun `a refund cancels the spending instead of adding income`() {
+        val m = Ledger.monthTotals(
+            listOf(t("EXPENSE", 2_000.0), t("REFUND", 2_000.0)),
+            "2026-08", ids, emptySet(), emptyList()
+        )
+        assertEquals(0.0, m.spent, 0.001)
+        assertEquals(0.0, m.income, 0.001)
+    }
+
+    /** A salary is still income; only a refund is netted off. */
+    @Test
+    fun `income is untouched by the refund rule`() {
+        val m = Ledger.monthTotals(
+            listOf(t("INCOME", 120_000.0, "Salary")),
+            "2026-08", ids, emptySet(), emptyList()
+        )
+        assertEquals(120_000.0, m.income, 0.001)
+    }
+
+    @Test
+    fun `a refund gives the category budget its money back`() {
+        val spend = Ledger.spendByCategory(
+            listOf(t("EXPENSE", 3_000.0), t("REFUND", 1_200.0)),
+            "2026-08", ids, emptySet()
+        )
+        assertEquals(1_800.0, spend["Shopping"]!!, 0.001)
+    }
+
+    /** It still credits the account it landed in. */
+    @Test
+    fun `a refund puts the money back in the account`() {
+        val b = Ledger.balances(listOf(mine), listOf(t("REFUND", 2_000.0)))
+        assertEquals(52_000.0, b[mine.id]!!, 0.001)
+    }
+}
+
+/** Saving up for a bill, then paying it out of what was saved. */
+class SetAsidePotTest {
+
+    private fun put(amount: Double, month: String) = Txn(
+        id = "t$month", date = "$month-05", kind = "TRANSFER", amount = amount,
+        fromAccountId = "a1", toAccountId = "a2", entryId = "e1", period = month
+    )
+
+    @Test
+    fun `the pot is everything put by across all months`() {
+        val pot = Ledger.setAsidePot(
+            listOf(put(11_000.0, "2026-08"), put(11_000.0, "2026-09")),
+            "e1"
+        )
+        assertEquals(22_000.0, pot, 0.001)
+    }
+
+    /** Paying the bill is an expense against the same entry, so the pot empties
+     *  by the same arithmetic that filled it — no separate bookkeeping. */
+    @Test
+    fun `paying the bill empties the pot`() {
+        val paid = Txn(
+            id = "pay", date = "2027-01-29", kind = "EXPENSE", amount = 55_000.0,
+            fromAccountId = "a2", entryId = "e1", period = "2027-01"
+        )
+        val saved = (1..5).map { put(11_000.0, "2026-%02d".format(it + 7)) }
+        assertEquals(0.0, Ledger.setAsidePot(saved + paid, "e1"), 0.001)
+    }
+
+    /** Another commitment's saving is not this one's pot. */
+    @Test
+    fun `each set-aside keeps its own pot`() {
+        val other = put(5_000.0, "2026-08").copy(id = "x", entryId = "e2")
+        assertEquals(11_000.0, Ledger.setAsidePot(listOf(put(11_000.0, "2026-08"), other), "e1"), 0.001)
+    }
+}

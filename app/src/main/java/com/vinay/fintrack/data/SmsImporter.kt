@@ -144,8 +144,12 @@ class SmsImporter(private val context: Context) {
             txns += Txn(
                 id = newId("t"),
                 date = p.date,
-                kind = if (otherLeg != null) "TRANSFER"
-                else if (p.isCredit) "INCOME" else "EXPENSE",
+                kind = when {
+                    otherLeg != null -> "TRANSFER"
+                    p.isRefund -> "REFUND"
+                    p.isCredit -> "INCOME"
+                    else -> "EXPENSE"
+                },
                 amount = p.amount,
                 category = categoryFor(p.party, state.categories),
                 fromAccountId = if (p.isCredit || card != null) "" else accountId,
@@ -153,13 +157,20 @@ class SmsImporter(private val context: Context) {
                 cardId = card.orEmpty(),
                 period = Ledger.cycleOf(p.date, state.cycleResetDay),
                 at = if (p.receivedAt > 0L) p.receivedAt else millisOfDate(p.date),
-                note = p.party.ifEmpty { if (p.isCredit) "Credit" else "Payment" },
+                note = p.party.ifEmpty {
+                    if (p.isRefund) "Refund" else if (p.isCredit) "Credit" else "Payment"
+                },
                 ref = p.ref,
                 source = "sms",
                 rawAmountText = p.amountText
             )
             bodies[txns.last().id] = p.body
-            if (card != null && !p.isCredit) cardSpend[card] = (cardSpend[card] ?: 0.0) + p.amount
+            // A refund to a card reduces what the card owes, the mirror of a
+            // spend on it. Ignoring it left the returned money owed forever.
+            if (card != null && (!p.isCredit || p.isRefund)) {
+                val delta = if (p.isRefund) -p.amount else p.amount
+                cardSpend[card] = (cardSpend[card] ?: 0.0) + delta
+            }
             added++
             val who = p.party.ifEmpty { "unnamed payment" }
             log += if (card != null) "added ${inr(p.amount)} $who to the card"
@@ -177,7 +188,9 @@ class SmsImporter(private val context: Context) {
             txns = txns,
             categories = state.categories + fresh,
             cards = state.cards.map { c ->
-                cardSpend[c.id]?.let { c.copy(balance = c.balance + it, paid = false) } ?: c
+                cardSpend[c.id]?.let {
+                    c.copy(balance = (c.balance + it).coerceAtLeast(0.0), paid = false)
+                } ?: c
             },
             importedRefs = capRefs(state.importedRefs + items.map { it.dedupeKey }),
             smsBodies = capBodies(state.smsBodies + bodies),

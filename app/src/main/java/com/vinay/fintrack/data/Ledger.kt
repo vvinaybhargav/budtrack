@@ -91,6 +91,23 @@ object Ledger {
         return if (month == 1) "%04d-12".format(year - 1) else "%04d-%02d".format(year, month - 1)
     }
 
+    /**
+     * Everything put by for a set-aside so far, less anything already paid out
+     * of it — the pot, across every month rather than only this one.
+     *
+     * Transfers in, payments out. The bill itself is an expense tagged with the
+     * same entry, so paying it empties the pot without any separate bookkeeping.
+     */
+    fun setAsidePot(txns: List<Txn>, entryId: String): Double =
+        txns.filter { it.entryId == entryId }
+            .sumOf {
+                when (it.kind) {
+                    "TRANSFER" -> it.amount
+                    "EXPENSE" -> -it.amount
+                    else -> 0.0
+                }
+            }
+
     /** How much has already been put by for a set-aside this cycle. */
     fun setAsideDone(txns: List<Txn>, entryId: String, cycle: String): Double =
         txns.filter { it.entryId == entryId && it.month == cycle && it.kind == "TRANSFER" }
@@ -113,9 +130,17 @@ object Ledger {
         val map = HashMap<String, Double>()
         for (t in txns) {
             if (t.kind == "TRANSFER" || t.month != period || t.source == CARD_PAYMENT) continue
-            val counts = t.fromAccountId in accountIds ||
-                (t.cardId.isNotEmpty() && t.cardId in cardIds)
-            if (counts) map[t.category] = (map[t.category] ?: 0.0) + t.amount
+            // A refund lands where the spending did, so it is netted off there:
+            // returning a shirt does not earn you money, it un-spends it.
+            val credit = t.kind == "REFUND"
+            val counts = if (credit) {
+                t.toAccountId in accountIds || (t.cardId.isNotEmpty() && t.cardId in cardIds)
+            } else {
+                t.fromAccountId in accountIds || (t.cardId.isNotEmpty() && t.cardId in cardIds)
+            }
+            if (!counts) continue
+            val delta = if (credit) -t.amount else t.amount
+            map[t.category] = (map[t.category] ?: 0.0) + delta
         }
         return map
     }
@@ -159,6 +184,10 @@ object Ledger {
             if (t.source == CARD_PAYMENT) continue
             when (t.kind) {
                 "INCOME" -> if (t.toAccountId in accountIds) income += t.amount
+                // Money back, not money made. Counting a return as income
+                // inflated earnings and left the spending it reverses standing.
+                "REFUND" -> if (t.toAccountId in accountIds ||
+                    (t.cardId.isNotEmpty() && t.cardId in cardIds)) spent -= t.amount
                 // Only a transfer you confirmed against a set-aside counts as
                 // money put by. A plain move between your own banks carries no
                 // entry, and counting it would fill the month's set-aside figure

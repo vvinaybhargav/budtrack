@@ -19,6 +19,10 @@ data class ParsedSms(
     val date: String,
     /** Just the amount as the message wrote it, for tracing a misparse. */
     val amountText: String,
+    /** A credit that undoes a purchase — a return, a reversal, a chargeback.
+     *  Placed after the required fields so existing positional callers still
+     *  read correctly. */
+    val isRefund: Boolean = false,
     /** The message itself. Kept on the device so an import can be checked and
      *  re-matched; stripped before anything is synced. */
     val body: String = "",
@@ -46,7 +50,11 @@ data class ParsedSms(
 
 private val AMOUNT = Regex("""(?:rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
 private val DEBIT_WORDS = listOf("debited", "debit", "sent", "paid", "withdrawn", "spent", "purchase")
-private val CREDIT_WORDS = listOf("credited", "credit", "received", "deposited", "refund")
+private val CREDIT_WORDS = listOf("credited", "credit", "received", "deposited", "refund", "reversed", "reversal")
+
+/** A credit that is money coming back rather than money earned. Netted off the
+ *  spending it reverses instead of counted as income. */
+private val REFUND_WORDS = listOf("refund", "refunded", "reversed", "reversal", "returned", "cancelled order", "chargeback")
 
 private val ACCOUNT_TAIL = Regex(
     """(?:a/?c|acct|account|card)\s*(?:no\.?|number)?\s*[:\-]?\s*[xX*]+\s*(\d{3,6})""",
@@ -140,6 +148,9 @@ fun parseBankSms(
         accountTail = accountTail,
         date = extractDate(body),
         amountText = amountText,
+        // Only a credit can be a refund; a debit that mentions "reversal" is
+        // more likely a fee charged on one.
+        isRefund = isCredit && REFUND_WORDS.any { lower.contains(it) },
         body = body.take(300)
     ).takeIf { it.isUsable }
 }

@@ -663,6 +663,16 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Sets a named profile's salary day, or the current one's. Returns whose
+     *  it changed, or null if that profile doesn't exist. */
+    fun setSalaryDate(profile: String, day: Int): String? {
+        val who = profileNames.firstOrNull { it.equals(profile, true) }
+            ?: profile.takeIf { it.isBlank() }?.let { activeProfile }
+            ?: return null
+        update { s -> s.copy(salaryDays = s.salaryDays + (who to day.coerceIn(1, 28))) }
+        return who
+    }
+
     /** Everyone's salary day, for the line under the field in Settings. */
     val salaryDaysByProfile: List<Pair<String, Int>>
         get() = profileNames.map { it to (persisted.salaryDays[it] ?: persisted.cycleResetDay) }
@@ -686,6 +696,82 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         Ledger.setAsideDone(persisted.txns, e.id, cycleFor(e.person))
 
     fun setAsideLeft(e: Entry): Double = (e.monthly - setAsideDone(e)).coerceAtLeast(0.0)
+
+    /** Everything put by for this so far, across all months, less anything paid
+     *  out of it. */
+    fun setAsidePot(e: Entry): Double = Ledger.setAsidePot(persisted.txns, e.id)
+
+    /**
+     * Whether the bill can be paid out of what has been saved for it.
+     *
+     * Offered from the month it falls due, and whenever the pot already covers
+     * it — paying early is your business, and a bill that arrives sooner than
+     * expected shouldn't be unpayable.
+     */
+    fun canPaySetAside(e: Entry): Boolean {
+        if (e.closed || !e.isSetAside) return false
+        val dueThisCycleOrPast = e.nextDue.isNotEmpty() &&
+            Ledger.instalmentsUntil(today(), e.nextDue) <= 1
+        return dueThisCycleOrPast || setAsidePot(e) >= e.amount - 0.5
+    }
+
+    /**
+     * Pays the bill the set-aside was for.
+     *
+     * The whole amount leaves the account the money was put by into, tagged with
+     * the entry so the pot empties by the same arithmetic that filled it. Then
+     * either the due date moves on a period — a yearly premium comes round again
+     * — or, with no repeat, the entry is closed.
+     *
+     * Rolling the date is what makes the next twelve months' shares recalculate
+     * from scratch instead of the entry sitting there permanently overdue.
+     */
+    fun paySetAside(e: Entry, fromAccountId: String = "") {
+        if (e.closed) return
+        val account = fromAccountId.ifEmpty {
+            savedIntoAccount(e) ?: e.accountId.ifEmpty { defaultAccountFor(e.person, e.bucket) }
+        }
+        addTxn { id ->
+            Txn(
+                id = id,
+                date = today(),
+                kind = "EXPENSE",
+                amount = e.amount,
+                category = e.category,
+                fromAccountId = account,
+                entryId = e.id,
+                period = cycleFor(e.person),
+                note = "${e.note.ifEmpty { e.category }} — paid",
+                at = System.currentTimeMillis()
+            )
+        }
+        val repeats = e.everyMonths > 1
+        update { s ->
+            s.copy(entries = s.entries.map {
+                if (it.id != e.id) it
+                else if (repeats && it.dueDate.isNotEmpty())
+                    it.copy(dueDate = Ledger.addMonths(it.nextDue, it.everyMonths))
+                else if (repeats) it
+                else it.copy(closed = true)
+            })
+        }
+    }
+
+    /** Paid off: the last EMI has gone and there is nothing left to confirm. */
+    fun isLoanCleared(l: Loan): Boolean = l.remainingMonths <= 0
+
+    /** Where the money was actually put by, so the bill leaves the same place
+     *  rather than the account the entry nominally belongs to. */
+    private fun savedIntoAccount(e: Entry): String? =
+        persisted.txns.lastOrNull { it.entryId == e.id && it.kind == "TRANSFER" }
+            ?.toAccountId?.takeIf { it.isNotEmpty() }
+
+    /** Finished with, but kept for its history. */
+    fun closeEntry(id: String, closed: Boolean = true) = update { s ->
+        s.copy(entries = s.entries.map { if (it.id == id) it.copy(closed = closed) else it })
+    }
+
+    val closedEntries: List<Entry> get() = entries.filter { it.closed && visible(it.person) }
 
     fun isLoanConfirmed(loanId: String): Boolean {
         val owner = loans.firstOrNull { it.id == loanId }?.person ?: activeProfile.orEmpty()
@@ -1358,7 +1444,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     private fun inScope(person: String) =
         if (bucketView == "JOINT") person == "Joint" else person == activeProfile
 
-    val scopedEntries: List<Entry> get() = visibleEntries.filter { inScope(it.person) }
+    /** Closed ones are excluded here rather than at each use: a finished bill
+     *  must leave Home, the plan and the budgets together, not one at a time. */
+    val scopedEntries: List<Entry>
+        get() = visibleEntries.filter { inScope(it.person) && !it.closed }
     val scopedAccounts: List<Account> get() = visibleAccounts.filter { inScope(it.person) }
     val scopedLoans: List<Loan> get() = visibleLoans.filter { inScope(it.person) }
     val scopedCards: List<Card> get() = visibleCards.filter { inScope(it.owner) }
