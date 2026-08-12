@@ -3087,5 +3087,154 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         if (name.isBlank() || categories.any { it.equals(name, true) }) return
         update { s -> s.copy(categories = s.categories + name.trim()) }
     }
+
+    enum class VelocitySpeed {
+        LOW, ON_TRACK, HIGH
+    }
+
+    data class SpendVelocity(
+        val speed: VelocitySpeed,
+        val actualDailySpend: Double,
+        val targetDailyBudget: Double,
+        val daysRemaining: Int
+    )
+
+    fun getSpendVelocity(): SpendVelocity {
+        val resetDay = salaryResetDayFor(activeProfile.orEmpty())
+        val todayIso = today()
+        val parts = todayIso.split("-")
+        val y = parts[0].toIntOrNull() ?: 2026
+        val m = parts[1].toIntOrNull() ?: 8
+        val d = parts[2].toIntOrNull() ?: 12
+        
+        var startYear = y
+        var startMonth = m
+        var endYear = y
+        var endMonth = m
+        
+        if (d >= resetDay) {
+            if (m == 12) {
+                endMonth = 1
+                endYear++
+            } else {
+                endMonth++
+            }
+        } else {
+            if (m == 1) {
+                startMonth = 12
+                startYear--
+            } else {
+                startMonth--
+            }
+        }
+        
+        val startCalendar = java.util.Calendar.getInstance()
+        startCalendar.set(java.util.Calendar.YEAR, startYear)
+        startCalendar.set(java.util.Calendar.MONTH, startMonth - 1)
+        val startMaxDay = startCalendar.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+        val startDay = minOf(resetDay, startMaxDay)
+        val startDate = "%04d-%02d-%02d".format(startYear, startMonth, startDay)
+        
+        val endCalendar = java.util.Calendar.getInstance()
+        endCalendar.set(java.util.Calendar.YEAR, endYear)
+        endCalendar.set(java.util.Calendar.MONTH, endMonth - 1)
+        val endMaxDay = endCalendar.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+        val endDay = minOf(resetDay - 1, endMaxDay)
+        val endDate = "%04d-%02d-%02d".format(endYear, endMonth, endDay)
+        
+        val totalCycleDays = Ledger.daysBetween(startDate, endDate) + 1
+        val elapsedDays = Ledger.daysBetween(startDate, todayIso) + 1
+        val daysRemaining = maxOf(0, totalCycleDays - elapsedDays)
+        
+        val cycleTxns = scopedTxns.filter { it.date >= startDate && it.date <= todayIso && it.kind == "EXPENSE" }
+        val discretionarySpend = cycleTxns.filter { t ->
+            t.loanId.isEmpty() && t.entryId.isEmpty() &&
+            t.category != "EMI" && !t.category.lowercase().contains("emi") &&
+            !t.category.lowercase().contains("loan") && t.category != "Credit Card Bill"
+        }.sumOf { it.amount }
+        
+        val outlook = getSixMonthOutlook()
+        val discretionaryBudget = (outlook.monthlySalary - outlook.monthlyLoans - outlook.monthlyRecurring - outlook.monthlySetAside).coerceAtLeast(0.0)
+        
+        val targetDailyBudget = discretionaryBudget / totalCycleDays.coerceAtLeast(1)
+        val actualDailySpend = discretionarySpend / elapsedDays.coerceAtLeast(1)
+        
+        val speed = when {
+            targetDailyBudget <= 0.0 -> VelocitySpeed.ON_TRACK
+            actualDailySpend <= targetDailyBudget * 0.9 -> VelocitySpeed.LOW
+            actualDailySpend <= targetDailyBudget * 1.1 -> VelocitySpeed.ON_TRACK
+            else -> VelocitySpeed.HIGH
+        }
+        
+        return SpendVelocity(speed, actualDailySpend, targetDailyBudget, daysRemaining)
+    }
+
+    fun linkSmsToSinkingFund(txnId: String, entryId: String) {
+        update { s ->
+            s.copy(
+                txns = s.txns.map {
+                    if (it.id == txnId) it.copy(entryId = entryId, kind = "TRANSFER")
+                    else it
+                },
+                smsSuggestions = s.smsSuggestions - txnId
+            )
+        }
+    }
+
+    fun dismissSmsSuggestion(txnId: String) {
+        update { s ->
+            s.copy(smsSuggestions = s.smsSuggestions - txnId)
+        }
+    }
+
+    fun settleCardBill(cardId: String) {
+        val card = persisted.cards.firstOrNull { it.id == cardId } ?: return
+        if (card.balance <= 0.0) return
+        
+        val fromAccId = persisted.accounts.firstOrNull { it.name == defaultAccount }?.id
+            ?: persisted.accounts.firstOrNull()?.id
+            ?: ""
+            
+        val now = today()
+        val txn = Txn(
+            id = newId("t"),
+            date = now,
+            kind = "EXPENSE",
+            amount = card.balance,
+            category = "Credit Card Bill",
+            fromAccountId = fromAccId,
+            cardId = card.id,
+            period = Ledger.cycleOf(now, cycleResetDay),
+            note = "Settled ${card.name} Bill",
+            at = System.currentTimeMillis()
+        )
+        
+        update { s ->
+            s.copy(
+                txns = s.txns + txn,
+                cards = s.cards.map {
+                    if (it.id == cardId) it.copy(balance = 0.0, paid = true)
+                    else it
+                }
+            )
+        }
+    }
+
+    fun addSmsRule(pattern: String, category: String) {
+        val cleanPattern = pattern.trim()
+        if (cleanPattern.isEmpty() || category.isEmpty()) return
+        
+        update { s ->
+            val nextRules = s.smsRules + (cleanPattern to category)
+            val updatedTxns = s.txns.map { t ->
+                if (t.source == "sms" && t.note.lowercase().contains(cleanPattern.lowercase())) {
+                    t.copy(category = category)
+                } else {
+                    t
+                }
+            }
+            s.copy(smsRules = nextRules, txns = updatedTxns)
+        }
+    }
 }
 

@@ -74,7 +74,9 @@ data class PersistedState(
      * Synced, because it is knowledge about the household rather than about
      * this phone: teaching it once should settle it on both.
      */
-    val payeeCategories: Map<String, String> = emptyMap()
+    val payeeCategories: Map<String, String> = emptyMap(),
+    val smsSuggestions: Map<String, String> = emptyMap(),
+    val smsRules: Map<String, String> = emptyMap()
 )
 
 class Store(context: Context) {

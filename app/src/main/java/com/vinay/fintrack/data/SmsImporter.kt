@@ -107,6 +107,7 @@ class SmsImporter(private val context: Context) {
         val log = mutableListOf<String>()
         val cardSpend = mutableMapOf<String, Double>()
         val bodies = mutableMapOf<String, String>()
+        val smsSuggestions = state.smsSuggestions.toMutableMap()
 
         for (p in items) {
             val existing = matchingConfirmed(txns, p)
@@ -141,7 +142,7 @@ class SmsImporter(private val context: Context) {
                 log += "paired ${inr(p.amount)} as a transfer between your accounts"
             }
 
-            txns += Txn(
+            val newTxn = Txn(
                 id = newId("t"),
                 date = p.date,
                 kind = when {
@@ -167,7 +168,26 @@ class SmsImporter(private val context: Context) {
                 // already filed correctly.
                 accountTail = if (accountId.isEmpty() && card == null) p.accountTail else ""
             )
-            bodies[txns.last().id] = p.body
+            txns += newTxn
+            bodies[newTxn.id] = p.body
+
+            // Sinking Fund Match Suggestion logic
+            if (newTxn.kind == "EXPENSE" && newTxn.cardId.isEmpty()) {
+                val matchingSetAside = state.entries.firstOrNull { e ->
+                    e.isSetAside && !e.closed && (
+                        e.category.equals(newTxn.category, true) ||
+                        e.category.equals(p.party, true) ||
+                        (e.note.isNotEmpty() && p.party.lowercase().contains(e.note.lowercase()))
+                    )
+                }
+                if (matchingSetAside != null) {
+                    val pot = Ledger.setAsidePot(txns, matchingSetAside.id)
+                    if (pot < matchingSetAside.amount) {
+                        smsSuggestions[newTxn.id] = matchingSetAside.id
+                    }
+                }
+            }
+
             // A refund to a card reduces what the card owes, the mirror of a
             // spend on it. Ignoring it left the returned money owed forever.
             if (card != null && (!p.isCredit || p.isRefund)) {
@@ -198,7 +218,8 @@ class SmsImporter(private val context: Context) {
             importedRefs = capRefs(state.importedRefs + items.map { it.dedupeKey }),
             smsBodies = capBodies(state.smsBodies + bodies),
             smsLog = (log.asReversed() + state.smsLog).take(MAX_LOG),
-            lastSmsScan = maxOf(newest, state.lastSmsScan)
+            lastSmsScan = maxOf(newest, state.lastSmsScan),
+            smsSuggestions = smsSuggestions
         )
     }
 
@@ -295,8 +316,15 @@ class SmsImporter(private val context: Context) {
         }
     }
 
-    private fun categoryFor(state: PersistedState, party: String): String =
-        categoryForParty(party, state.categories, state.payeeCategories)
+    private fun categoryFor(state: PersistedState, party: String): String {
+        val lowerParty = party.lowercase()
+        for ((pattern, category) in state.smsRules) {
+            if (lowerParty.contains(pattern.lowercase())) {
+                return category
+            }
+        }
+        return categoryForParty(party, state.categories, state.payeeCategories)
+    }
 
     private companion object {
         const val TAG = "SmsImporter"

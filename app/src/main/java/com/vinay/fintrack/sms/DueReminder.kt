@@ -77,7 +77,6 @@ object DueReminder {
         var state = store.load()
         val now = today()
         var stateChanged = false
-
         val updatedLoans = state.loans.map { l ->
             if (l.remainingMonths <= 0 || l.dueDay <= 0) return@map l
             val currentMonth = now.take(7) // "yyyy-MM"
@@ -157,9 +156,56 @@ object DueReminder {
             }
         }
 
+        val updatedCards = state.cards.map { c ->
+            if (c.paid || c.balance <= 0.0 || c.nextDue.isEmpty()) return@map c
+            val days = Ledger.daysBetween(now, c.nextDue)
+            if (days == 1) {
+                Notifier.notifyDue(
+                    context,
+                    "${c.name} bill tomorrow",
+                    "${c.name} bill due tomorrow. ₹${c.balance.toLong()} will be paid automatically.",
+                    c.id
+                )
+                c
+            } else if (days == 0) {
+                val fromAccId = state.accounts.firstOrNull { it.name == state.defaultAccount }?.id
+                    ?: state.accounts.firstOrNull()?.id
+                    ?: ""
+                
+                val txnId = com.vinay.fintrack.data.newId("t")
+                val newTxn = Txn(
+                    id = txnId,
+                    date = now,
+                    kind = "EXPENSE",
+                    amount = c.balance,
+                    category = "Credit Card Bill",
+                    fromAccountId = fromAccId,
+                    cardId = c.id,
+                    period = Ledger.cycleOf(now, state.cycleResetDay),
+                    note = "Settled ${c.name} Bill (Auto-Paid)",
+                    at = System.currentTimeMillis()
+                )
+                
+                state = state.copy(txns = state.txns + newTxn)
+                stateChanged = true
+                
+                Notifier.notifyDue(
+                    context,
+                    "Card Bill Paid",
+                    "Auto-settled: ₹${c.balance.toLong()} for ${c.name}.",
+                    c.id
+                )
+                
+                c.copy(balance = 0.0, paid = true)
+            } else {
+                c
+            }
+        }
+ 
         if (stateChanged) {
             state = state.copy(
                 loans = updatedLoans,
+                cards = updatedCards,
                 localUpdatedAt = System.currentTimeMillis()
             )
             store.save(state)

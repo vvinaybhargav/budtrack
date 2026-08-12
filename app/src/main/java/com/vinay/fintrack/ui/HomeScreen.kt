@@ -47,7 +47,9 @@ fun HomeScreen(vm: FinTrackViewModel) {
         verticalArrangement = Arrangement.spacedBy(Space.s6)
     ) {
         item { ScopeSwitch(vm) }
+        item { SmsSuggestionBanner(vm) }
         item { BalanceCard(vm) }
+        item { SpendVelocityCard(vm) }
         item { AccountsSection(vm) }
         item { MonthPlan(vm) }
         item { MonthStats(vm) }
@@ -755,11 +757,15 @@ private fun CardsSection(vm: FinTrackViewModel) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Muted("Min due ${inr(c.minDue)}")
-                                // Enabled when paid too — tapping again undoes it.
-                                SecondaryButton(
-                                    if (c.paid) "Paid" else "Pay bill",
-                                    { vm.requestCardPayment(c) }
-                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                                    if (!c.paid && c.balance > 0.0) {
+                                        PrimaryButton("Settle Bill", { vm.settleCardBill(c.id) })
+                                    }
+                                    SecondaryButton(
+                                        if (c.paid) "Paid" else "Pay bill",
+                                        { vm.requestCardPayment(c) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -879,68 +885,225 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
                 items.forEach { e ->
                     val put = vm.setAsideDone(e)
                     val left = vm.setAsideLeft(e)
-                    Hairline()
-                    Row(
+                    val pot = vm.setAsidePot(e)
+                    val fraction = safeFraction(pot, e.amount)
+                    val pct = (fraction * 100).toInt()
+                    
+                    Box(
                         Modifier
                             .fillMaxWidth()
-                            .padding(vertical = Space.s3),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(vertical = Space.s2)
+                            .background(Pf.Surface.copy(alpha = 0.5f), Radius.Md)
+                            .border(1.dp, Pf.Hairline, Radius.Md)
+                            .clickable { vm.openEditEntry(e) }
+                            .padding(Space.s3)
                     ) {
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .clickable { vm.openEditEntry(e) }
-                        ) {
-                            Text(
-                                e.note.ifEmpty { e.category },
-                                color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                        Column {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    e.note.ifEmpty { e.category },
+                                    color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "$pct%",
+                                    color = if (pct >= 100) Color(0xFF00BFA5) else Pf.Text,
+                                    fontSize = 13.sp, fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            
+                            ProgressBar(
+                                fraction = fraction,
+                                color = if (pct >= 100) Color(0xFF00BFA5) else Pf.Accent,
+                                height = 5,
+                                modifier = Modifier.padding(vertical = 6.dp)
                             )
-                            // With a due date, say the date and how many months
-                            // are left to reach it — that is what makes the
-                            // monthly figure make sense.
-                            val pot = vm.setAsidePot(e)
-                            // This month first — it is the figure you act on.
-                            // What the pot holds and when the bill lands are the
-                            // context for it, not a substitute.
-                            Muted(
-                                "${inr(e.monthly)} this month · " +
-                                    if (put > 0) "${inr(put)} put by, ${inr(left)} left"
-                                    else "none put by yet",
-                                Modifier.padding(top = 2.dp)
-                            )
-                            Muted(
-                                if (e.nextDue.isNotEmpty()) {
-                                    val n = Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))
-                                    "${inr(pot)} of ${inr(e.amount)} saved · due " +
-                                        "${prettyDate(e.nextDue)}, $n month${if (n == 1) "" else "s"} to go"
-                                } else {
-                                    "${inr(pot)} of ${inr(e.amount)} saved · every ${e.everyMonths} months"
-                                },
-                                Modifier.padding(top = 2.dp, bottom = 6.dp),
-                                size = 12
-                            )
-                            Tag(
-                                if (left <= 0.0) "Done" else "Set aside",
-                                Pf.Accent2_100, Pf.Accent2_800
-                            )
-                        }
-                        // Once the bill is actually due, paying it is the useful
-                        // action — the saving was only ever the means to it.
-                        if (vm.canPaySetAside(e)) {
-                            PrimaryButton("Pay ${inr(e.amount)}", { vm.paySetAside(e) })
-                        } else if (left <= 0.0) {
-                            // Top up while anything is left, undo once it is met.
-                            SecondaryButton("Undo", { vm.requestConfirm(e) })
-                        } else {
-                            PrimaryButton(if (put > 0) "Add" else "Set aside", { vm.requestConfirm(e) })
-                        }
-                        IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Delete, "Delete", Modifier.size(16.dp), tint = Pf.Accent400)
+                            
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Muted(
+                                        "${inr(e.monthly(vm.salaryResetDayFor(e.person)))}/mo · " +
+                                            if (put > 0) "${inr(put)} put by, ${inr(left)} left"
+                                            else "none put by yet",
+                                        size = 11
+                                    )
+                                    Muted(
+                                        if (e.nextDue.isNotEmpty()) {
+                                            val n = Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))
+                                            "${inr(pot)} of ${inr(e.amount)} saved · due " +
+                                                "${prettyDate(e.nextDue)}, $n month${if (n == 1) "" else "s"} to go"
+                                        } else {
+                                            "${inr(pot)} of ${inr(e.amount)} saved · every ${e.everyMonths} months"
+                                        },
+                                        size = 11
+                                    )
+                                }
+                                
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(Space.s1)
+                                ) {
+                                    if (vm.canPaySetAside(e)) {
+                                        PrimaryButton("Pay ${inr(e.amount)}", { vm.paySetAside(e) })
+                                    } else if (left <= 0.0) {
+                                        SecondaryButton("Undo", { vm.requestConfirm(e) })
+                                    } else {
+                                        PrimaryButton(if (put > 0) "Add" else "Set aside", { vm.requestConfirm(e) })
+                                    }
+                                    IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(32.dp)) {
+                                        Icon(Icons.Default.Delete, "Delete", Modifier.size(16.dp), tint = Pf.Accent400)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SmsSuggestionBanner(vm: FinTrackViewModel) {
+    val suggestions = vm.persisted.smsSuggestions
+    if (suggestions.isEmpty()) return
+    
+    val suggestion = suggestions.entries.first()
+    val txnId = suggestion.key
+    val entryId = suggestion.value
+    
+    val txn = vm.persisted.txns.firstOrNull { it.id == txnId } ?: return
+    val entry = vm.persisted.entries.firstOrNull { it.id == entryId } ?: return
+    
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Pf.Surface.copy(alpha = 0.9f),
+                        Pf.Surface2.copy(alpha = 0.95f)
+                    )
+                ),
+                Radius.Lg
+            )
+            .border(1.dp, Pf.Accent.copy(alpha = 0.3f), Radius.Lg)
+            .padding(Space.s4)
+    ) {
+        Column {
+            Text(
+                "SINKING FUND MATCH IMPORTED",
+                color = Pf.Accent,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            
+            Text(
+                "Link imported transaction of ${inr(txn.amount)} for '${txn.note}' to your '${entry.category}' Sinking Fund?",
+                Modifier.padding(top = 4.dp, bottom = Space.s3),
+                color = Pf.Text,
+                fontSize = 13.sp
+            )
+            
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2, Alignment.End)
+            ) {
+                GhostButton("Dismiss") {
+                    vm.dismissSmsSuggestion(txnId)
+                }
+                PrimaryButton("Link Match") {
+                    vm.linkSmsToSinkingFund(txnId, entryId)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpendVelocityCard(vm: FinTrackViewModel) {
+    val velocity = vm.getSpendVelocity()
+    
+    val speedLabel = when (velocity.speed) {
+        FinTrackViewModel.VelocitySpeed.LOW -> "Low Spend Velocity · Under Budget 🎉"
+        FinTrackViewModel.VelocitySpeed.ON_TRACK -> "On Track · Perfect Pace 👍"
+        FinTrackViewModel.VelocitySpeed.HIGH -> "High Spend Velocity · Over Budget ⚠️"
+    }
+    
+    val speedColor = when (velocity.speed) {
+        FinTrackViewModel.VelocitySpeed.LOW -> Color(0xFF00BFA5)
+        FinTrackViewModel.VelocitySpeed.ON_TRACK -> Pf.Text
+        FinTrackViewModel.VelocitySpeed.HIGH -> Color(0xFFFF5252)
+    }
+    
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .background(Pf.Surface, Radius.Lg)
+            .border(1.dp, Pf.Hairline, Radius.Lg)
+            .padding(Space.s4)
+    ) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "DISCRETIONARY SPEND VELOCITY",
+                    color = Pf.Muted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    "${velocity.daysRemaining} days left",
+                    color = Pf.Muted,
+                    fontSize = 11.sp
+                )
+            }
+            
+            Text(
+                speedLabel,
+                Modifier.padding(top = 4.dp, bottom = Space.s2),
+                color = speedColor,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Muted("Actual Daily Spend", size = 11)
+                    Text(inr(velocity.actualDailySpend), color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Muted("Target Daily Limit", size = 11)
+                    Text(inr(velocity.targetDailyBudget), color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            
+            val pct = if (velocity.targetDailyBudget > 0.0) {
+                (velocity.actualDailySpend / velocity.targetDailyBudget).toFloat().coerceIn(0f, 2f)
+            } else 0f
+            
+            ProgressBar(
+                fraction = pct / 2f,
+                color = speedColor,
+                modifier = Modifier.padding(top = Space.s3)
+            )
+        }
+    }
         }
     }
 }

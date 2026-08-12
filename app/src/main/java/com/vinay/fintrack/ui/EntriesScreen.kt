@@ -21,6 +21,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -328,6 +332,48 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                             color = Pf.Muted,
                             fontSize = 12.sp
                         )
+                    }
+
+                    var keywordRule by remember { mutableStateOf(txn.note.trim()) }
+                    var selectedCategoryRule by remember { mutableStateOf(txn.category) }
+
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = Space.s3)
+                            .background(Pf.Surface2, Radius.Md)
+                            .border(1.dp, Pf.Hairline, Radius.Md)
+                            .padding(Space.s3),
+                        verticalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        Text(
+                            "CREATE CATEGORIZATION RULE",
+                            color = Pf.Text,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        PfField(
+                            value = keywordRule,
+                            onValueChange = { keywordRule = it },
+                            placeholder = "e.g. Amazon"
+                        )
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                        ) {
+                            Box(Modifier.weight(1f)) {
+                                PfSelect(
+                                    value = selectedCategoryRule,
+                                    options = vm.categories,
+                                    onSelect = { selectedCategoryRule = it }
+                                )
+                            }
+                            PrimaryButton("Save Rule") {
+                                vm.addSmsRule(keywordRule, selectedCategoryRule)
+                            }
+                        }
+                        Muted("Transactions containing '$keywordRule' will always be categorized as '$selectedCategoryRule'.")
                     }
                 }
             }
