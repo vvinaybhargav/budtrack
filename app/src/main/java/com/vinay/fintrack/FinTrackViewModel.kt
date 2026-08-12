@@ -738,10 +738,18 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Adds a transaction locally and as its own Firestore document. */
-    private fun addTxn(build: (id: String) -> Txn) {
+    /**
+     * The one place a transaction is added in the app.
+     *
+     * Nothing added here is announced: you are already looking at the screen
+     * you added it on, and being notified about something you just typed is
+     * noise. Only bank messages notify, since those arrive with the app closed.
+     */
+    private fun addTxn(build: (id: String) -> Txn): Txn {
         val txn = build(newId("t"))
         update { s -> s.copy(txns = s.txns + txn) }
         sync.upsertTxn(txn)
+        return txn
     }
 
     private fun removeTxns(match: (Txn) -> Boolean) {
@@ -879,9 +887,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 // backdated payment counts against the right budget.
                 period = Ledger.cycleOf(date, cycleResetDay),
                 note = draft.note.ifEmpty { draft.category },
-                // Today's date keeps the current time; a backdated one is
-                // stamped midday, since the hour it happened isn't known.
-                at = if (date == today()) System.currentTimeMillis() else millisOfDate(date)
+                // Today's keeps the current time. A back-dated one records no
+                // time at all rather than a midnight nobody chose — the row
+                // then shows just its date, which is all that is known.
+                at = if (date == today()) System.currentTimeMillis() else 0L
             )
         }
         draft = Draft(person = scopePerson)
@@ -1493,6 +1502,19 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         editingTxn?.let { replaceTxn(it.copy(category = category)) }
     }
 
+    /** The description. An imported one is named after whatever the bank
+     *  called the payee, which is rarely what you would have called it. */
+    fun setTxnNote(note: String) {
+        editingTxn?.let { replaceTxn(it.copy(note = note.trim())) }
+    }
+
+    /** For when the bank's figure was read wrongly, or a cash amount changed. */
+    fun setTxnAmount(text: String) {
+        val amount = text.toDoubleOrNull() ?: return
+        if (amount <= 0) return
+        editingTxn?.let { replaceTxn(it.copy(amount = amount)) }
+    }
+
     val availableChips: List<String>
         get() = entries.filter {
             if (bucketView == "PERSONAL") it.bucket == "PERSONAL" && it.person == activeProfile
@@ -1813,21 +1835,22 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         note: String,
         dateIso: String
     ): Txn {
-        val txn = Txn(
-            id = newId("t"),
-            date = dateIso,
-            kind = if (credit) "INCOME" else "EXPENSE",
-            amount = amount,
-            category = category,
-            fromAccountId = if (credit) "" else accountId,
-            toAccountId = if (credit) accountId else "",
-            period = Ledger.cycleOf(dateIso, cycleResetDay),
-            note = note,
-            at = if (dateIso == today()) System.currentTimeMillis() else millisOfDate(dateIso)
-        )
-        update { s -> s.copy(txns = s.txns + txn) }
-        sync.upsertTxn(txn)
-        return txn
+        return addTxn { id ->
+            Txn(
+                id = id,
+                date = dateIso,
+                kind = if (credit) "INCOME" else "EXPENSE",
+                amount = amount,
+                category = category,
+                fromAccountId = if (credit) "" else accountId,
+                toAccountId = if (credit) accountId else "",
+                period = Ledger.cycleOf(dateIso, cycleResetDay),
+                note = note,
+                // A time only when it happened today. Stamping a back-dated
+                // payment with midnight would show an hour nobody recorded.
+                at = if (dateIso == today()) System.currentTimeMillis() else 0L
+            )
+        }
     }
 
     /** Changes a recorded transaction. Nulls leave a field alone. */

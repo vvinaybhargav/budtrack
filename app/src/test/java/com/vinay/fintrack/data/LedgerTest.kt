@@ -363,8 +363,13 @@ class MonthTotalsTest {
         assertEquals(0.0, m.saved, 0.001)
     }
 
+    /**
+     * The bill leaves a bank account and settles a card at once, so it carries
+     * both. Testing the two separately let it through on the account side and
+     * charged the same rupees to the month twice.
+     */
     @Test
-    fun `a card spend counts, and settling the card does not`() {
+    fun `settling a card is not spending, even from a tracked account`() {
         val m = Ledger.monthTotals(
             listOf(
                 t("EXPENSE", 2_450.0, card = "c1", category = "Eating Out"),

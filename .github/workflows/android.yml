@@ -33,27 +33,37 @@ jobs:
     - name: Grant Execute Permission for Gradlew
       run: chmod +x gradlew
 
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
+    # Before the build, so a broken money rule fails here rather than on a
+    # phone. The rules in Ledger and SmsParser are covered; nothing else can be
+    # tested without a device.
+    - name: Run Unit Tests
+      run: ./gradlew testReleaseUnitTest
 
-    - name: Upload Debug APK Artifact
+    # Release, not debug. A debug APK is marked debuggable, which Play Protect
+    # treats as a far stronger warning sign — and an unknown app that asks to
+    # read SMS is already the shape of thing it looks for. Same signing key
+    # either way, so this still installs over an existing build.
+    - name: Build Release APK
+      run: ./gradlew assembleRelease
+
+    - name: Upload Release APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: fintrack-debug-apk
-        path: app/build/outputs/apk/debug/app-debug.apk
+        name: fintrack-release-apk
+        path: app/build/outputs/apk/release/app-release.apk
         retention-days: 7
 
     - name: Generate IST Timestamped APK Name
       run: |
         export TZ='Asia/Kolkata'
         TIMESTAMP=$(date +'%b%d-%H%M-IST')
-        cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/FinTrack-${TIMESTAMP}.apk
+        cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/FinTrack-${TIMESTAMP}.apk
         echo "BUILD_TIMESTAMP=${TIMESTAMP}" >> $GITHUB_ENV
 
     - name: Publish APK to GitHub Release
       uses: ncipollo/release-action@v1
       with:
-        artifacts: "app/build/outputs/apk/debug/FinTrack-*.apk"
+        artifacts: "app/build/outputs/apk/release/FinTrack-*.apk"
         tag: "latest"
         allowUpdates: true
         name: "FinTrack IST Build (${{ env.BUILD_TIMESTAMP }})"

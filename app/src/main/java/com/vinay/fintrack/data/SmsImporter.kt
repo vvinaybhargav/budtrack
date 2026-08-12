@@ -37,15 +37,11 @@ class SmsImporter(private val context: Context) {
         val after = apply(state, listOf(parsed.copy(receivedAt = receivedAt)), maxOf(state.lastSmsScan, receivedAt))
         store.save(after)
 
-        // Announce whatever the message became — a new transaction, or the
-        // second half joining a transfer. Both are worth seeing: the point of
-        // the notification is catching a wrong account while the payment is
-        // still fresh in your mind.
-        for (t in after.txns) {
-            val before = state.txns.firstOrNull { it.id == t.id }
-            if (before == null) Notifier.notifyImported(context, t, isNew = true)
-            else if (before != t) Notifier.notifyImported(context, t, isNew = false)
-        }
+        // Announce what the message became. The point is catching a wrong
+        // account or category while the payment is still fresh in your mind.
+        val known = state.txns.map { it.id }.toSet()
+        after.txns.filterNot { it.id in known }
+            .forEach { Notifier.notifyRecorded(context, it) }
         return true
     }
 
@@ -196,7 +192,13 @@ class SmsImporter(private val context: Context) {
      * reference of its own yet.
      */
     private fun matchingConfirmed(txns: List<Txn>, p: ParsedSms): Txn? =
-        txns.firstOrNull { Ledger.isSamePayment(it, p.amount, p.date, p.isCredit) }
+        // The far half of something already confirmed by hand. Confirming a
+        // set-aside makes one transfer, but both banks text about it: the debit
+        // message stamped the confirmation with this reference, so the credit
+        // message is that same money arriving. Recorded on its own it became
+        // income, and the month showed a salary that never happened.
+        txns.firstOrNull { p.ref.isNotEmpty() && it.ref == p.ref && it.source == "sms+confirm" }
+            ?: txns.firstOrNull { Ledger.isSamePayment(it, p.amount, p.date, p.isCredit) }
 
     /**
      * The already-imported half of the same transfer: the bank's own reference,

@@ -112,9 +112,9 @@ object Ledger {
     ): Map<String, Double> {
         val map = HashMap<String, Double>()
         for (t in txns) {
-            if (t.kind == "TRANSFER" || t.month != period) continue
+            if (t.kind == "TRANSFER" || t.month != period || t.source == CARD_PAYMENT) continue
             val counts = t.fromAccountId in accountIds ||
-                (t.cardId.isNotEmpty() && t.cardId in cardIds && t.source != CARD_PAYMENT)
+                (t.cardId.isNotEmpty() && t.cardId in cardIds)
             if (counts) map[t.category] = (map[t.category] ?: 0.0) + t.amount
         }
         return map
@@ -152,6 +152,11 @@ object Ledger {
         var invested = 0.0
         for (t in txns) {
             if (t.month != period) continue
+            // Settling a card moves money out of an account, but the purchases
+            // it settles were already counted when they were made. Testing the
+            // account and the card separately let the bill through on the
+            // account side, charging the same rupees to the month twice.
+            if (t.source == CARD_PAYMENT) continue
             when (t.kind) {
                 "INCOME" -> if (t.toAccountId in accountIds) income += t.amount
                 // Only a transfer you confirmed against a set-aside counts as
@@ -164,7 +169,7 @@ object Ledger {
                 }
                 else -> {
                     val counts = t.fromAccountId in accountIds ||
-                        (t.cardId.isNotEmpty() && t.cardId in cardIds && t.source != CARD_PAYMENT)
+                        (t.cardId.isNotEmpty() && t.cardId in cardIds)
                     if (counts) spent += t.amount
                 }
             }

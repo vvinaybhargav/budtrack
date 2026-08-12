@@ -18,12 +18,13 @@ import com.vinay.fintrack.data.Txn
 import com.vinay.fintrack.data.inr
 
 /**
- * Tells you what a bank message just became.
+ * Announces every transaction the app records, wherever it came from.
  *
- * The import happens with the app closed, so without this the first you'd know
- * of a wrongly-filed payment is next time you opened the app and scrolled. The
- * notification opens that exact transaction for editing, so a wrong account or
- * category is a tap away from being fixed while you still remember the payment.
+ * A bank message is read with the app closed, so without this the first you'd
+ * know of a wrongly-filed payment is next time you opened the app and scrolled.
+ * The notification opens that exact transaction for editing, so a wrong account,
+ * category or description is a tap away from being fixed while you still
+ * remember the payment.
  */
 object Notifier {
 
@@ -34,7 +35,7 @@ object Notifier {
 
     // canNotify() below is the check; lint can't see through it.
     @SuppressLint("MissingPermission")
-    fun notifyImported(context: Context, txn: Txn, isNew: Boolean) {
+    fun notifyRecorded(context: Context, txn: Txn) {
         if (!canNotify(context)) return
         ensureChannel(context)
 
@@ -53,9 +54,9 @@ object Notifier {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val direction = when {
-            !isNew -> "Transfer"
-            txn.kind == "INCOME" -> "Received"
+        val direction = when (txn.kind) {
+            "TRANSFER" -> "Moved"
+            "INCOME" -> "Received"
             else -> "Paid"
         }
         val who = txn.note.ifEmpty { txn.category }
@@ -63,7 +64,7 @@ object Notifier {
         val note = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notify)
             .setContentTitle("$direction ${inr(txn.amount)} · $who")
-            .setContentText("Tap to check the account and category")
+            .setContentText("Tap to change the account, category or note")
             .setStyle(NotificationCompat.BigTextStyle().bigText(detail(txn)))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pending)
@@ -91,13 +92,13 @@ object Notifier {
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        // Default importance, not high: these arrive alongside the bank's own
-        // alert, and two things buzzing for one payment is a reason to turn
-        // both off.
+        // Default importance, not high, and silent: an imported one arrives
+        // alongside the bank's own alert, and two things buzzing for one
+        // payment is a reason to turn both off.
         val channel = NotificationChannel(
-            CHANNEL_ID, "Imported payments", NotificationManager.IMPORTANCE_DEFAULT
+            CHANNEL_ID, "Recorded payments", NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = "When a bank message is recorded as a transaction"
+            description = "When a transaction is recorded, so you can check it"
             enableVibration(false)
         }
         manager.createNotificationChannel(channel)

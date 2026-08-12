@@ -202,7 +202,21 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                 txn.note.ifEmpty { txn.category },
                 color = Pf.Text, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold
             )
-            Muted("${txn.whenText} · ${inr(txn.amount)}")
+            Muted(txn.whenText)
+
+            DebouncedField(
+                value = txn.note,
+                onSettled = vm::setTxnNote,
+                label = "Description",
+                placeholder = txn.category,
+                allowBlank = true
+            )
+            DebouncedField(
+                value = if (txn.amount > 0) txn.amount.toLong().toString() else "",
+                onSettled = vm::setTxnAmount,
+                label = "Amount",
+                numeric = true
+            )
 
             Column {
                 Muted("Account")
