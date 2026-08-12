@@ -95,7 +95,13 @@ private val NOT_A_TRANSACTION = listOf(
  * should fall through rather than invent a transaction, because a wrong entry
  * here is worse than a missed one.
  */
-fun parseBankSms(body: String, sender: String = ""): ParsedSms? {
+fun parseBankSms(
+    body: String,
+    // Kept although unused: the sender decides whether a message is worth
+    // parsing at all, which callers check first, and naming it here keeps the
+    // pair together at every call site.
+    @Suppress("UNUSED_PARAMETER") sender: String = ""
+): ParsedSms? {
     if (body.isBlank()) return null
     val lower = body.lowercase()
 

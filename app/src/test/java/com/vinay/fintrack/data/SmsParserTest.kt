@@ -124,10 +124,12 @@ class SmsParserTest {
         assertEquals(a.dedupeKey, b.dedupeKey)
     }
 
+    /** The reference identifies the payment; the direction separates the two
+     *  messages a transfer between your own banks sends under one reference. */
     @Test
-    fun `reference wins as the dedupe key`() {
+    fun `reference wins as the dedupe key, with the direction`() {
         val p = ParsedSms(450.0, false, "Swiggy", "42345", "1234", "2026-08-09", "x")
-        assertEquals("42345", p.dedupeKey)
+        assertEquals("42345|d", p.dedupeKey)
     }
 
     /** The stored value used to be 300 characters of the message, which then

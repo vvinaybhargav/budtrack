@@ -451,7 +451,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val plain = persisted.profiles.filterValues { looksLikePlainPin(it) }
         if (plain.isEmpty()) return
         update { s ->
-            s.copy(profiles = s.profiles.mapValues { (name, value) ->
+            s.copy(profiles = s.profiles.mapValues { (_, value) ->
                 if (looksLikePlainPin(value)) hashPin(value) else value
             })
         }
