@@ -4,7 +4,10 @@ import android.util.Log
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.io.BufferedReader
 import java.net.HttpURLConnection
@@ -22,28 +25,49 @@ class OpenAi(private val apiKey: String, private val model: String = DEFAULT_MOD
     class Failure(message: String) : Exception(message)
 
     /**
-     * One round trip. [messages] is the whole conversation including any tool
-     * results; [tools] the functions the model may call.
+     * One question, one answer, no tools.
+     *
+     * For the small jobs the chat loop would be heavy for — sorting payees into
+     * categories, say. Cheap because nothing but the question is sent: no tool
+     * schemas, no conversation, no snapshot.
+     */
+    fun ask(instruction: String, question: String, maxTokens: Int = 600): String {
+        val messages = buildJsonArray {
+            add(buildJsonObject { put("role", "system"); put("content", instruction) })
+            add(buildJsonObject { put("role", "user"); put("content", question) })
+        }
+        val reply = chat(messages, buildJsonArray { }, maxTokens)
+        return reply["content"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    }
+
+    /**
+     * One round trip of the conversation. [messages] is everything so far
+     * including tool results; [tools] the functions the model may call.
      *
      * @return the assistant message, which either carries content or asks for
      *   tool calls.
      */
-    fun chat(messages: JsonArray, tools: JsonArray): JsonObject {
+    fun chat(messages: JsonArray, tools: JsonArray): JsonObject = chat(messages, tools, 1200)
+
+    private fun chat(messages: JsonArray, tools: JsonArray, maxTokens: Int): JsonObject {
         if (apiKey.isBlank()) throw Failure("No OpenAI key set — add one in Settings.")
 
         val body = buildJsonObject {
             put("model", model)
             put("messages", messages)
-            put("tools", tools)
-            put("tool_choice", "auto")
+            // Omitted when empty: the API rejects an empty tools array.
+            if (tools.isNotEmpty()) {
+                put("tools", tools)
+                put("tool_choice", "auto")
+            }
             put("temperature", 0.2)
             // A phone-sized answer. Generation is the slowest part of the wait,
             // and it is charged by the token.
             // 500 cut longer answers off mid-sentence — a list of transactions
             // or an explanation of a set-aside runs past it easily.
-            put("max_tokens", 1200)
+            put("max_tokens", maxTokens)
             // Several tool calls in one reply rather than a round trip each.
-            put("parallel_tool_calls", true)
+            if (tools.isNotEmpty()) put("parallel_tool_calls", true)
         }
 
         val conn = (URL(ENDPOINT).openConnection() as HttpURLConnection).apply {

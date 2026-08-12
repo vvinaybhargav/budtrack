@@ -269,8 +269,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             val credit = t.kind == "INCOME"
             val current = if (credit) t.toAccountId else t.fromAccountId
             if (current == account.accountId) return@forEach
-            moved += if (credit) t.copy(toAccountId = account.accountId)
-            else t.copy(fromAccountId = account.accountId, cardId = "")
+            // The remembered digits go with it: the row is filed, so the hint
+            // about which account the bank named has done its job.
+            moved += if (credit) t.copy(toAccountId = account.accountId, accountTail = "")
+            else t.copy(fromAccountId = account.accountId, cardId = "", accountTail = "")
         }
 
         if (moved.isEmpty()) {
@@ -1779,13 +1781,109 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         sync.upsertTxn(updated)
     }
 
+    /**
+     * Puts a transaction on an account, and learns the digits while it is here.
+     *
+     * A message that matched nothing still quoted an account number. Telling
+     * the app which account that was records the digits against it, so every
+     * later message from the same account matches on its own — the answer is
+     * needed once rather than every month.
+     */
     fun setTxnAccount(accountId: String) {
         val t = editingTxn ?: return
-        replaceTxn(
-            if (t.kind == "INCOME") t.copy(toAccountId = accountId)
-            else t.copy(fromAccountId = accountId)
-        )
+        val placed = if (t.kind == "INCOME") t.copy(toAccountId = accountId)
+        else t.copy(fromAccountId = accountId)
+        replaceTxn(placed.copy(accountTail = ""))
+
+        val digits = t.accountTail
+        if (digits.isBlank()) return
+        val account = accounts.firstOrNull { it.id == accountId } ?: return
+        if (account.numberTail.isNotBlank()) return
+        update { s ->
+            s.copy(accounts = s.accounts.map {
+                if (it.id == accountId) it.copy(numberTail = digits) else it
+            })
+        }
+        // Everything else waiting on the same digits can be filed now too.
+        rematchImports()
     }
+
+    /** Transactions the rules could not file. */
+    val uncategorisedTxns: List<Txn>
+        get() = txns.filter { it.category == UNCATEGORISED || it.category.isBlank() }
+
+    var sortingCategories by mutableStateOf(false); private set
+    var sortMessage by mutableStateOf(""); private set
+
+    /**
+     * Asks OpenAI to file the payees the built-in rules didn't recognise.
+     *
+     * One request for all of them rather than one each: the payees are a short
+     * list, and asking about thirty of them costs barely more than asking about
+     * one. Only the payee names go — no amounts, no accounts, no balances.
+     *
+     * The answers are learned, not just applied, so the same biller is never
+     * sent again. Categories the model invents are ignored: it chooses from
+     * yours, and anything else stays Uncategorised for you.
+     */
+    fun sortCategoriesWithAi() {
+        if (sortingCategories) return
+        if (!chatReady) { sortMessage = "Add an OpenAI key in Settings first."; return }
+        val payees = uncategorisedTxns.map { it.note }
+            .filter { it.isNotBlank() }
+            .distinctBy { payeeKey(it) }
+            .take(40)
+        if (payees.isEmpty()) { sortMessage = "Nothing left to sort."; return }
+
+        sortingCategories = true
+        sortMessage = "Sorting ${payees.size} payees…"
+        val key = persisted.openaiKeyText
+        val known = categories.filterNot { it == UNCATEGORISED }
+
+        Thread {
+            val outcome = runCatching {
+                OpenAi(key).ask(
+                    instruction = "You sort Indian payee names into spending categories. " +
+                        "Reply with one line per payee, exactly 'payee = category'. " +
+                        "The category MUST be one of: ${known.joinToString(", ")}. " +
+                        "If none genuinely fits, write 'payee = $UNCATEGORISED'. " +
+                        "Never invent a category and never explain.",
+                    question = payees.joinToString("\n")
+                )
+            }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                sortingCategories = false
+                outcome
+                    .onSuccess { sortMessage = applyCategoryAnswers(it, known) }
+                    .onFailure { sortMessage = it.message ?: "Could not reach OpenAI." }
+            }
+        }.start()
+    }
+
+    /** Reads "payee = category" lines, keeping only categories that exist. */
+    private fun applyCategoryAnswers(reply: String, known: List<String>): String {
+        var filed = 0
+        reply.lineSequence().forEach { line ->
+            val parts = line.split("=", limit = 2)
+            if (parts.size < 2) return@forEach
+            val payee = parts[0].trim().trim('-', '•', '*', ' ')
+            val category = known.firstOrNull { it.equals(parts[1].trim(), true) } ?: return@forEach
+            if (payee.isBlank()) return@forEach
+            learnPayeeCategory(payee, category)
+            filed++
+        }
+        return if (filed == 0) "Nothing could be filed confidently — file them yourself."
+        else "Filed $filed payees. They stay filed from now on."
+    }
+
+    fun clearSortMessage() { sortMessage = "" }
+
+    /** Imported rows with no account yet — the only ones that need you. */
+    val txnsNeedingAccount: List<Txn>
+        get() = txns.filter {
+            it.source.startsWith("sms") && it.cardId.isEmpty() &&
+                it.fromAccountId.isEmpty() && it.toAccountId.isEmpty()
+        }
 
     /**
      * Files a transaction, and remembers the choice.

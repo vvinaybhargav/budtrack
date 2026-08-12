@@ -66,10 +66,17 @@ object Notifier {
         }
         val who = txn.note.ifEmpty { txn.category }
 
+        // The account is what the balances depend on, so a missing one leads.
+        val needsAccount = txn.cardId.isEmpty() &&
+            txn.fromAccountId.isEmpty() && txn.toAccountId.isEmpty()
+
         val note = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notify)
             .setContentTitle("$direction ${inr(txn.amount)} · $who")
-            .setContentText("Tap to change the account, category or note")
+            .setContentText(
+                if (needsAccount) "Tap to set the account — no balance has moved yet"
+                else "Tap to change the account, category or note"
+            )
             .setStyle(NotificationCompat.BigTextStyle().bigText(detail(txn)))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pending)
@@ -111,8 +118,22 @@ object Notifier {
         }
     }
 
-    private fun detail(txn: Txn): String =
-        "${txn.category} · ${txn.whenText}\nTap to change the account, category or note."
+    private fun detail(txn: Txn): String {
+        val needsAccount = txn.cardId.isEmpty() &&
+            txn.fromAccountId.isEmpty() && txn.toAccountId.isEmpty()
+        return buildString {
+            append("${txn.category} · ${txn.whenText}")
+            if (needsAccount) {
+                append("\n\nNo account matched")
+                if (txn.accountTail.isNotBlank()) {
+                    append(" — the bank said A/c ••${txn.accountTail}")
+                }
+                append(". Nothing has left any balance until you set it.")
+            } else {
+                append("\nTap to change the account, category or note.")
+            }
+        }
+    }
 
     /**
      * Android 13 asks for notifications like any other permission, and posting

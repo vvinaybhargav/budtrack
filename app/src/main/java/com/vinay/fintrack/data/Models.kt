@@ -134,7 +134,15 @@ data class Txn(
     /** When it happened, to the minute. Recorded automatically: the date alone
      *  left several payments on one day with no order between them. Zero for
      *  anything written before this field, which falls back to the date. */
-    val at: Long = 0L
+    val at: Long = 0L,
+    /**
+     * The account digits the bank message quoted, when they matched no account.
+     *
+     * Kept so the row can say which account the bank meant, and so choosing one
+     * can record those digits against it — after which every later message from
+     * that account matches on its own.
+     */
+    val accountTail: String = ""
 ) {
     val month: String get() = period.ifEmpty { date.take(7) }
 

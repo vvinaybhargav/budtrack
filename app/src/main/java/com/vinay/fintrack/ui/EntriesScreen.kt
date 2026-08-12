@@ -59,6 +59,48 @@ fun EntriesScreen(vm: FinTrackViewModel) {
             }
         }
 
+        // Unfinished work, above the list rather than buried in it: a row with
+        // no account has moved no balance, so the figures are wrong until it is
+        // set.
+        val needAccount = vm.txnsNeedingAccount.size
+        val unsorted = vm.uncategorisedTxns.size
+        if (needAccount > 0 || unsorted > 0 || vm.sortMessage.isNotEmpty()) {
+            item {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Pf.Surface2, Radius.Lg)
+                        .padding(Space.s3)
+                ) {
+                    if (needAccount > 0) {
+                        Text(
+                            "$needAccount need an account",
+                            color = Pf.Accent400, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                        )
+                        Muted("Their balances haven't moved. Tap one to set it.")
+                    }
+                    if (unsorted > 0) {
+                        Text(
+                            "$unsorted not categorised",
+                            Modifier.padding(top = if (needAccount > 0) Space.s2 else 0.dp),
+                            color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                        )
+                        Muted("File one and that payee stays filed.")
+                        Row(Modifier.padding(top = Space.s2)) {
+                            SecondaryButton(
+                                if (vm.sortingCategories) "Sorting…" else "Sort with AI",
+                                vm::sortCategoriesWithAi,
+                                enabled = !vm.sortingCategories
+                            )
+                        }
+                    }
+                    if (vm.sortMessage.isNotEmpty()) {
+                        Muted(vm.sortMessage, Modifier.padding(top = Space.s2))
+                    }
+                }
+            }
+        }
+
         item {
             PfField(
                 value = vm.entriesSearch,
@@ -219,11 +261,29 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
             )
 
             Column {
-                Muted("Account")
+                val account = vm.accounts.firstOrNull {
+                    it.id == txn.fromAccountId.ifEmpty { txn.toAccountId }
+                }
+                // An imported row with no account is unfinished, not merely
+                // untidy: nothing has moved off any balance until it is set.
+                if (account == null && txn.cardId.isEmpty()) {
+                    Text(
+                        if (txn.accountTail.isNotBlank())
+                            "Account not set — the bank said A/c ••${txn.accountTail}"
+                        else "Account not set",
+                        color = Pf.Accent400, fontSize = 13.sp, fontWeight = FontWeight.SemiBold
+                    )
+                    Muted(
+                        if (txn.accountTail.isNotBlank())
+                            "Choose it once and those digits are saved against it, so " +
+                                "later messages match on their own."
+                        else "No balance moves until this is set."
+                    )
+                } else {
+                    Muted("Account")
+                }
                 PfSelect(
-                    value = vm.accounts.firstOrNull {
-                        it.id == txn.fromAccountId.ifEmpty { txn.toAccountId }
-                    }?.name.orEmpty(),
+                    value = account?.name.orEmpty(),
                     // Only yours and the joint ones: listing every account named
                     // the other profile's private accounts and let you move
                     // money onto them.

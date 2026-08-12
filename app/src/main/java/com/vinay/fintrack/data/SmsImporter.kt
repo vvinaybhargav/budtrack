@@ -162,7 +162,10 @@ class SmsImporter(private val context: Context) {
                 },
                 ref = p.ref,
                 source = "sms",
-                rawAmountText = p.amountText
+                rawAmountText = p.amountText,
+                // Only when unmatched: otherwise it is noise on a row that is
+                // already filed correctly.
+                accountTail = if (accountId.isEmpty() && card == null) p.accountTail else ""
             )
             bodies[txns.last().id] = p.body
             // A refund to a card reduces what the card owes, the mirror of a
@@ -246,12 +249,11 @@ class SmsImporter(private val context: Context) {
         else bodies.entries.toList().takeLast(MAX_BODIES).associate { it.key to it.value }
 
     /**
-     * The account the message names, or your own when it cannot be told.
+     * The account the message names, or nothing when it cannot be told.
      *
-     * An ambiguous match falls back rather than being guessed at: putting a
-     * personal payment on the joint account is exactly the mistake that makes
-     * the buckets untrustworthy, so nothing reaches the joint account without
-     * naming it.
+     * Never a guess. An account decides which side of the household a payment
+     * lands on and whose balance moves, so guessing wrong is worse than leaving
+     * it plainly unset for you to finish.
      */
     private fun accountFor(
         state: PersistedState,
@@ -259,19 +261,13 @@ class SmsImporter(private val context: Context) {
         body: String,
         log: MutableList<String>
     ): String {
-        // Your own account, not the joint one.
+        // No account rather than a guessed one.
         //
-        // The joint account is named and numbered, so a message that belongs to
-        // it says so and is matched below. Anything left over is by definition
-        // not the joint account — sending it there anyway made "I couldn't tell"
-        // indistinguishable from "the household paid this", and quietly charged
-        // personal spending to the shared side.
-        val fallback = state.accounts.firstOrNull {
-            it.person != "Joint" && it.person == state.lastProfile
-        }?.id
-            ?: state.accounts.firstOrNull { it.person != "Joint" }?.id
-            ?: state.accounts.firstOrNull { it.name == state.defaultAccount }?.id
-            ?: state.accounts.firstOrNull()?.id.orEmpty()
+        // Guessing put payments on accounts they never touched, and a balance
+        // built from guesses is worth nothing. An empty account moves no
+        // balance and shows as "Account not set", which is a job to finish
+        // rather than a wrong number to find later.
+        val fallback = ""
 
         // Digits are the reliable answer, so they go first.
         when (val byTail = matchAccountByTail(state.accounts, tail)) {
@@ -292,9 +288,8 @@ class SmsImporter(private val context: Context) {
                 fallback
             }
             AccountMatch.None -> {
-                if (tail.isNotEmpty()) {
-                    log += "…$tail matches no account — filed to your own"
-                }
+                log += if (tail.isNotEmpty()) "…$tail matches no account — left for you to set"
+                else "no account named — left for you to set"
                 fallback
             }
         }
