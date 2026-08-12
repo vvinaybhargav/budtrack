@@ -154,7 +154,12 @@ object Ledger {
             if (t.month != period) continue
             when (t.kind) {
                 "INCOME" -> if (t.toAccountId in accountIds) income += t.amount
-                "TRANSFER" -> if (t.fromAccountId in accountIds) {
+                // Only a transfer you confirmed against a set-aside counts as
+                // money put by. A plain move between your own banks carries no
+                // entry, and counting it would fill the month's set-aside figure
+                // with transfers you never meant as saving — the set-aside
+                // section is where that is confirmed.
+                "TRANSFER" -> if (t.entryId.isNotEmpty() && t.fromAccountId in accountIds) {
                     if (t.category in investCategories) invested += t.amount else saved += t.amount
                 }
                 else -> {

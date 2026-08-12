@@ -130,30 +130,26 @@ class SmsImporter(private val context: Context) {
             val accountId =
                 if (card != null) "" else accountFor(state, p.accountTail, p.body, log)
 
-            // Money moved between your own banks arrives as two messages, one
-            // from each side. Joining them into a single transfer keeps it out
-            // of the month's spending and income — nothing was earned or spent,
-            // it only changed hands — and shows it to both profiles at once.
+            // Money moved between your own banks arrives as two messages, and
+            // stays two transactions — each bank sent its own, and each shows
+            // against its own account.
+            //
+            // Both are marked as transfers rather than a spend and a receipt.
+            // The money never left the household, so counting the debit as
+            // spending and the credit as income would inflate both sides of the
+            // month for a payment that only changed hands.
             val otherLeg = if (card != null) null else otherLegOf(txns, p, accountId)
             if (otherLeg != null) {
-                txns[txns.indexOf(otherLeg)] = otherLeg.copy(
-                    kind = "TRANSFER",
-                    fromAccountId = if (p.isCredit) otherLeg.fromAccountId else accountId,
-                    toAccountId = if (p.isCredit) accountId else otherLeg.toAccountId,
-                    note = "Transfer"
-                )
-                bodies[otherLeg.id] = listOfNotNull(
-                    state.smsBodies[otherLeg.id], bodies[otherLeg.id], p.body
-                ).distinct().joinToString("\n\n")
+                txns[txns.indexOf(otherLeg)] = otherLeg.copy(kind = "TRANSFER")
                 matched++
-                log += "joined ${inr(p.amount)} into one transfer between your accounts"
-                continue
+                log += "paired ${inr(p.amount)} as a transfer between your accounts"
             }
 
             txns += Txn(
                 id = newId("t"),
                 date = p.date,
-                kind = if (p.isCredit) "INCOME" else "EXPENSE",
+                kind = if (otherLeg != null) "TRANSFER"
+                else if (p.isCredit) "INCOME" else "EXPENSE",
                 amount = p.amount,
                 category = categoryFor(p.party, state.categories),
                 fromAccountId = if (p.isCredit || card != null) "" else accountId,

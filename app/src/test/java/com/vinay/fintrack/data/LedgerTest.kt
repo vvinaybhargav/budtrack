@@ -292,11 +292,12 @@ class MonthTotalsTest {
 
     private fun t(
         kind: String, amount: Double, from: String = "", to: String = "",
-        card: String = "", category: String = "Groceries", source: String = ""
+        card: String = "", category: String = "Groceries", source: String = "",
+        entry: String = ""
     ) = Txn(
         id = "t${amount.toInt()}$kind$category", date = "2026-08-09", kind = kind,
         amount = amount, category = category, fromAccountId = from, toAccountId = to,
-        cardId = card, period = "2026-08", source = source
+        cardId = card, entryId = entry, period = "2026-08", source = source
     )
 
     @Test
@@ -321,21 +322,41 @@ class MonthTotalsTest {
         assertEquals(2_000.0, m.spent, 0.001)
     }
 
-    /** Money moved to a savings pot is kept, not spent. */
+    /** A set-aside you confirmed is money kept, not spent. */
     @Test
-    fun `a transfer is set aside rather than spent`() {
+    fun `a confirmed set-aside is put by rather than spent`() {
         val m = Ledger.monthTotals(
-            listOf(t("TRANSFER", 3_333.0, from = mine.id, category = "Car Insurance")),
+            listOf(t("TRANSFER", 3_333.0, from = mine.id, category = "Car Insurance", entry = "e1")),
             "2026-08", ids, cardIds, invest
         )
         assertEquals(3_333.0, m.saved, 0.001)
         assertEquals(0.0, m.spent, 0.001)
     }
 
+    /**
+     * The two halves of a bank-to-bank move. Neither is spending nor income,
+     * and neither is a set-aside: nothing was put by until it is confirmed
+     * against one.
+     */
+    @Test
+    fun `moving money between your own banks counts as nothing`() {
+        val m = Ledger.monthTotals(
+            listOf(
+                t("TRANSFER", 20_000.0, from = mine.id, category = "Sent"),
+                t("TRANSFER", 20_000.0, to = mine.id, category = "Arrived")
+            ),
+            "2026-08", ids, cardIds, invest
+        )
+        assertEquals(0.0, m.spent, 0.001)
+        assertEquals(0.0, m.income, 0.001)
+        assertEquals(0.0, m.saved, 0.001)
+        assertEquals(0.0, m.invested, 0.001)
+    }
+
     @Test
     fun `a transfer to an investment category counts as invested`() {
         val m = Ledger.monthTotals(
-            listOf(t("TRANSFER", 5_000.0, from = mine.id, category = "PPF")),
+            listOf(t("TRANSFER", 5_000.0, from = mine.id, category = "PPF", entry = "e2")),
             "2026-08", ids, cardIds, invest
         )
         assertEquals(5_000.0, m.invested, 0.001)
