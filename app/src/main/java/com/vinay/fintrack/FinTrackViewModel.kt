@@ -14,6 +14,7 @@ import com.vinay.fintrack.data.FirestoreSync
 import com.vinay.fintrack.data.INVEST_CATEGORIES
 import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.Loan
+import com.vinay.fintrack.data.OpenAi
 import com.vinay.fintrack.data.PersistedState
 import com.vinay.fintrack.data.SAVINGS_CATEGORIES
 import com.vinay.fintrack.data.hashPin
