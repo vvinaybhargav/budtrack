@@ -1602,9 +1602,75 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * them — the seed carries both, and counting each would double the figure.
      */
     val plannedExpense: Double
+        get() = plannedRecurring + plannedSetAside + plannedLoans
+
+    /**
+     * The month broken into four sums that do not overlap.
+     *
+     * They have to be disjoint or the total is nonsense: a recurring bill you
+     * have already confirmed is a transaction as well as a plan, so counting it
+     * as spending and as a commitment charges the month twice. Three planned
+     * buckets, then whatever was actually spent that belongs to none of them.
+     */
+    val plannedRecurring: Double
         get() = scopedEntries
-            .filter { it.type == "EXPENSE" && !coveredByLoan(it) }
-            .sumOf { it.monthly } + scopedLoans.sumOf { it.monthlyEmi }
+            .filter { it.type == "EXPENSE" && !it.isSetAside && !coveredByLoan(it) }
+            .sumOf { it.monthly }
+
+    val plannedSetAside: Double get() = annualSetAsideMonthly
+
+    val plannedLoans: Double get() = scopedLoans.sumOf { it.monthlyEmi }
+
+    /**
+     * Real spending this cycle that no commitment or loan accounts for — the
+     * groceries and the coffees, as opposed to the bills you already knew about.
+     */
+    val unplannedSpent: Double
+        get() {
+            val ids = scopedAccounts.map { it.id }.toSet()
+            val cardIds = scopedCards.map { it.id }.toSet()
+            return Ledger.paise(
+                persisted.txns.filter {
+                    it.month == cycle() && it.entryId.isEmpty() && it.loanId.isEmpty() &&
+                        it.source != Ledger.CARD_PAYMENT &&
+                        (it.kind == "EXPENSE" || it.kind == "REFUND")
+                }.sumOf {
+                    val counts = if (it.kind == "REFUND") {
+                        it.toAccountId in ids || (it.cardId.isNotEmpty() && it.cardId in cardIds)
+                    } else {
+                        it.fromAccountId in ids || (it.cardId.isNotEmpty() && it.cardId in cardIds)
+                    }
+                    if (!counts) 0.0 else if (it.kind == "REFUND") -it.amount else it.amount
+                }
+            )
+        }
+
+    /** Everything expected out this month, planned and unplanned alike. */
+    val monthOut: Double
+        get() = Ledger.paise(
+            plannedRecurring + plannedSetAside + plannedLoans + unplannedSpent
+        )
+
+    /** What is left of the month's expected income once all of it is met. */
+    val monthLeft: Double get() = Ledger.paise(plannedIncome - monthOut)
+
+    /**
+     * What next month asks for, which is rarely the same.
+     *
+     * A set-aside's share climbs as its due date nears — fewer months left to
+     * spread the same bill over — so seeing next month now is the difference
+     * between noticing in advance and noticing on the day.
+     */
+    val nextMonthOut: Double
+        get() {
+            val nextMonth = Ledger.addMonths(today(), 1)
+            val setAside = annualSetAsides.sumOf { e ->
+                val due = Ledger.nextDue(e.dueDate, e.everyMonths, nextMonth)
+                if (due.isEmpty()) Ledger.monthlyShare(e.amount, e.everyMonths)
+                else Ledger.shareUntilDue(e.amount, nextMonth, due)
+            }
+            return Ledger.paise(plannedRecurring + setAside + plannedLoans)
+        }
 
     // Keyed on the side as well: the figures are for whichever the switch is on,
     // and using the visible accounts mixed personal and joint together whatever

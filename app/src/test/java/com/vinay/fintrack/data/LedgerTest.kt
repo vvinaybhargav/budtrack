@@ -1037,3 +1037,35 @@ class StandardCategoryTest {
         }
     }
 }
+
+/**
+ * A set-aside's monthly share climbs as its due date nears, because the same
+ * bill is spread over fewer months. Seeing next month's figure now is the
+ * difference between noticing in advance and noticing on the day.
+ */
+class NextMonthShareTest {
+
+    private val due = "2027-01-29"
+
+    @Test
+    fun `the share rises as the months run out`() {
+        val august = Ledger.shareUntilDue(55_000.0, "2026-08-12", due)
+        val september = Ledger.shareUntilDue(55_000.0, "2026-09-12", due)
+        assertEquals(11_000.0, august, 0.001)
+        assertEquals(13_750.0, september, 0.001)
+        assertTrue(september > august)
+    }
+
+    /** One month on from August is September, including across a year end. */
+    @Test
+    fun `next month is one month on`() {
+        assertEquals("2026-09-12", Ledger.addMonths("2026-08-12", 1))
+        assertEquals("2027-01-15", Ledger.addMonths("2026-12-15", 1))
+    }
+
+    /** In the due month itself there is one instalment left, never zero. */
+    @Test
+    fun `the last month asks for what is left of the run`() {
+        assertEquals(55_000.0, Ledger.shareUntilDue(55_000.0, "2026-12-31", due), 0.001)
+    }
+}

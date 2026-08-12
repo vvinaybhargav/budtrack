@@ -49,6 +49,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
         item { ScopeSwitch(vm) }
         item { BalanceCard(vm) }
         item { AccountsSection(vm) }
+        item { MonthPlan(vm) }
         item { MonthStats(vm) }
         item { BudgetsSection(vm) }
         item { LoansSection(vm) }
@@ -300,6 +301,78 @@ private fun AccountsSection(vm: FinTrackViewModel) {
                 }
             }
         }
+    }
+}
+
+/**
+ * What is left once the month has been paid for.
+ *
+ * The four lines never overlap: three are the plan — recurring bills, EMIs,
+ * this month's set-aside shares — and the fourth is real spending that none of
+ * them accounts for. Overlapping them would subtract a confirmed bill twice and
+ * make the figure at the bottom worthless.
+ */
+@Composable
+private fun MonthPlan(vm: FinTrackViewModel) {
+    val left = vm.monthLeft
+    Column {
+        SectionTitle("Left this month · ${vm.bucketLabel}", Modifier.padding(bottom = Space.s3))
+        PfCard(padding = PaddingValues(Space.s4)) {
+            PlanRow("Expected in", vm.plannedIncome, bold = true)
+            Hairline()
+            PlanRow("Spending", vm.unplannedSpent, minus = true)
+            PlanRow("Loans & EMIs", vm.plannedLoans, minus = true)
+            PlanRow("Recurring", vm.plannedRecurring, minus = true)
+            PlanRow("Set aside", vm.plannedSetAside, minus = true)
+            Hairline()
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = Space.s3),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Text(
+                    if (left < 0) "Short by" else "Left over",
+                    color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold
+                )
+                Text(
+                    inr(kotlin.math.abs(left)),
+                    // Red only when it does not add up — a figure worth noticing.
+                    color = if (left < 0) Pf.Accent400 else Pf.Accent2,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+            Muted(
+                "Next month asks for ${inr(vm.nextMonthOut)} before any spending.",
+                Modifier.padding(top = Space.s2),
+                size = 12
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlanRow(label: String, amount: Double, minus: Boolean = false, bold: Boolean = false) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = Space.s2),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            label,
+            color = if (bold) Pf.Text else Pf.Muted,
+            fontSize = 14.sp,
+            fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal
+        )
+        Text(
+            (if (minus) "− " else "") + inr(amount),
+            color = Pf.Text,
+            fontSize = 14.sp,
+            fontWeight = if (bold) FontWeight.Bold else FontWeight.SemiBold
+        )
     }
 }
 
@@ -706,17 +779,25 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
                             // are left to reach it — that is what makes the
                             // monthly figure make sense.
                             val pot = vm.setAsidePot(e)
-                            val plan = if (e.nextDue.isNotEmpty()) {
-                                val n = Ledger.instalmentsUntil(today(), e.nextDue)
-                                "${inr(pot)} of ${inr(e.amount)} saved · due " +
-                                    "${prettyDate(e.nextDue)}, $n month${if (n == 1) "" else "s"} to go"
-                            } else {
-                                "${inr(e.monthly)}/mo · ${inr(e.amount)} every ${e.everyMonths} months"
-                            }
+                            // This month first — it is the figure you act on.
+                            // What the pot holds and when the bill lands are the
+                            // context for it, not a substitute.
                             Muted(
-                                if (put > 0) "${inr(put)} of ${inr(e.monthly)} put by · ${inr(left)} left"
-                                else plan,
-                                Modifier.padding(top = 2.dp, bottom = 6.dp)
+                                "${inr(e.monthly)} this month · " +
+                                    if (put > 0) "${inr(put)} put by, ${inr(left)} left"
+                                    else "none put by yet",
+                                Modifier.padding(top = 2.dp)
+                            )
+                            Muted(
+                                if (e.nextDue.isNotEmpty()) {
+                                    val n = Ledger.instalmentsUntil(today(), e.nextDue)
+                                    "${inr(pot)} of ${inr(e.amount)} saved · due " +
+                                        "${prettyDate(e.nextDue)}, $n month${if (n == 1) "" else "s"} to go"
+                                } else {
+                                    "${inr(pot)} of ${inr(e.amount)} saved · every ${e.everyMonths} months"
+                                },
+                                Modifier.padding(top = 2.dp, bottom = 6.dp),
+                                size = 12
                             )
                             Tag(
                                 if (left <= 0.0) "Done" else "Set aside",
