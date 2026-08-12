@@ -726,3 +726,37 @@ class CardEmiTest {
         )
     }
 }
+
+/**
+ * Two salaries land on different days, so "is this month's bill paid?" is a
+ * different question for each person.
+ */
+class PerProfileCycleTest {
+
+    /** Paid on the 24th: the 12th of August still belongs to July's pay month,
+     *  so a bill confirmed on the 25th of July is not owed again yet. */
+    @Test
+    fun `a late salary day keeps the earlier pay month`() {
+        assertEquals("2026-07", Ledger.cycleOf("2026-08-12", 24))
+        assertEquals("2026-08", Ledger.cycleOf("2026-08-24", 24))
+        assertEquals("2026-08", Ledger.cycleOf("2026-08-25", 24))
+    }
+
+    /** The same day falls in different pay months for two people. */
+    @Test
+    fun `two salary days put one date in two different months`() {
+        assertEquals("2026-08", Ledger.cycleOf("2026-08-20", 5))
+        assertEquals("2026-07", Ledger.cycleOf("2026-08-20", 24))
+    }
+
+    /** January must roll back to the previous December, not month zero. */
+    @Test
+    fun `january rolls back into the previous year`() {
+        assertEquals("2025-12", Ledger.cycleOf("2026-01-03", 24))
+    }
+
+    @Test
+    fun `the first of the month means the plain calendar month`() {
+        assertEquals("2026-08", Ledger.cycleOf("2026-08-01", 1))
+    }
+}

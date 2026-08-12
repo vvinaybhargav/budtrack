@@ -10,6 +10,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -269,13 +271,26 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             Column {
                 // For pay that doesn't arrive on the 1st: set-asides and
                 // confirmations follow this rather than the calendar.
-                Heading("Month starts on")
+                Heading("Salary date · ${vm.activeProfile.orEmpty()}")
                 PfSelect(
                     value = vm.cycleResetDay.toString(),
                     options = (1..28).map { it.toString() },
                     onSelect = { vm.setCycleResetDay(it.toIntOrNull() ?: 1) }
                 )
-                Muted("Set-asides and confirmations reset on this day.")
+                Muted(
+                    "Your month turns over on this day. Everything confirmed — " +
+                        "recurring bills, EMIs and set-asides — becomes payable " +
+                        "again on it."
+                )
+                // Each person's own, since two salaries rarely land together.
+                val others = vm.salaryDaysByProfile.filter { it.first != vm.activeProfile }
+                if (others.isNotEmpty()) {
+                    Muted(
+                        "Set per profile. " +
+                            others.joinToString(", ") { "${it.first}: ${it.second}" },
+                        Modifier.padding(top = Space.s2)
+                    )
+                }
             }
         }
 
@@ -398,6 +413,7 @@ private fun SmallIcon(
  * account moved the money, so a transaction lands on the right one rather than
  * a guess — and it covers card, ATM and EMI debits too, not just UPI.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SmsImportSection(vm: FinTrackViewModel) {
     val context = LocalContext.current
@@ -461,9 +477,12 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
             else OutlineTag("Off")
         }
 
-        Row(
+        // Wraps: three buttons side by side ran off the edge of the screen and
+        // the last one was unreadable.
+        FlowRow(
             Modifier.padding(top = Space.s3),
-            horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            horizontalArrangement = Arrangement.spacedBy(Space.s2),
+            verticalArrangement = Arrangement.spacedBy(Space.s2)
         ) {
             if (!hasPermission && !blocked) {
                 PrimaryButton("Allow SMS access", onClick = {

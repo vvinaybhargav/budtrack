@@ -601,7 +601,20 @@ private fun CommitmentsSection(vm: FinTrackViewModel) {
 @Composable
 private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
     val items = vm.annualSetAsides
-    if (items.isEmpty()) return
+    // Shown even when empty. Vanishing entirely read as the feature being gone,
+    // when the real cause was a commitment recorded as monthly and therefore
+    // sitting under Recurring instead.
+    if (items.isEmpty()) {
+        Column {
+            SectionTitle("Set aside · this month", Modifier.padding(bottom = Space.s1))
+            Muted(
+                "Nothing set aside on this side yet. Add one from Add → Set aside " +
+                    "with the date it is due, and a share of it appears here each " +
+                    "month. A bill you pay every month belongs under Recurring."
+            )
+        }
+        return
+    }
     Column {
         SectionTitle("Set aside · this month", Modifier.padding(bottom = Space.s1))
         Muted(

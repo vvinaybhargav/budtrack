@@ -37,6 +37,12 @@ data class PersistedState(
     /** Day of the month a new cycle starts, for pay that does not arrive on the
      *  1st. Set-asides and confirmations follow it. */
     val cycleResetDay: Int = 1,
+    /**
+     * Salary day per profile, since two people are rarely paid on the same
+     * date. Synced, so it follows the person rather than the phone; falls back
+     * to [cycleResetDay] for anyone without one set.
+     */
+    val salaryDays: Map<String, Int> = emptyMap(),
     val smsImportOn: Boolean = false,
     /** Whether SMS access has ever been requested. Android only reveals that a
      *  permission is permanently denied after a first attempt, so without

@@ -622,7 +622,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val toAccountId: String = "",
         /** Editable, because a set-aside can be paid in parts — put by ₹1,000
          *  now and the rest later — and the amount left is only a suggestion. */
-        val amountText: String = ""
+        val amountText: String = "",
+        /** The salary month this counts against — the owner's, not the
+         *  viewer's, so a joint bill is not owed twice on two cycles. */
+        val period: String = ""
     ) {
         val enteredAmount: Double get() = amountText.toDoubleOrNull() ?: amount
         val needsFrom: Boolean get() = kind == "EXPENSE" || kind == "TRANSFER"
@@ -640,21 +643,54 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      *  some other day and the reset day has been moved. */
     fun cycle(): String = Ledger.cycleOf(today(), persisted.cycleResetDay)
 
-    val cycleResetDay: Int get() = persisted.cycleResetDay
+    /**
+     * The day this profile's month turns over — their salary date.
+     *
+     * Per profile, because two people are rarely paid on the same day, and the
+     * cycle is what decides when a commitment becomes payable again. The old
+     * household-wide value is the fallback, so nothing shifts for anyone who
+     * hasn't set their own.
+     */
+    val cycleResetDay: Int
+        get() = persisted.salaryDays[activeProfile.orEmpty()] ?: persisted.cycleResetDay
 
-    fun setCycleResetDay(day: Int) = update { it.copy(cycleResetDay = day.coerceIn(1, 28)) }
+    fun setCycleResetDay(day: Int) {
+        val profile = activeProfile
+        val safe = day.coerceIn(1, 28)
+        update { s ->
+            if (profile.isNullOrEmpty()) s.copy(cycleResetDay = safe)
+            else s.copy(salaryDays = s.salaryDays + (profile to safe))
+        }
+    }
 
-    fun isConfirmed(entryId: String): Boolean =
-        persisted.txns.any { it.entryId == entryId && it.month == cycle() }
+    /** Everyone's salary day, for the line under the field in Settings. */
+    val salaryDaysByProfile: List<Pair<String, Int>>
+        get() = profileNames.map { it to (persisted.salaryDays[it] ?: persisted.cycleResetDay) }
+
+    /**
+     * The cycle a given person is on. Two salaries rarely land on the same
+     * day, so whether something is still owed this month depends on whose it
+     * is — not on who happens to be holding the phone.
+     */
+    fun cycleFor(person: String): String =
+        Ledger.cycleOf(today(), persisted.salaryDays[person] ?: persisted.cycleResetDay)
+
+    fun isConfirmed(entryId: String): Boolean {
+        val owner = entryById(entryId)?.person ?: activeProfile.orEmpty()
+        return persisted.txns.any { it.entryId == entryId && it.month == cycleFor(owner) }
+    }
 
     /** How much of a set-aside has been put by this cycle — it can be paid in
      *  parts rather than all at once. */
-    fun setAsideDone(e: Entry): Double = Ledger.setAsideDone(persisted.txns, e.id, cycle())
+    fun setAsideDone(e: Entry): Double =
+        Ledger.setAsideDone(persisted.txns, e.id, cycleFor(e.person))
 
     fun setAsideLeft(e: Entry): Double = (e.monthly - setAsideDone(e)).coerceAtLeast(0.0)
 
-    fun isLoanConfirmed(loanId: String): Boolean =
-        persisted.txns.any { it.loanId == loanId && it.month == cycle() }
+    fun isLoanConfirmed(loanId: String): Boolean {
+        val owner = loans.firstOrNull { it.id == loanId }?.person ?: activeProfile.orEmpty()
+        return persisted.txns.any { it.loanId == loanId && it.month == cycleFor(owner) }
+    }
 
     private fun accountIdByName(name: String): String =
         accounts.firstOrNull { it.name == name }?.id ?: accounts.firstOrNull()?.id.orEmpty()
@@ -688,12 +724,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         // than undoing what has already been put by.
         val partial = kind == "TRANSFER" && e.isSetAside
         if (isConfirmed(e.id) && !partial) {
-            removeTxns { it.entryId == e.id && it.month == cycle() }
+            removeTxns { it.entryId == e.id && it.month == cycleFor(e.person) }
             return
         }
         val left = if (partial) setAsideLeft(e) else e.monthly
         if (partial && left <= 0.0) {
-            removeTxns { it.entryId == e.id && it.month == cycle() }
+            removeTxns { it.entryId == e.id && it.month == cycleFor(e.person) }
             return
         }
         pendingConfirm = PendingConfirm(
@@ -707,14 +743,15 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             // personal expense doesn't default to the joint account.
             fromAccountId = if (kind == "INCOME") ""
             else e.accountId.ifEmpty { defaultAccountFor(e.person, e.bucket) },
-            toAccountId = if (kind == "INCOME") e.accountId.ifEmpty { defaultAccountFor(e.person, e.bucket) } else ""
+            toAccountId = if (kind == "INCOME") e.accountId.ifEmpty { defaultAccountFor(e.person, e.bucket) } else "",
+            period = cycleFor(e.person)
         )
     }
 
     /** Loan EMIs are paid from the account stored on the loan, so no sheet appears. */
     fun confirmLoan(l: Loan) {
         if (isLoanConfirmed(l.id)) {
-            removeTxns { it.loanId == l.id && it.month == cycle() }
+            removeTxns { it.loanId == l.id && it.month == cycleFor(l.person) }
             // Paying advanced the tenure, so undoing has to put the month back —
             // and take the instalment back off the card if it went there.
             update { s ->
@@ -741,7 +778,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             Txn(
                 id = seq, date = today(), kind = "EXPENSE", amount = l.monthlyEmi,
                 category = "EMI", fromAccountId = from, cardId = l.cardId, loanId = l.id,
-                period = cycle(), note = l.name,
+                // The owner's cycle, matching what isLoanConfirmed asks for.
+                period = cycleFor(l.person), note = l.name,
                 at = System.currentTimeMillis()
             )
         }
@@ -804,7 +842,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 // Tagged so undoing a card payment can find it among the
                 // spends imported onto the same card.
                 source = if (p.cardId.isNotEmpty()) CARD_PAYMENT else "",
-                period = cycle(), note = p.title,
+                // The cycle of whoever the commitment belongs to, so it counts
+                // as done against their salary month rather than the viewer's.
+                period = p.period.ifEmpty { cycle() }, note = p.title,
                 at = System.currentTimeMillis()
             )
         }
@@ -2067,7 +2107,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     "TRANSFER" -> to
                     else -> ""
                 },
-                entryId = e.id, period = cycle(),
+                entryId = e.id, period = cycleFor(e.person),
                 note = e.note.ifEmpty { e.category },
                 at = System.currentTimeMillis()
             )
