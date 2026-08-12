@@ -972,15 +972,15 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
 
 @Composable
 private fun SmsSuggestionBanner(vm: FinTrackViewModel) {
-    val suggestions = vm.persisted.smsSuggestions
+    val suggestions = vm.smsSuggestions
     if (suggestions.isEmpty()) return
     
     val suggestion = suggestions.entries.first()
     val txnId = suggestion.key
     val entryId = suggestion.value
     
-    val txn = vm.persisted.txns.firstOrNull { it.id == txnId } ?: return
-    val entry = vm.persisted.entries.firstOrNull { it.id == entryId } ?: return
+    val txn = vm.txns.firstOrNull { it.id == txnId } ?: return
+    val entry = vm.entries.firstOrNull { it.id == entryId } ?: return
     
     Box(
         Modifier
@@ -1017,12 +1017,12 @@ private fun SmsSuggestionBanner(vm: FinTrackViewModel) {
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(Space.s2, Alignment.End)
             ) {
-                GhostButton("Dismiss") {
+                GhostButton("Dismiss", {
                     vm.dismissSmsSuggestion(txnId)
-                }
-                PrimaryButton("Link Match") {
+                })
+                PrimaryButton("Link Match", {
                     vm.linkSmsToSinkingFund(txnId, entryId)
-                }
+                })
             }
         }
     }
@@ -1102,8 +1102,6 @@ private fun SpendVelocityCard(vm: FinTrackViewModel) {
                 color = speedColor,
                 modifier = Modifier.padding(top = Space.s3)
             )
-        }
-    }
         }
     }
 }

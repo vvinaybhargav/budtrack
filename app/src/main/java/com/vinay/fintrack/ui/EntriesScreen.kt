@@ -6,6 +6,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -369,9 +370,9 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                                     onSelect = { selectedCategoryRule = it }
                                 )
                             }
-                            PrimaryButton("Save Rule") {
+                            PrimaryButton("Save Rule", {
                                 vm.addSmsRule(keywordRule, selectedCategoryRule)
-                            }
+                            })
                         }
                         Muted("Transactions containing '$keywordRule' will always be categorized as '$selectedCategoryRule'.")
                     }

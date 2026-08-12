@@ -227,6 +227,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** Newest first: what the importer did with each recent message. */
     val smsLog: List<String> get() = persisted.smsLog
 
+    val smsSuggestions: Map<String, String> get() = persisted.smsSuggestions
+    val smsRules: Map<String, String> get() = persisted.smsRules
+
     fun setSmsImport(on: Boolean) {
         update { it.copy(smsImportOn = on) }
         scanNote = if (on) {
@@ -3146,7 +3149,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val elapsedDays = Ledger.daysBetween(startDate, todayIso) + 1
         val daysRemaining = maxOf(0, totalCycleDays - elapsedDays)
         
-        val cycleTxns = scopedTxns.filter { it.date >= startDate && it.date <= todayIso && it.kind == "EXPENSE" }
+        val cycleTxns = txns.filter { inBucket(it) }.filter { it.date >= startDate && it.date <= todayIso && it.kind == "EXPENSE" }
         val discretionarySpend = cycleTxns.filter { t ->
             t.loanId.isEmpty() && t.entryId.isEmpty() &&
             t.category != "EMI" && !t.category.lowercase().contains("emi") &&
