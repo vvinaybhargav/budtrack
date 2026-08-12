@@ -92,11 +92,17 @@ class Assistant(private val vm: FinTrackViewModel) {
         "list_transactions" -> "Looking through your transactions…"
         "add_transaction" -> "Recording it…"
         "edit_transaction", "edit_commitment", "update_account" -> "Making the change…"
-        "delete_transaction", "delete_commitment" -> "Checking what that would remove…"
+        "delete_transaction", "delete_commitment", "delete_account", "delete_card",
+        "delete_loan" -> "Checking what that would remove…"
         "add_commitment", "add_account", "add_card", "add_loan" -> "Adding it…"
         "confirm_commitment" -> "Confirming it…"
-        "set_budget", "add_category", "set_default_account", "set_salary_date" ->
-            "Updating your settings…"
+        "summarise_spending" -> "Adding up your spending…"
+        "due_soon" -> "Checking what is coming up…"
+        "pay_set_aside" -> "Paying it from what you put by…"
+        "update_card", "update_loan" -> "Making the change…"
+        "set_payee_category" -> "Remembering that category…"
+        "set_budget", "add_category", "set_default_account", "set_salary_date",
+        "set_budget_rollover", "close_commitment" -> "Updating your settings…"
         else -> "Working…"
     }
 
@@ -170,6 +176,88 @@ class Assistant(private val vm: FinTrackViewModel) {
                 "Added ${l.name}, ${inr(l.monthlyEmi)} a month — ${vm.emiSourceLabel(l)}" +
                     (if (l.nextDue.isNotEmpty()) ", due ${prettyDate(l.nextDue)}" else "") + "."
             }
+            "summarise_spending" -> vm.spendingSummary(
+                (a.int("months") ?: 3).coerceIn(1, 12), a.str("category")
+            )
+            "due_soon" -> vm.dueSoonText((a.int("days") ?: 14).coerceIn(1, 60))
+
+            "pay_set_aside" -> {
+                val e = vm.entryById(a.str("id").orEmpty())
+                    ?: return@runCatching "No commitment with that id."
+                if (e.closed) return@runCatching "${e.category} is already finished."
+                val pot = vm.setAsidePot(e)
+                vm.paySetAside(e, a.str("account")?.let { vm.accountNamed(it)?.id }.orEmpty())
+                "Paid ${inr(e.amount)} for ${e.category} out of the ${inr(pot)} put by."
+            }
+            "close_commitment" -> {
+                val e = vm.entryById(a.str("id").orEmpty())
+                    ?: return@runCatching "No commitment with that id."
+                val closed = a.bool("closed") ?: true
+                vm.closeEntry(e.id, closed)
+                if (closed) "Closed ${e.category}. It keeps its history but leaves Home."
+                else "${e.category} is active again."
+            }
+
+            "update_card" -> {
+                val c = vm.cardNamed(a.str("name").orEmpty())
+                    ?: return@runCatching "No card by that name."
+                val updated = vm.updateCardDirect(
+                    c.id, a.str("new_name"), a.num("limit"), a.num("balance"),
+                    a.num("min_due"), a.str("due_date"), a.str("last_digits"), a.bool("paid")
+                )
+                "Updated ${updated?.name}, ${inr(updated?.balance ?: 0.0)} of " +
+                    "${inr(updated?.limit ?: 0.0)} used."
+            }
+            "update_loan" -> {
+                val l = vm.loanNamed(a.str("name").orEmpty())
+                    ?: return@runCatching "No loan by that name."
+                val updated = vm.updateLoanDirect(
+                    l.id, a.num("emi"), a.int("remaining_months"), a.str("due_date"),
+                    a.str("account"), a.str("card")
+                )
+                "Updated ${updated?.name}, ${inr(updated?.monthlyEmi ?: 0.0)} a month — " +
+                    "${vm.emiSourceLabel(updated ?: l)}."
+            }
+            "delete_account" -> {
+                val acc = vm.accountNamed(a.str("name").orEmpty())
+                    ?: return@runCatching "No account by that name."
+                vm.proposeDeletion(
+                    acc.name,
+                    "Its transactions move to another account rather than being lost."
+                ) { vm.deleteAccount(acc.id) }
+                "Waiting for the user to confirm removing ${acc.name}. Do not call " +
+                    "this again; tell them to tap Delete."
+            }
+            "delete_card" -> {
+                val c = vm.cardNamed(a.str("name").orEmpty())
+                    ?: return@runCatching "No card by that name."
+                vm.proposeDeletion(c.name, "${inr(c.balance)} outstanding") { vm.deleteCard(c.id) }
+                "Waiting for the user to confirm removing ${c.name}. Do not call " +
+                    "this again; tell them to tap Delete."
+            }
+            "delete_loan" -> {
+                val l = vm.loanNamed(a.str("name").orEmpty())
+                    ?: return@runCatching "No loan by that name."
+                vm.proposeDeletion(
+                    l.name, "${l.remainingMonths} of ${l.totalMonths} months left"
+                ) { vm.deleteLoan(l.id) }
+                "Waiting for the user to confirm removing ${l.name}. Do not call " +
+                    "this again; tell them to tap Delete."
+            }
+            "set_budget_rollover" -> {
+                val on = a.bool("on") ?: false
+                vm.setBudgetRollover(on)
+                if (on) "Budgets now carry last month's leftover, good or bad."
+                else "Budgets start fresh each month."
+            }
+            "set_payee_category" -> {
+                val payee = a.str("payee").orEmpty()
+                val cat = vm.categoryNamed(a.str("category").orEmpty())
+                val moved = vm.rememberPayeeCategory(payee, cat)
+                "$payee is filed under $cat from now on" +
+                    (if (moved > 0) ", and $moved already recorded moved with it." else ".")
+            }
+
             "set_salary_date" -> {
                 val day = a.int("day") ?: return@runCatching "Which day of the month?"
                 val who = vm.setSalaryDate(a.str("profile").orEmpty(), day)
@@ -282,8 +370,15 @@ class Assistant(private val vm: FinTrackViewModel) {
         val search = a.str("search")
         val limit = (a.int("limit") ?: 30).coerceIn(1, 100)
 
+        val from = a.str("from")
+        val to = a.str("to")
+
         val rows = vm.txns
             .filter { month == null || it.month == month }
+            // A plain string compare works because dates are ISO: "2026-08-09"
+            // orders the same alphabetically as it does chronologically.
+            .filter { from == null || it.date >= from }
+            .filter { to == null || it.date <= to }
             .filter { category == null || it.category.equals(category, true) }
             .filter {
                 search == null || it.note.contains(search, true) ||
@@ -414,7 +509,10 @@ class Assistant(private val vm: FinTrackViewModel) {
             "add_transaction", "edit_transaction", "delete_transaction",
             "add_commitment", "edit_commitment", "delete_commitment", "confirm_commitment",
             "add_account", "add_card", "add_loan", "update_account", "set_salary_date",
-            "set_budget", "add_category", "set_default_account"
+            "set_budget", "add_category", "set_default_account",
+            "pay_set_aside", "close_commitment", "update_card", "update_loan",
+            "delete_account", "delete_card", "delete_loan", "set_budget_rollover",
+            "set_payee_category"
         )
     }
 }

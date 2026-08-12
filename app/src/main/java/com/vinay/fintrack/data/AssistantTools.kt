@@ -40,6 +40,24 @@ object AssistantTools {
                 "loans with EMI and months remaining."
         ))
         add(tool(
+            "summarise_spending",
+            "Totals already worked out, per category and per month. USE THIS for " +
+                "any question about how much was spent, trends, comparisons or " +
+                "averages — never add up list_transactions yourself, because the " +
+                "arithmetic here is done by the app and cannot be miscounted."
+        ) {
+            put("months", int("How many months back, 1 to 12. Default 3."))
+            put("category", str("Restrict to one category. Omit for all."))
+        })
+        add(tool(
+            "due_soon",
+            "Everything falling due in the next few weeks — bills, EMIs, card " +
+                "statements and set-asides — with what is already saved towards " +
+                "each. Use for 'what is coming up' or 'what do I owe this week'."
+        ) {
+            put("days", int("How far ahead to look, 1 to 60. Default 14."))
+        })
+        add(tool(
             "list_transactions",
             "Recorded transactions, newest first. Use for anything about actual " +
                 "spending, history, or finding a payment to edit or delete."
@@ -47,6 +65,8 @@ object AssistantTools {
             put("month", str("Restrict to a month as yyyy-MM. Omit for all."))
             put("category", str("Restrict to one category."))
             put("search", str("Match payee, note or reference."))
+            put("from", str("Earliest date as YYYY-MM-DD. Use with to for a range like last week."))
+            put("to", str("Latest date as YYYY-MM-DD."))
             put("limit", int("How many to return. Default 30."))
         })
 
@@ -125,8 +145,27 @@ object AssistantTools {
             put("note", str("New description."))
             required("id")
         })
-        add(tool("delete_commitment", "Remove a recurring entry. Confirm first.") {
+        add(tool("delete_commitment", "Remove a recurring entry. The user confirms it.") {
             put("id", str("Entry id from list_commitments. Required."))
+            required("id")
+        })
+        add(tool(
+            "pay_set_aside",
+            "Pay the bill a set-aside was saving for, out of what has been put by. " +
+                "The due date then moves on a period, or the entry closes if it " +
+                "does not repeat."
+        ) {
+            put("id", str("Entry id from list_commitments. Required."))
+            put("account", str("Account to pay from. Defaults to where the money was saved."))
+            required("id")
+        })
+        add(tool(
+            "close_commitment",
+            "Mark a commitment finished so it leaves Home and the monthly plan, " +
+                "keeping its history. Use for a bill that has stopped."
+        ) {
+            put("id", str("Entry id. Required."))
+            put("closed", bool("False to bring it back. Default true."))
             required("id")
         })
         add(tool(
@@ -173,6 +212,57 @@ object AssistantTools {
             put("account", str("Bank account the EMI is debited from, if not a card EMI."))
             put("due_date", str("The day the EMI comes out, as YYYY-MM-DD."))
             required("name", "emi", "total_months")
+        })
+        add(tool("update_card", "Change a credit card's limit, balance, bill date or digits.") {
+            put("name", str("Current card name. Required."))
+            put("new_name", str("New name."))
+            put("limit", num("New credit limit."))
+            put("balance", num("New outstanding balance."))
+            put("min_due", num("New minimum due."))
+            put("due_date", str("Bill date as YYYY-MM-DD."))
+            put("last_digits", str("Last 3-4 digits, for matching card spends."))
+            put("paid", bool("True once the bill has been settled."))
+            required("name")
+        })
+        add(tool("update_loan", "Change a loan's EMI, months left, due date or where it is paid from.") {
+            put("name", str("Current loan name. Required."))
+            put("emi", num("New monthly EMI."))
+            put("remaining_months", int("Months still to pay."))
+            put("due_date", str("EMI date as YYYY-MM-DD."))
+            put("account", str("Bank account it is debited from."))
+            put("card", str("Card it is billed to instead, for a card EMI."))
+            required("name")
+        })
+        add(tool(
+            "delete_account",
+            "Remove a bank account. Its transactions move to another account " +
+                "rather than disappearing. The user confirms it."
+        ) {
+            put("name", str("Account name. Required."))
+            required("name")
+        })
+        add(tool("delete_card", "Remove a credit card. The user confirms it.") {
+            put("name", str("Card name. Required."))
+            required("name")
+        })
+        add(tool("delete_loan", "Remove a loan. The user confirms it.") {
+            put("name", str("Loan name. Required."))
+            required("name")
+        })
+        add(tool("set_budget_rollover", "Carry each budget's leftover into the next month.") {
+            put("on", bool("True to carry it over. Required."))
+            required("on")
+        })
+        add(tool(
+            "set_payee_category",
+            "Remember which category a payee belongs to, so every future payment " +
+                "from them is filed there and the unsorted ones already recorded " +
+                "are moved. Use when the user says something like 'Eastern Power " +
+                "is electricity'."
+        ) {
+            put("payee", str("The payee's name as it appears on transactions. Required."))
+            put("category", str("The category to file it under. Required."))
+            required("payee", "category")
         })
         add(tool(
             "set_salary_date",
@@ -252,6 +342,12 @@ object AssistantTools {
         - Personal is the default. Only mark something joint when the user
           actually says it is shared, household, ours or both of you. Never infer
           it from whichever side happens to be on screen.
+        - For any question about totals, trends or averages call summarise_spending;
+          it returns figures the app has already worked out. Do not add up rows
+          from list_transactions yourself.
+        - A payee is not a category. "Eastern Power" is a payee whose category is
+          Utilities. If a payment is Uncategorised, suggest a fitting category and
+          use set_payee_category, which settles that payee for good.
         - Today's date is $today. When a bill has a due date, pass it as
           due_date, and work the monthly share from the months left until then —
           ₹55,000 due on 29 January, decided in August, is ₹11,000 a month over

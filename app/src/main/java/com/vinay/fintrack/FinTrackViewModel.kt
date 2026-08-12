@@ -31,6 +31,8 @@ import com.vinay.fintrack.data.Store
 import com.vinay.fintrack.data.SyncStatus
 import com.vinay.fintrack.data.parseFirebaseConfig
 import com.vinay.fintrack.data.Txn
+import com.vinay.fintrack.data.UNCATEGORISED
+import com.vinay.fintrack.data.payeeKey
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.dayFirstOf
 import com.vinay.fintrack.data.isoFromDayFirst
@@ -1784,8 +1786,37 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    /**
+     * Files a transaction, and remembers the choice.
+     *
+     * Correcting one Eastern Power payment settles Eastern Power for good —
+     * every future message from that payee is filed there, and the ones already
+     * sitting uncategorised are moved with it. Filing the same biller month
+     * after month was the tedium this app existed to remove.
+     */
     fun setTxnCategory(category: String) {
-        editingTxn?.let { replaceTxn(it.copy(category = category)) }
+        val txn = editingTxn ?: return
+        replaceTxn(txn.copy(category = category))
+        learnPayeeCategory(txn.note, category)
+    }
+
+    /** Teaches the payee, then re-files anything unsorted from the same one. */
+    private fun learnPayeeCategory(payee: String, category: String) {
+        val key = payeeKey(payee)
+        if (key.isBlank() || category.isBlank() || category == UNCATEGORISED) return
+        val moved = persisted.txns.filter {
+            it.category == UNCATEGORISED && payeeKey(it.note) == key
+        }
+        update { s ->
+            s.copy(
+                payeeCategories = s.payeeCategories + (key to category),
+                txns = s.txns.map {
+                    if (it.category == UNCATEGORISED && payeeKey(it.note) == key)
+                        it.copy(category = category) else it
+                }
+            )
+        }
+        moved.forEach { sync.upsertTxn(it.copy(category = category)) }
     }
 
     /** The description. An imported one is named after whatever the bank
@@ -2205,6 +2236,139 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         store.saveUndo(undoStack)
         pushNow()
         return true
+    }
+
+    /**
+     * Totals worked out here rather than by the model.
+     *
+     * Asked "how much on groceries since April", the assistant used to list
+     * every transaction and add them up itself — a long column of numbers,
+     * added by a language model, which is the least reliable thing it does and
+     * the dearest way to ask. These figures cannot be miscounted.
+     */
+    fun spendingSummary(months: Int, category: String?): String = buildString {
+        val ids = scopedAccounts.map { it.id }.toSet()
+        val cardIds = scopedCards.map { it.id }.toSet()
+        val totals = LinkedHashMap<String, Double>()
+        appendLine("Spending on the $bucketLabel side, most recent month last:")
+        for (back in (months - 1) downTo 0) {
+            val period = Ledger.cycleBefore(cycle(), back)
+            val byCat = Ledger.spendByCategory(persisted.txns, period, ids, cardIds)
+                .filterKeys { category.isNullOrBlank() || it.equals(category, true) }
+            val month = byCat.values.sum()
+            byCat.forEach { (c, v) -> totals[c] = (totals[c] ?: 0.0) + v }
+            appendLine("  $period total ${inr(month)}" +
+                if (byCat.isEmpty()) " — nothing recorded"
+                else ": " + byCat.entries.sortedByDescending { it.value }
+                    .joinToString(", ") { "${it.key} ${inr(it.value)}" })
+        }
+        if (totals.isNotEmpty()) {
+            val all = totals.values.sum()
+            appendLine("Over $months months: ${inr(all)} total, " +
+                "${inr(Ledger.paise(all / months))} a month on average.")
+            appendLine("By category: " + totals.entries.sortedByDescending { it.value }
+                .joinToString(", ") { "${it.key} ${inr(it.value)}" })
+        }
+    }
+
+    /** What is coming up, from the same dates the daily reminder reads. */
+    fun dueSoonText(days: Int): String = buildString {
+        val now = today()
+        appendLine("Due in the next $days days:")
+        var any = false
+        visibleEntries.filter { !it.closed && it.nextDue.isNotEmpty() }.forEach { e ->
+            val left = Ledger.daysBetween(now, e.nextDue)
+            if (left < 0 || left > days) return@forEach
+            any = true
+            append("  [${e.id}] ${e.note.ifEmpty { e.category }} ${inr(e.amount)} on " +
+                "${prettyDate(e.nextDue)} (in $left days)")
+            if (e.isSetAside) append(" — ${inr(setAsidePot(e))} saved so far")
+            if (isConfirmed(e.id)) append(" — already done this cycle")
+            appendLine()
+        }
+        visibleLoans.filter { it.remainingMonths > 0 && it.nextDue.isNotEmpty() }.forEach { l ->
+            val left = Ledger.daysBetween(now, l.nextDue)
+            if (left < 0 || left > days) return@forEach
+            any = true
+            appendLine("  [${l.id}] ${l.name} EMI ${inr(l.monthlyEmi)} on " +
+                "${prettyDate(l.nextDue)} (in $left days)" +
+                if (isLoanConfirmed(l.id)) " — already paid" else "")
+        }
+        visibleCards.filter { !it.paid && it.balance > 0 && it.nextDue.isNotEmpty() }.forEach { c ->
+            val left = Ledger.daysBetween(now, c.nextDue)
+            if (left < 0 || left > days) return@forEach
+            any = true
+            appendLine("  ${c.name} bill ${inr(c.balance)} on ${prettyDate(c.nextDue)} " +
+                "(in $left days)")
+        }
+        if (!any) appendLine("  Nothing.")
+    }
+
+    /** Teaches a payee's category from the chat, and reports how many moved. */
+    fun rememberPayeeCategory(payee: String, category: String): Int {
+        val key = payeeKey(payee)
+        if (key.isBlank() || category.isBlank()) return 0
+        val moved = persisted.txns.filter {
+            it.category == UNCATEGORISED && payeeKey(it.note) == key
+        }
+        learnPayeeCategory(payee, category)
+        return moved.size
+    }
+
+    fun cardNamed(name: String): Card? =
+        visibleCards.firstOrNull { it.name.equals(name, true) }
+            ?: visibleCards.firstOrNull { name.isNotBlank() && it.name.contains(name, true) }
+
+    fun loanNamed(name: String): Loan? =
+        visibleLoans.firstOrNull { it.name.equals(name, true) }
+            ?: visibleLoans.firstOrNull { name.isNotBlank() && it.name.contains(name, true) }
+
+    fun updateCardDirect(
+        id: String,
+        newName: String?,
+        limit: Double?,
+        balance: Double?,
+        minDue: Double?,
+        dueDate: String?,
+        tail: String?,
+        paid: Boolean?
+    ): Card? {
+        val c = cards.firstOrNull { it.id == id } ?: return null
+        val updated = c.copy(
+            name = newName ?: c.name,
+            limit = limit ?: c.limit,
+            balance = balance ?: c.balance,
+            minDue = minDue ?: c.minDue,
+            dueDate = dueDate ?: c.dueDate,
+            numberTail = tail ?: c.numberTail,
+            paid = paid ?: c.paid
+        )
+        update { s -> s.copy(cards = s.cards.map { if (it.id == id) updated else it }) }
+        return updated
+    }
+
+    fun updateLoanDirect(
+        id: String,
+        emi: Double?,
+        remaining: Int?,
+        dueDate: String?,
+        accountName: String?,
+        cardName: String?
+    ): Loan? {
+        val l = loans.firstOrNull { it.id == id } ?: return null
+        val card = cardName?.takeIf { it.isNotBlank() }?.let { cardNamed(it) }
+        val account = accountName?.takeIf { it.isNotBlank() }?.let { accountNamed(it) }
+        val updated = l.copy(
+            monthlyEmi = emi ?: l.monthlyEmi,
+            remainingMonths = (remaining ?: l.remainingMonths).coerceIn(0, l.totalMonths),
+            dueDate = dueDate ?: l.dueDate,
+            // Naming one clears the other: a loan charged to an account and a
+            // card at once would be paid twice.
+            cardId = card?.id ?: if (account != null) "" else l.cardId,
+            accountId = account?.id ?: if (card != null) "" else l.accountId
+        )
+        update { s -> s.copy(loans = s.loans.map { if (it.id == id) updated else it }) }
+        return updated
     }
 
     fun accountNamed(name: String): Account? =

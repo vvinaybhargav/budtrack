@@ -151,7 +151,7 @@ class SmsImporter(private val context: Context) {
                     else -> "EXPENSE"
                 },
                 amount = p.amount,
-                category = categoryFor(p.party, state.categories),
+                category = categoryFor(state, p.party),
                 fromAccountId = if (p.isCredit || card != null) "" else accountId,
                 toAccountId = if (p.isCredit && card == null) accountId else "",
                 cardId = card.orEmpty(),
@@ -300,8 +300,8 @@ class SmsImporter(private val context: Context) {
         }
     }
 
-    private fun categoryFor(party: String, categories: List<String>): String =
-        categoryForParty(party, categories)
+    private fun categoryFor(state: PersistedState, party: String): String =
+        categoryForParty(party, state.categories, state.payeeCategories)
 
     private companion object {
         const val TAG = "SmsImporter"

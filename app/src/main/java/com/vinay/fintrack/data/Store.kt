@@ -66,7 +66,14 @@ data class PersistedState(
      * it quotes balances and payees that have no business in a shared
      * document. Kept so closing the app does not wipe it.
      */
-    val chats: Map<String, List<ChatMessage>> = emptyMap()
+    val chats: Map<String, List<ChatMessage>> = emptyMap(),
+    /**
+     * What each payee was filed under, learned from your corrections.
+     *
+     * Synced, because it is knowledge about the household rather than about
+     * this phone: teaching it once should settle it on both.
+     */
+    val payeeCategories: Map<String, String> = emptyMap()
 )
 
 class Store(context: Context) {

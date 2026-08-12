@@ -408,11 +408,19 @@ object Ledger {
  */
 const val UNCATEGORISED = "Uncategorised"
 
-fun categoryForParty(party: String, categories: List<String>): String {
+fun categoryForParty(
+    party: String,
+    categories: List<String>,
+    learned: Map<String, String> = emptyMap()
+): String {
     val p = party.lowercase().trim()
     // No payee to go on. Left plainly unsorted rather than named after whatever
     // string happened to be handy — the bank's shortcode became "Ad-icicit-s".
     if (p.isEmpty()) return UNCATEGORISED
+
+    // What you filed this payee under last time beats every rule below. Filing
+    // Eastern Power under Utilities once should settle it forever.
+    learned[payeeKey(party)]?.let { if (it in categories) return it }
 
     // An existing category named in the payee wins outright.
     categories.firstOrNull { it.isNotBlank() && p.contains(it.lowercase()) }?.let { return it }
@@ -420,7 +428,11 @@ fun categoryForParty(party: String, categories: List<String>): String {
     val known = mapOf(
         "Eating Out" to listOf("swiggy", "zomato", "restaurant", "cafe", "eatclub", "dominos", "kfc"),
         "Groceries" to listOf("bigbasket", "blinkit", "zepto", "grocer", "dmart", "mart", "instamart"),
-        "Utilities" to listOf("electricity", "gas", "water", "broadband", "airtel", "jio", "vodafone", "bescom"),
+        "Utilities" to listOf(
+            "electricity", "power", "energy", "discom", "gas", "water", "broadband",
+            "airtel", "jio", "vodafone", "bescom", "tsspdcl", "tgspdcl", "apspdcl",
+            "mseb", "torrent power", "adani electricity", "tata power"
+        ),
         "Fuel" to listOf("petrol", "diesel", "fuel", "hpcl", "bpcl", "indianoil", "shell"),
         "Travel" to listOf("uber", "ola", "rapido", "irctc", "indigo", "makemytrip", "redbus"),
         "Shopping" to listOf("amazon", "flipkart", "myntra", "ajio", "meesho", "nykaa"),
@@ -431,25 +443,19 @@ fun categoryForParty(party: String, categories: List<String>): String {
         if (needles.any { p.contains(it) }) return name
     }
 
-    // Nothing fits: name it after the payee rather than burying it in Other —
-    // unless the "payee" is really a bank shortcode, in which case there is
-    // nothing worth naming.
-    val named = titleCase(party)
-    return if (looksLikeSenderId(named)) UNCATEGORISED else named
+    // Nothing fits. Left uncategorised for you to file once.
+    //
+    // It used to invent a category from the payee, which produced "Eastern
+    // Power D" — a payee is not a category, and a list of them is not a
+    // budget. One correction teaches it instead, through [learned] above.
+    return UNCATEGORISED
 }
 
-/** "AD-ICICIT-S", "VM-HDFCBK" and the like. */
-private fun looksLikeSenderId(name: String): Boolean =
-    Regex("""^[A-Za-z]{2}[- ][A-Za-z]{4,}""").containsMatchIn(name) ||
-        name.length < 3
+/** How a payee is looked up: case and punctuation vary between messages from
+ *  the same biller, so they must not make it a different payee. */
+fun payeeKey(party: String): String =
+    party.lowercase().filter { it.isLetterOrDigit() || it == ' ' }.trim().take(24)
 
-/** "SWIGGY" and "swiggy limited" both become "Swiggy Limited". */
-private fun titleCase(raw: String): String =
-    raw.trim()
-        .split(Regex("\\s+"))
-        .filter { it.isNotBlank() }
-        .joinToString(" ") { word ->
-            word.lowercase().replaceFirstChar { it.uppercase() }
-        }
-        .take(24)
-        .ifBlank { "Uncategorised" }
+// looksLikeSenderId and titleCase lived here, to turn a payee into a category
+// name. Nothing does that any more — a payee is not a category — so they went
+// with it.

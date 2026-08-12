@@ -925,3 +925,60 @@ class PaiseTest {
         assertEquals(55_000.0, Ledger.paise(55_000.0), 0.0)
     }
 }
+
+/**
+ * Filing a payee. A payee is not a category — "Eastern Power" is who you paid,
+ * Utilities is what it was for — and correcting one should settle it for good.
+ */
+class PayeeCategoryTest {
+
+    private val categories = listOf("Groceries", "Utilities", "Eating Out", "Shopping")
+
+    /** The whole complaint: it used to invent "Eastern Power D" as a category,
+     *  so the list filled with billers instead of kinds of spending. */
+    @Test
+    fun `an unknown payee is left unsorted, not made into a category`() {
+        assertEquals(UNCATEGORISED, categoryForParty("Eastern Power D", categories))
+    }
+
+    /** Once you have filed it, every later payment follows. */
+    @Test
+    fun `what you filed it under last time wins`() {
+        val learned = mapOf(payeeKey("Eastern Power D") to "Utilities")
+        assertEquals("Utilities", categoryForParty("Eastern Power D", categories, learned))
+    }
+
+    /** The same biller writes its name differently between messages. */
+    @Test
+    fun `case and punctuation do not make it a different payee`() {
+        assertEquals(payeeKey("EASTERN POWER D."), payeeKey("eastern power d"))
+        val learned = mapOf(payeeKey("eastern power d") to "Utilities")
+        assertEquals("Utilities", categoryForParty("EASTERN POWER D.", categories, learned))
+    }
+
+    /** A category since deleted must not come back from the learned map. */
+    @Test
+    fun `a remembered category that no longer exists is ignored`() {
+        val learned = mapOf(payeeKey("Eastern Power") to "Old Category")
+        assertEquals(UNCATEGORISED, categoryForParty("Eastern Power", categories, learned))
+    }
+
+    /** Electricity boards are recognised without being taught. */
+    @Test
+    fun `power companies are utilities out of the box`() {
+        assertEquals("Utilities", categoryForParty("TSSPDCL", categories))
+        assertEquals("Utilities", categoryForParty("Tata Power", categories))
+    }
+
+    @Test
+    fun `known payees still map to their category`() {
+        assertEquals("Eating Out", categoryForParty("swiggy@ybl", categories))
+        assertEquals("Groceries", categoryForParty("BigBasket", categories))
+    }
+
+    /** A bank shortcode is nobody, and never a category. */
+    @Test
+    fun `a sender id is left unsorted`() {
+        assertEquals(UNCATEGORISED, categoryForParty("", categories))
+    }
+}
