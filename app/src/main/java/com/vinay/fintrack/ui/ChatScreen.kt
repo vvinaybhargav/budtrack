@@ -115,6 +115,19 @@ fun ChatScreen(vm: FinTrackViewModel) {
                 }
             }
 
+            // The question survives a failure, so it can go again as it was.
+            if (vm.failedMessage.isNotBlank() && !vm.chatBusy) {
+                item {
+                    Row(
+                        Modifier.padding(top = Space.s2),
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        PrimaryButton("Try again", vm::retryChat)
+                        SecondaryButton("Let it go", vm::dismissRetry)
+                    }
+                }
+            }
+
             // Only after something was actually changed.
             if (vm.canUndoAssistant && !vm.chatBusy) {
                 item {

@@ -40,6 +40,7 @@ class Assistant(private val vm: FinTrackViewModel) {
         val client = OpenAi(apiKey)
         var messages = history
         var changed = false
+        var toolCalls = 0
 
         repeat(MAX_ROUNDS) {
             val reply = client.chat(messages, AssistantTools.schema())
@@ -53,6 +54,8 @@ class Assistant(private val vm: FinTrackViewModel) {
             // The assistant's request has to be in the history before its results.
             var next = messages + reply
             for (call in calls) {
+                if (toolCalls >= MAX_TOOL_CALLS) break
+                toolCalls++
                 val obj = call as? JsonObject ?: continue
                 val fn = obj["function"] as? JsonObject
                 val name = fn?.get("name")?.jsonPrimitive?.contentOrNullSafe().orEmpty()
@@ -502,7 +505,23 @@ class Assistant(private val vm: FinTrackViewModel) {
 
     private companion object {
         const val TAG = "Assistant"
-        const val MAX_ROUNDS = 6
+        /**
+         * How many times the model may go round calling tools before it has to
+         * answer.
+         *
+         * Six was tight once there were nearly thirty tools: "what did I spend
+         * on groceries, and set a budget for it" is four rounds before a word is
+         * written, and hitting the ceiling produces a reply that helps nobody.
+         */
+        const val MAX_ROUNDS = 12
+
+        /**
+         * And a ceiling on the work itself, since usage is not shown anywhere.
+         * Rounds alone do not bound cost — a model can ask for a dozen tools in
+         * one round — and a loop that quietly spends is worse than one that
+         * stops.
+         */
+        const val MAX_TOOL_CALLS = 24
 
         /** Calls that change data, so the chat can offer to undo. */
         val WRITERS = setOf(

@@ -2126,15 +2126,36 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * Sends a message and applies whatever the assistant decides to do. Runs off
      * the main thread; the tools hop back onto it themselves.
      */
-    fun sendChat() {
-        val text = chatInput.trim()
+    fun sendChat() = send(chatInput.trim(), fromRetry = false)
+
+    /**
+     * The question that failed, so it can be asked again without retyping it.
+     *
+     * A dropped connection used to lose the message entirely: it was already
+     * off the input box and the only copy left was on screen, unusable.
+     */
+    var failedMessage by mutableStateOf(""); private set
+
+    fun retryChat() {
+        val text = failedMessage
+        if (text.isBlank() || chatBusy) return
+        failedMessage = ""
+        send(text, fromRetry = true)
+    }
+
+    fun dismissRetry() { failedMessage = "" }
+
+    private fun send(text: String, fromRetry: Boolean) {
         if (text.isEmpty() || chatBusy) return
         if (!chatReady) {
             appendChat(ChatMessage("assistant", "Add an OpenAI key in Settings first."))
             return
         }
+        failedMessage = ""
         chatInput = ""
-        appendChat(ChatMessage("user", text))
+        // On a retry the question is already in the conversation; adding it
+        // again would show it twice and send it twice.
+        if (!fromRetry) appendChat(ChatMessage("user", text))
         chatBusy = true
         chatStatus = "Thinking…"
         markUndoPoint()
@@ -2185,6 +2206,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     .onFailure { e ->
                         dropUndoPoint()
+                        // Kept so Try again can resend it.
+                        failedMessage = text
                         appendChat(
                             ChatMessage(
                                 "assistant",

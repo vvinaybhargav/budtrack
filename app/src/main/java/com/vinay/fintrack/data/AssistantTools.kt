@@ -24,67 +24,58 @@ object AssistantTools {
         // ── reading ────────────────────────────────────────────────────
         add(tool(
             "get_overview",
-            "Balances, this month's income, expenses, savings and investments, " +
-                "the budgets and how much of each is used, and which profile and " +
-                "side (personal or joint) is being viewed. Call this first for any " +
-                "question about totals or 'how am I doing'."
+            "Balances, this month's figures, budgets used, and which side is shown."
         ))
         add(tool(
             "list_accounts",
-            "Every account and card the current profile can see, with balances, " +
-                "owners and the last digits used to match bank messages."
+            "Accounts and cards with balances, owners and matching digits."
         ))
         add(tool(
             "list_commitments",
-            "Recurring entries: monthly commitments, set-asides with their period, " +
-                "loans with EMI and months remaining."
+            "Commitments, set-asides and loans, with periods and months left."
         ))
         add(tool(
             "summarise_spending",
-            "Totals already worked out, per category and per month. USE THIS for " +
-                "any question about how much was spent, trends, comparisons or " +
-                "averages — never add up list_transactions yourself, because the " +
-                "arithmetic here is done by the app and cannot be miscounted."
+            "Totals per category and month, worked out by the app. Use for any " +
+                "spending question; never add up rows yourself."
         ) {
             put("months", int("How many months back, 1 to 12. Default 3."))
             put("category", str("Restrict to one category. Omit for all."))
         })
         add(tool(
             "due_soon",
-            "Everything falling due in the next few weeks — bills, EMIs, card " +
-                "statements and set-asides — with what is already saved towards " +
-                "each. Use for 'what is coming up' or 'what do I owe this week'."
+            "What falls due soon — bills, EMIs, card statements, set-asides — and " +
+                "what is saved towards each."
         ) {
             put("days", int("How far ahead to look, 1 to 60. Default 14."))
         })
         add(tool(
             "list_transactions",
-            "Recorded transactions, newest first. Use for anything about actual " +
-                "spending, history, or finding a payment to edit or delete."
+            "Individual transactions, newest first."
         ) {
             put("month", str("Restrict to a month as yyyy-MM. Omit for all."))
             put("category", str("Restrict to one category."))
             put("search", str("Match payee, note or reference."))
-            put("from", str("Earliest date as YYYY-MM-DD. Use with to for a range like last week."))
-            put("to", str("Latest date as YYYY-MM-DD."))
+            put("from", str("Earliest date, YYYY-MM-DD."))
+            put("to", str("Latest date, YYYY-MM-DD."))
             put("limit", int("How many to return. Default 30."))
         })
 
         // ── transactions ───────────────────────────────────────────────
         add(tool(
             "add_transaction",
-            "Record money that has already moved. Use for 'I paid 500 for groceries'."
+            "Record money that has already moved."
         ) {
             put("amount", num("Rupees. Required."))
             put("category", str("One of the existing categories."))
             put("direction", enum("Which way the money went.", listOf("out", "in")))
-            put("account", str("Account name. Defaults to the side being viewed."))
+            put("account", str("Account name."))
             put("note", str("Payee or description."))
-            put("date", str("dd-MM-yyyy. Defaults to today."))
+            put("date", str("dd-MM-yyyy. Default today."))
             required("amount")
         })
         add(tool("edit_transaction", "Change a recorded transaction.") {
-            put("id", str("Transaction id from list_transactions. Required."))
+            put("id", str("Transaction id. Required."))
             put("amount", num("New amount in rupees."))
             put("category", str("New category."))
             put("account", str("New account name."))
@@ -94,18 +85,17 @@ object AssistantTools {
         })
         add(tool(
             "delete_transaction",
-            "Remove a recorded transaction. Confirm with the user first — say what " +
-                "it is and wait for a clear yes."
+            "Remove a transaction. The user confirms it."
         ) {
-            put("id", str("Transaction id from list_transactions. Required."))
+            put("id", str("Transaction id. Required."))
             required("id")
         })
 
         // ── commitments ────────────────────────────────────────────────
         add(tool(
             "add_commitment",
-            "Add a recurring entry — a monthly cost, or a set-aside paid every few " +
-                "months. This is a plan, not a payment; it is confirmed each month."
+            "A monthly cost, or a set-aside paid every few months. A plan, not a " +
+                "payment: it is confirmed each month."
         ) {
             put("amount", num(
                 "The whole amount charged each time the bill comes, NOT the monthly " +
@@ -137,7 +127,7 @@ object AssistantTools {
             required("amount", "every_months")
         })
         add(tool("edit_commitment", "Change a recurring entry.") {
-            put("id", str("Entry id from list_commitments. Required."))
+            put("id", str("Entry id. Required."))
             put("amount", num("New amount."))
             put("category", str("New category."))
             put("every_months", int("New period in months, 1 to 12."))
@@ -146,23 +136,21 @@ object AssistantTools {
             required("id")
         })
         add(tool("delete_commitment", "Remove a recurring entry. The user confirms it.") {
-            put("id", str("Entry id from list_commitments. Required."))
+            put("id", str("Entry id. Required."))
             required("id")
         })
         add(tool(
             "pay_set_aside",
-            "Pay the bill a set-aside was saving for, out of what has been put by. " +
-                "The due date then moves on a period, or the entry closes if it " +
-                "does not repeat."
+            "Pay the bill a set-aside saved for, out of the pot. The due date then " +
+                "moves on, or the entry closes."
         ) {
-            put("id", str("Entry id from list_commitments. Required."))
-            put("account", str("Account to pay from. Defaults to where the money was saved."))
+            put("id", str("Entry id. Required."))
+            put("account", str("Account to pay from. Default: where it was saved."))
             required("id")
         })
         add(tool(
             "close_commitment",
-            "Mark a commitment finished so it leaves Home and the monthly plan, " +
-                "keeping its history. Use for a bill that has stopped."
+            "Mark a commitment finished. It keeps its history but leaves the plan."
         ) {
             put("id", str("Entry id. Required."))
             put("closed", bool("False to bring it back. Default true."))
@@ -170,8 +158,7 @@ object AssistantTools {
         })
         add(tool(
             "confirm_commitment",
-            "Mark this month's payment of a commitment or loan as made, which moves " +
-                "the money. A set-aside transfers rather than spends."
+            "Mark this cycle's payment as made, which moves the money."
         ) {
             put("id", str("Entry or loan id. Required."))
             put("account", str("Account it came from. Defaults to the entry's own."))
@@ -198,8 +185,7 @@ object AssistantTools {
         })
         add(tool(
             "add_loan",
-            "Add a loan with an EMI — a bank loan, or a purchase split into " +
-                "instalments on a credit card."
+            "A bank loan, or a purchase split into instalments on a card."
         ) {
             put("name", str("Loan name. Required."))
             put("emi", num("Monthly EMI. Required."))
@@ -235,8 +221,7 @@ object AssistantTools {
         })
         add(tool(
             "delete_account",
-            "Remove a bank account. Its transactions move to another account " +
-                "rather than disappearing. The user confirms it."
+            "Remove an account. Its transactions move elsewhere. The user confirms."
         ) {
             put("name", str("Account name. Required."))
             required("name")
@@ -266,8 +251,7 @@ object AssistantTools {
         })
         add(tool(
             "set_salary_date",
-            "Set the day of the month a profile is paid. Everything confirmed — " +
-                "recurring bills, EMIs, set-asides — becomes payable again on it."
+            "The day a profile is paid. Confirmations reset on it."
         ) {
             put("day", int("Day of the month, 1 to 28. Required."))
             put("profile", str("Whose salary date. Defaults to the current profile."))
@@ -305,57 +289,63 @@ object AssistantTools {
     }
 
     /**
-     * Told to the model once. Deliberately firm about two things: never guess a
-     * number, and confirm before destroying anything.
+     * The instructions, then the figures.
+     *
+     * Order matters for cost: OpenAI discounts a repeated prompt prefix, but
+     * only where it is identical byte for byte. Everything fixed is therefore
+     * first, and the profile, the date and the snapshot — which change every
+     * message — go last, so the long unchanging part stays cacheable instead of
+     * being invalidated by the first balance that moves.
      */
-    fun systemPrompt(profile: String, side: String, today: String, snapshot: String): String = """
-        You are the assistant inside FinTrack, a household finance app used by
-        $profile. The screen is currently showing the $side side. Today is $today.
+    fun systemPrompt(profile: String, side: String, today: String, snapshot: String): String =
+        STATIC_PROMPT + """
 
-        Below is the app's current data, accurate as of this moment. Answer from
-        it directly whenever it contains what is asked — do not call a tool to
-        fetch something already here, as that only makes the reply slower.
+        NOW
+        You are talking to $profile. The screen shows the $side side. Today is $today.
 
-        Call list_transactions when asked about individual payments or history,
-        which is not included below, and call the writing tools to change
-        anything. Never state a figure that is neither below nor returned by a
-        tool, and never invent an amount.
-
-        CURRENT DATA
+        CURRENT DATA — accurate as of this moment. Answer from it directly when it
+        holds what was asked; calling a tool for something already here only makes
+        the reply slower. Never state a figure that is neither here nor returned by
+        a tool.
         $snapshot
+        """.trimIndent()
+
+    private val STATIC_PROMPT = """
+        You are the assistant inside FinTrack, a household finance app for two
+        people. You can read and change everything in it through your tools.
 
         How the app is arranged, so your answers match what the user sees:
         - A commitment is a plan that repeats. It only moves money when confirmed.
         - A transaction is money that actually moved. Balances come from these.
-        - A set-aside is paid every few months; each month you put by a share of
-          it, and confirming transfers that to a savings account rather than
-          spending it.
-        - A recurring cost and a set-aside are not the same thing. Rent charged
-          every month is recurring: every_months 1, and the amount leaves the
-          account each month. One large bill with a due date — insurance, school
-          fees, road tax — is a set-aside: give the whole bill as the amount and
-          every_months for how often it comes round, 12 for a yearly one. Then
-          say the monthly share back, so a wrong period is obvious: "₹55,000 a
-          year, ₹4,583 a month".
-        - Personal is this profile's own; Joint is shared. A transaction takes its
-          side from the account it moved through.
-        - Personal is the default. Only mark something joint when the user
-          actually says it is shared, household, ours or both of you. Never infer
-          it from whichever side happens to be on screen.
-        - For any question about totals, trends or averages call summarise_spending;
-          it returns figures the app has already worked out. Do not add up rows
-          from list_transactions yourself.
+        - A set-aside is one large bill you save up for: each month you put by a
+          share, and confirming transfers that to savings rather than spending it.
+          When it falls due, pay_set_aside pays it out of what was saved.
+        - Recurring and set-aside are not the same. Rent is recurring: every_months
+          1, and the full amount leaves the account monthly. One large bill with a
+          due date — insurance, school fees, road tax — is a set-aside: give the
+          whole bill as the amount, and every_months for how often it comes round.
+        - With a due date, the monthly share comes from the months left until then,
+          not from every_months: ₹55,000 due 29 January, decided in August, is
+          ₹11,000 a month over five months, not a twelfth. Say both figures back,
+          so a period read wrongly shows up as a number rather than a fluent
+          sentence.
+        - Personal is the user's own; Joint is shared. Personal is the default —
+          only mark something joint when they say it is shared, household, ours or
+          both of you. Never infer it from whichever side is on screen.
         - A payee is not a category. "Eastern Power" is a payee whose category is
-          Utilities. If a payment is Uncategorised, suggest a fitting category and
-          use set_payee_category, which settles that payee for good.
-        - Today's date is $today. When a bill has a due date, pass it as
-          due_date, and work the monthly share from the months left until then —
-          ₹55,000 due on 29 January, decided in August, is ₹11,000 a month over
-          five months, not a twelfth of it.
+          Utilities. When something is Uncategorised, suggest a fitting category
+          and use set_payee_category, which settles that payee for good.
 
-        Before deleting anything, say exactly what will go and wait for a clear
-        yes. For edits, say what you changed. Keep replies short and plain —
-        this is a phone screen. Amounts in rupees, like ₹4,500.
+        Choosing a tool:
+        - Totals, trends, averages, comparisons: summarise_spending. It returns
+          figures the app worked out. Never add up list_transactions yourself.
+        - What is coming up, what is owed this week: due_soon.
+        - Individual payments and history: list_transactions.
+
+        Deleting is confirmed by the user, not by you: the tool describes what
+        would go and they tap a button. Say what you changed after an edit. Keep
+        replies short and plain — this is a phone screen. Amounts in rupees, like
+        ₹4,500.
     """.trimIndent()
 
     // ── schema helpers ─────────────────────────────────────────────────
