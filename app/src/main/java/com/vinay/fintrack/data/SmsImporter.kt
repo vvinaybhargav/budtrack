@@ -113,8 +113,10 @@ class SmsImporter(private val context: Context) {
             }
             // A card spend adds to what the card owes; it doesn't leave any
             // bank account until the bill is paid.
-            val card = (matchCardByTail(state.cards, p.accountTail) as? AccountMatch.One)?.accountId
-            val accountId = if (card != null) "" else accountFor(state, p.accountTail, log)
+            val card = ((matchCardByTail(state.cards, p.accountTail) as? AccountMatch.One)
+                ?: (matchCardByBank(state.cards, p.body) as? AccountMatch.One))?.accountId
+            val accountId =
+                if (card != null) "" else accountFor(state, p.accountTail, p.body, log)
             txns += Txn(
                 id = newId("t"),
                 date = p.date,
@@ -183,7 +185,12 @@ class SmsImporter(private val context: Context) {
      * personal payment on the joint account is exactly the mistake that makes
      * the buckets untrustworthy.
      */
-    private fun accountFor(state: PersistedState, tail: String, log: MutableList<String>): String {
+    private fun accountFor(
+        state: PersistedState,
+        tail: String,
+        body: String,
+        log: MutableList<String>
+    ): String {
         // A joint account first. The default is household-wide, so if one person
         // sets their own account as the default the other's unmatched messages
         // would land in it — and "first account in the list" is worse still.
@@ -191,10 +198,23 @@ class SmsImporter(private val context: Context) {
             ?: state.accounts.firstOrNull { it.person == state.lastProfile }?.id
             ?: state.accounts.firstOrNull { it.name == state.defaultAccount }?.id
             ?: state.accounts.firstOrNull()?.id.orEmpty()
-        return when (val m = matchAccountByTail(state.accounts, tail)) {
-            is AccountMatch.One -> m.accountId
+
+        // Digits are the reliable answer, so they go first.
+        when (val byTail = matchAccountByTail(state.accounts, tail)) {
+            is AccountMatch.One -> return byTail.accountId
             is AccountMatch.Ambiguous -> {
-                log += "…$tail matches ${m.count} accounts — add a digit to tell them apart"
+                log += "…$tail matches ${byTail.count} accounts — add a digit to tell them apart"
+                return fallback
+            }
+            AccountMatch.None -> Unit
+        }
+
+        // Then the bank's own name, so an account works before its digits are
+        // recorded rather than everything piling onto the shared one.
+        return when (val byBank = matchAccountByBank(state.accounts, body)) {
+            is AccountMatch.One -> byBank.accountId
+            is AccountMatch.Ambiguous -> {
+                log += "two accounts at that bank — set their last digits"
                 fallback
             }
             AccountMatch.None -> {

@@ -222,6 +222,54 @@ fun matchAccountByTail(accounts: List<Account>, tail: String): AccountMatch =
 fun matchCardByTail(cards: List<Card>, tail: String): AccountMatch =
     matchByTail(cards.map { it.id to it.numberTail }, tail)
 
+/**
+ * Words that name no bank in particular, so they must never be what an account
+ * is recognised by. Two accounts both called "… Savings" would otherwise match
+ * every message mentioning savings.
+ */
+private val GENERIC_ACCOUNT_WORDS = setOf(
+    "bank", "savings", "saving", "account", "acct", "current", "joint", "personal",
+    "salary", "primary", "main", "my", "our", "the", "card", "credit", "debit"
+)
+
+/**
+ * Finds the account a message belongs to by the bank in its name — "ICICI Bank
+ * Acct XX391" against an account called "ICICI Joint".
+ *
+ * A fallback for when digits haven't been recorded yet, so a newly added
+ * account starts working straight away rather than everything landing on the
+ * shared one. Two accounts at the same bank are reported as ambiguous rather
+ * than guessed: that pair is exactly the one worth not confusing.
+ */
+fun matchAccountByBank(accounts: List<Account>, body: String): AccountMatch {
+    val text = body.lowercase()
+    val hits = accounts.filter { account ->
+        account.name.lowercase()
+            .split(Regex("[^a-z0-9]+"))
+            .any { it.length >= 3 && it !in GENERIC_ACCOUNT_WORDS && text.contains(it) }
+    }
+    return when {
+        hits.size == 1 -> AccountMatch.One(hits.first().id)
+        hits.size > 1 -> AccountMatch.Ambiguous(hits.first().name, hits.size)
+        else -> AccountMatch.None
+    }
+}
+
+/** The same, for cards. */
+fun matchCardByBank(cards: List<Card>, body: String): AccountMatch {
+    val text = body.lowercase()
+    val hits = cards.filter { card ->
+        card.name.lowercase()
+            .split(Regex("[^a-z0-9]+"))
+            .any { it.length >= 3 && it !in GENERIC_ACCOUNT_WORDS && text.contains(it) }
+    }
+    return when {
+        hits.size == 1 -> AccountMatch.One(hits.first().id)
+        hits.size > 1 -> AccountMatch.Ambiguous(hits.first().name, hits.size)
+        else -> AccountMatch.None
+    }
+}
+
 private fun matchByTail(items: List<Pair<String, String>>, tail: String): AccountMatch {
     if (tail.isBlank()) return AccountMatch.None
     val withTails = items.filter { it.second.isNotBlank() }

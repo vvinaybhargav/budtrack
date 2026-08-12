@@ -22,6 +22,8 @@ import com.vinay.fintrack.data.Seed
 import com.vinay.fintrack.data.AccountMatch
 import com.vinay.fintrack.data.SmsImporter
 import com.vinay.fintrack.data.matchAccountByTail
+import com.vinay.fintrack.data.matchAccountByBank
+import com.vinay.fintrack.data.matchCardByBank
 import com.vinay.fintrack.data.matchCardByTail
 import com.vinay.fintrack.data.parseBankSms
 import com.vinay.fintrack.data.categoryForParty
@@ -238,16 +240,20 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             val body = persisted.smsBodies[t.id].orEmpty()
             if (body.isEmpty()) return@forEach
             val tail = parseBankSms(body)?.accountTail.orEmpty()
-            if (tail.isEmpty()) return@forEach
 
-            val card = matchCardByTail(cards, tail) as? AccountMatch.One
+            // Digits first, then the bank's name — the same order the importer
+            // uses, so re-checking agrees with what a fresh message would do.
+            val card = (matchCardByTail(cards, tail) as? AccountMatch.One)
+                ?: (matchCardByBank(cards, body) as? AccountMatch.One)
             if (card != null) {
                 if (t.cardId != card.accountId) {
                     moved += t.copy(cardId = card.accountId, fromAccountId = "", toAccountId = "")
                 }
                 return@forEach
             }
-            val account = matchAccountByTail(accounts, tail) as? AccountMatch.One ?: return@forEach
+            val account = (matchAccountByTail(accounts, tail) as? AccountMatch.One)
+                ?: (matchAccountByBank(accounts, body) as? AccountMatch.One)
+                ?: return@forEach
             val credit = t.kind == "INCOME"
             val current = if (credit) t.toAccountId else t.fromAccountId
             if (current == account.accountId) return@forEach

@@ -537,3 +537,54 @@ class RealMessageTest {
         assertEquals("swiggy@ybl", p.party)
     }
 }
+
+/** Recognising the bank by name, so a new account works before its digits are
+ *  recorded and messages stop piling onto the shared account. */
+class BankNameMatchTest {
+
+    private val iciciPersonal = Account("a1", "ICICI Vinay", "Me", "Me", 0.0)
+    private val sbiJoint = Account("a2", "SBI Joint", "Joint", "Joint", 0.0)
+    private val accounts = listOf(iciciPersonal, sbiJoint)
+
+    private val iciciMessage =
+        "ICICI Bank Acct XX391 debited for Rs 914.00 on 12-Aug-26; Eastern Power D credited."
+    private val sbiMessage =
+        "Rs.2,000.00 debited from SBI A/c XX8305 on 12-08-26. UPI Ref 998877665544"
+
+    @Test
+    fun `each message finds its own bank`() {
+        assertEquals(AccountMatch.One("a1"), matchAccountByBank(accounts, iciciMessage))
+        assertEquals(AccountMatch.One("a2"), matchAccountByBank(accounts, sbiMessage))
+    }
+
+    /** "Savings" and "Joint" name no bank, so they must not match on their own. */
+    @Test
+    fun `generic words in an account name match nothing`() {
+        val vague = listOf(
+            Account("a1", "Savings Account", "Me", "Me", 0.0),
+            Account("a2", "Joint Account", "Joint", "Joint", 0.0)
+        )
+        assertEquals(
+            AccountMatch.None,
+            matchAccountByBank(vague, "Rs.100 debited from your savings account")
+        )
+    }
+
+    /** Two at the same bank is the pair worth not guessing between. */
+    @Test
+    fun `two accounts at one bank are ambiguous, not a guess`() {
+        val both = listOf(
+            Account("a1", "ICICI Vinay", "Me", "Me", 0.0),
+            Account("a2", "ICICI Joint", "Joint", "Joint", 0.0)
+        )
+        assertTrue(matchAccountByBank(both, iciciMessage) is AccountMatch.Ambiguous)
+    }
+
+    @Test
+    fun `a bank nobody banks with matches nothing`() {
+        assertEquals(
+            AccountMatch.None,
+            matchAccountByBank(accounts, "Rs.500 debited from Kotak A/c XX7777")
+        )
+    }
+}
