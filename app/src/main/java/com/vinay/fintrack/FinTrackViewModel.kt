@@ -566,6 +566,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 },
                 loans = s.loans.map { if (it.person == old) it.copy(person = new) else it },
                 cards = s.cards.map { if (it.owner == old) it.copy(owner = new) else it },
+                // Keyed by name, so they have to move with it. Leaving the salary
+                // day behind was the costly one: the cycle silently fell back to
+                // the 1st, which changes when every commitment becomes payable
+                // again — a rename quietly rewriting the month.
+                salaryDays = s.salaryDays[old]?.let { s.salaryDays - old + (new to it) }
+                    ?: s.salaryDays,
+                chats = s.chats[old]?.let { s.chats - old + (new to it) } ?: s.chats,
                 lastProfile = if (s.lastProfile == old) new else s.lastProfile
             )
         }
@@ -582,7 +589,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             name == "Joint" -> profileMsg = "Joint is shared and can't be removed."
             persisted.profiles.size <= 1 -> profileMsg = "Keep at least one profile."
             else -> {
-                update { it.copy(profiles = it.profiles - name) }
+                update {
+                    it.copy(
+                        profiles = it.profiles - name,
+                        // Nothing left keyed to a profile that no longer exists.
+                        salaryDays = it.salaryDays - name,
+                        chats = it.chats - name
+                    )
+                }
                 profileMsg = "Removed $name. Their entries and accounts are untouched."
             }
         }
