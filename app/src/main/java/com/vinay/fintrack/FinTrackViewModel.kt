@@ -32,6 +32,7 @@ import com.vinay.fintrack.data.SyncStatus
 import com.vinay.fintrack.data.parseFirebaseConfig
 import com.vinay.fintrack.data.Txn
 import com.vinay.fintrack.data.inr
+import com.vinay.fintrack.data.dayFirstOf
 import com.vinay.fintrack.data.isoFromDayFirst
 import com.vinay.fintrack.data.millisOfDate
 import com.vinay.fintrack.data.newId
@@ -58,7 +59,9 @@ data class Draft(
     val note: String = "",
     val accountId: String = "",
     /** Months between payments, 1–12. Twelve is the old "annual". */
-    val periodMonths: Int = 1
+    val periodMonths: Int = 1,
+    /** When the bill is due, as the form takes it (dd-mm-yyyy). Optional. */
+    val dueText: String = ""
 ) {
     /**
      * Derived, never stored. As its own field it defaulted to JOINT and stayed
@@ -72,7 +75,11 @@ data class NewLoanDraft(
     val name: String = "", val person: String = "Me", val emiText: String = "",
     val totalMonthsText: String = "", val remainingMonthsText: String = "",
     /** Account the EMI is debited from — asked once here, never at confirm time. */
-    val accountId: String = ""
+    val accountId: String = "",
+    /** Set instead of [accountId] when the EMI is billed to a credit card. */
+    val cardId: String = "",
+    /** The day the EMI comes out, as the form takes it (dd-mm-yyyy). */
+    val dueText: String = ""
 )
 
 data class NewAccountDraft(
@@ -708,32 +715,49 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun confirmLoan(l: Loan) {
         if (isLoanConfirmed(l.id)) {
             removeTxns { it.loanId == l.id && it.month == cycle() }
-            // Paying advanced the tenure, so undoing has to put the month back.
+            // Paying advanced the tenure, so undoing has to put the month back —
+            // and take the instalment back off the card if it went there.
             update { s ->
-                s.copy(loans = s.loans.map {
-                    if (it.id == l.id) it.copy(
-                        remainingMonths = minOf(it.totalMonths, it.remainingMonths + 1)
-                    ) else it
-                })
+                s.copy(
+                    loans = s.loans.map {
+                        if (it.id == l.id) it.copy(
+                            remainingMonths = minOf(it.totalMonths, it.remainingMonths + 1)
+                        ) else it
+                    },
+                    cards = s.cards.map {
+                        if (it.id == l.cardId)
+                            it.copy(balance = (it.balance - l.monthlyEmi).coerceAtLeast(0.0))
+                        else it
+                    }
+                )
             }
             return
         }
-        // EMIs aren't asked for an account, so fall back to the one implied by
-        // whose loan it is.
-        val from = l.accountId.ifEmpty { defaultAccountFor(l.person, "JOINT") }
+        // A card EMI touches no bank account: the instalment is billed to the
+        // card and leaves your balance only when the card bill is paid. Debiting
+        // an account as well would take the money twice.
+        val from = if (l.onCard) "" else l.accountId.ifEmpty { defaultAccountFor(l.person, "JOINT") }
         addTxn { seq ->
             Txn(
                 id = seq, date = today(), kind = "EXPENSE", amount = l.monthlyEmi,
-                category = "EMI", fromAccountId = from, loanId = l.id,
+                category = "EMI", fromAccountId = from, cardId = l.cardId, loanId = l.id,
                 period = cycle(), note = l.name,
                 at = System.currentTimeMillis()
             )
         }
         // Otherwise "42 of 84 months paid" never moved however often you paid.
         update { s ->
-            s.copy(loans = s.loans.map {
-                if (it.id == l.id) it.copy(remainingMonths = maxOf(0, it.remainingMonths - 1)) else it
-            })
+            s.copy(
+                loans = s.loans.map {
+                    if (it.id == l.id) it.copy(remainingMonths = maxOf(0, it.remainingMonths - 1)) else it
+                },
+                // A card instalment adds to what the card owes, the same as any
+                // other spend on it, and unmarks a bill that was settled.
+                cards = s.cards.map {
+                    if (it.id == l.cardId) it.copy(balance = it.balance + l.monthlyEmi, paid = false)
+                    else it
+                }
+            )
         }
     }
 
@@ -800,9 +824,18 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun openEditEntry(e: Entry) {
         editingEntryId = e.id
         tab = Tab.ADD
+        // Named, because a positional list this long is how the bucket field
+        // silently took the wrong value once already.
         draft = Draft(
-            e.person, e.type, e.category,
-            e.amount.toLong().toString(), e.frequency, e.note, e.accountId, e.everyMonths
+            person = e.person,
+            type = e.type,
+            category = e.category,
+            amountText = e.amount.toLong().toString(),
+            frequency = e.frequency,
+            note = e.note,
+            accountId = e.accountId,
+            periodMonths = e.everyMonths,
+            dueText = if (e.dueDate.isEmpty()) "" else dayFirstOf(e.dueDate)
         )
     }
 
@@ -849,6 +882,25 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * rather than an entry. As an entry it sat on Home asking to be confirmed
      * every month, and never appeared in Transactions at all.
      */
+    /** The due date as the form has it so far, or empty if it isn't a date yet. */
+    val draftDueIso: String get() = isoFromDayFirst(draft.dueText).orEmpty()
+
+    /** "5 months, 17 days" for the line under the field. */
+    val draftDueIn: String
+        get() = Ledger.untilText(
+            today(),
+            Ledger.nextDue(draftDueIso, draft.periodMonths.coerceAtLeast(1), today())
+        )
+
+    /**
+     * How many months the form will actually spread the amount over, so the
+     * line under the field shows the real figure rather than a twelfth that
+     * only holds if you started a full year early.
+     */
+    val draftInstalments: Int
+        get() = if (draftDueIso.isNotEmpty()) Ledger.instalmentsUntil(today(), draftDueIso)
+        else draft.periodMonths.coerceAtLeast(1)
+
     /** Never blank: falls back to the account implied by who it's for. */
     val draftAccountName: String
         get() = accounts.firstOrNull {
@@ -920,7 +972,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 frequency = if (draft.periodMonths >= 12) "ANNUAL" else "MONTHLY",
                 note = draft.note,
                 accountId = draft.accountId.ifEmpty { defaultAccountFor(draft.person, draft.bucket) },
-                periodMonths = draft.periodMonths
+                periodMonths = draft.periodMonths,
+                dueDate = draftDueIso
             )
             if (editingId != null) {
                 s.copy(entries = s.entries.map { if (it.id == entry.id) entry else it })
@@ -935,16 +988,63 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         tab = Tab.HOME
     }
 
+    /**
+     * Where an EMI is charged, accounts and credit cards in one list.
+     *
+     * A card EMI — a purchase split into instalments — is a loan whose payments
+     * land on the card, so the two belong in the same picker rather than as a
+     * separate kind of thing to add.
+     */
+    val emiSourceOptions: List<String>
+        get() = visibleAccounts.map { "${it.name} · ${it.person}" } +
+            visibleCards.map { "${it.name} · card" }
+
+    /** Where a loan's EMI is charged, for the row on Home. */
+    fun emiSourceLabel(l: Loan): String =
+        if (l.onCard) "Billed to ${cards.firstOrNull { it.id == l.cardId }?.name ?: "a card"}"
+        else "From ${accounts.firstOrNull { it.id == l.accountId }?.name ?: defaultAccount}"
+
+    private fun sourceNameOf(draft: NewLoanDraft): String =
+        cards.firstOrNull { it.id == draft.cardId }?.let { "${it.name} · card" }
+            ?: accounts.firstOrNull {
+                it.id == draft.accountId.ifEmpty { accountIdByName(defaultAccount) }
+            }?.let { "${it.name} · ${it.person}" }.orEmpty()
+
+    /** One choice sets one of the two ids and clears the other, so a loan can
+     *  never be charged to an account and a card at once. */
+    private fun withSource(draft: NewLoanDraft, label: String): NewLoanDraft {
+        val card = cards.firstOrNull { "${it.name} · card" == label }
+        if (card != null) return draft.copy(cardId = card.id, accountId = "")
+        val account = accounts.firstOrNull { "${it.name} · ${it.person}" == label }
+        return draft.copy(accountId = account?.id.orEmpty(), cardId = "")
+    }
+
+    val newLoanSourceName: String get() = sourceNameOf(newLoanDraft)
+    fun setLoanSource(label: String) { newLoanDraft = withSource(newLoanDraft, label) }
+
+    /** The same pair for the inline editor on Home, which uses its own draft. */
+    val editLoanSourceName: String get() = sourceNameOf(loanDraft)
+    fun setEditLoanSource(label: String) { loanDraft = withSource(loanDraft, label) }
+
     fun addNewLoan() {
         val emi = newLoanDraft.emiText.toDoubleOrNull() ?: return
         val total = newLoanDraft.totalMonthsText.toIntOrNull() ?: return
         if (newLoanDraft.name.isBlank() || emi <= 0 || total <= 0) return
         val remaining = newLoanDraft.remainingMonthsText.toIntOrNull() ?: total
+        val onCard = newLoanDraft.cardId.isNotEmpty()
         update { s ->
             s.copy(
                 loans = s.loans + Loan(
-                    newId("l"), newLoanDraft.name, newLoanDraft.person, emi, total, remaining,
-                    newLoanDraft.accountId.ifEmpty { accountIdByName(defaultAccount) }
+                    id = newId("l"),
+                    name = newLoanDraft.name,
+                    person = newLoanDraft.person,
+                    monthlyEmi = emi,
+                    totalMonths = total,
+                    remainingMonths = remaining,
+                    accountId = if (onCard) "" else
+                        newLoanDraft.accountId.ifEmpty { accountIdByName(defaultAccount) },
+                    cardId = newLoanDraft.cardId,
+                    dueDate = isoFromDayFirst(newLoanDraft.dueText).orEmpty()
                 )
             )
         }
@@ -1049,8 +1149,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun startEditLoan(l: Loan) {
         editingLoanId = l.id
         loanDraft = NewLoanDraft(
-            l.name, l.person, l.monthlyEmi.toLong().toString(),
-            l.totalMonths.toString(), l.remainingMonths.toString(), l.accountId
+            name = l.name,
+            person = l.person,
+            emiText = l.monthlyEmi.toLong().toString(),
+            totalMonthsText = l.totalMonths.toString(),
+            remainingMonthsText = l.remainingMonths.toString(),
+            accountId = l.accountId,
+            cardId = l.cardId,
+            dueText = if (l.dueDate.isEmpty()) "" else dayFirstOf(l.dueDate)
         )
     }
 
@@ -1065,7 +1171,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     monthlyEmi = loanDraft.emiText.toDoubleOrNull() ?: 0.0,
                     totalMonths = loanDraft.totalMonthsText.toIntOrNull() ?: 1,
                     remainingMonths = loanDraft.remainingMonthsText.toIntOrNull() ?: 0,
-                    accountId = loanDraft.accountId
+                    accountId = if (loanDraft.cardId.isNotEmpty()) "" else loanDraft.accountId,
+                    cardId = loanDraft.cardId,
+                    dueDate = isoFromDayFirst(loanDraft.dueText).orEmpty()
                 ) else it
             })
         }
@@ -1886,7 +1994,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         everyMonths: Int,
         type: String,
         joint: Boolean,
-        note: String
+        note: String,
+        dueDate: String = ""
     ): Entry {
         val person = if (joint) "Joint" else activeProfile ?: "Me"
         val bucket = if (joint) "JOINT" else "PERSONAL"
@@ -1900,7 +2009,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             frequency = if (everyMonths >= 12) "ANNUAL" else "MONTHLY",
             note = note,
             accountId = defaultAccountFor(person, bucket),
-            periodMonths = everyMonths.coerceIn(1, 12)
+            periodMonths = everyMonths.coerceIn(1, 12),
+            dueDate = dueDate
         )
         update { s -> s.copy(entries = s.entries + entry) }
         return entry
@@ -1911,7 +2021,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         amount: Double? = null,
         category: String? = null,
         everyMonths: Int? = null,
-        note: String? = null
+        note: String? = null,
+        dueDate: String? = null
     ): Entry? {
         val e = entryById(id) ?: return null
         val months = everyMonths?.coerceIn(1, 12) ?: e.everyMonths
@@ -1920,6 +2031,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             category = category ?: e.category,
             note = note ?: e.note,
             periodMonths = months,
+            dueDate = dueDate ?: e.dueDate,
             frequency = if (months >= 12) "ANNUAL" else "MONTHLY"
         )
         update { s -> s.copy(entries = s.entries.map { if (it.id == id) updated else it }) }
@@ -1982,11 +2094,32 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         return c
     }
 
-    fun addLoanDirect(name: String, emi: Double, total: Int, remaining: Int): Loan {
+    fun addLoanDirect(
+        name: String,
+        emi: Double,
+        total: Int,
+        remaining: Int,
+        cardName: String = "",
+        accountName: String = "",
+        dueDate: String = ""
+    ): Loan {
         val person = activeProfile ?: "Me"
+        // A named card wins: it is the more specific thing to have said, and a
+        // card EMI must not also be debited from an account.
+        val card = cards.firstOrNull { it.name.equals(cardName, true) }
+            ?: cards.firstOrNull { cardName.isNotBlank() && it.name.contains(cardName, true) }
+        val account = accounts.firstOrNull { it.name.equals(accountName, true) }
+            ?: accounts.firstOrNull { accountName.isNotBlank() && it.name.contains(accountName, true) }
         val l = Loan(
-            newId("l"), name, person, emi, total, remaining.coerceIn(0, total),
-            defaultAccountFor(person, "JOINT")
+            id = newId("l"),
+            name = name,
+            person = person,
+            monthlyEmi = emi,
+            totalMonths = total,
+            remainingMonths = remaining.coerceIn(0, total),
+            accountId = if (card != null) "" else (account?.id ?: defaultAccountFor(person, "JOINT")),
+            cardId = card?.id.orEmpty(),
+            dueDate = dueDate
         )
         update { s -> s.copy(loans = s.loans + l) }
         return l

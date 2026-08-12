@@ -614,3 +614,115 @@ class BankNameMatchTest {
         )
     }
 }
+
+/**
+ * Spreading a bill over the months that are actually left, rather than over its
+ * full period. Dividing ₹55,000 by twelve in August leaves you ₹27,500 short on
+ * a January due date, which is the whole thing failing quietly.
+ */
+class DueDateTest {
+
+    private val today = "2026-08-12"
+    private val jan = "2027-01-29"
+
+    @Test
+    fun `august to january is five instalments, not twelve`() {
+        assertEquals(5, Ledger.instalmentsUntil(today, jan))
+        assertEquals(11_000.0, Ledger.shareUntilDue(55_000.0, today, jan), 0.001)
+    }
+
+    /** Saving in the due month itself would leave the money arriving the same
+     *  week the bill does, so the due month is not counted. */
+    @Test
+    fun `the due month is not one of the instalments`() {
+        assertEquals(1, Ledger.instalmentsUntil("2027-01-02", jan))
+    }
+
+    /** Never zero, or the share would divide by nothing. */
+    @Test
+    fun `a date already gone still gives one instalment`() {
+        assertEquals(1, Ledger.instalmentsUntil("2027-06-01", jan))
+    }
+
+    @Test
+    fun `a due date in the past rolls forward a year`() {
+        assertEquals("2027-01-29", Ledger.nextDue("2026-01-29", 12, today))
+    }
+
+    @Test
+    fun `a monthly bill rolls forward to next month`() {
+        assertEquals("2026-09-05", Ledger.nextDue("2026-03-05", 1, today))
+    }
+
+    /** The 31st has no equivalent in February; it must not overflow into March. */
+    @Test
+    fun `a month end clamps rather than overflowing`() {
+        assertEquals("2026-02-28", Ledger.addMonths("2026-01-31", 1))
+        assertEquals("2028-02-29", Ledger.addMonths("2028-01-31", 1))
+    }
+
+    @Test
+    fun `how long is left reads the way you would say it`() {
+        assertEquals("5 months, 17 days", Ledger.untilText(today, jan))
+        assertEquals("1 month", Ledger.untilText("2026-08-12", "2026-09-12"))
+        assertEquals("3 days", Ledger.untilText("2026-08-12", "2026-08-15"))
+    }
+
+    @Test
+    fun `days between dates cross months and leap years`() {
+        assertEquals(31, Ledger.daysBetween("2026-08-12", "2026-09-12"))
+        assertEquals(366, Ledger.daysBetween("2028-01-01", "2029-01-01"))
+    }
+
+    /** No due date means the old behaviour: split over the stated period. */
+    @Test
+    fun `without a due date nothing changes`() {
+        assertEquals("", Ledger.nextDue("", 12, today))
+        assertEquals(1, Ledger.instalmentsUntil(today, ""))
+    }
+}
+
+/** An EMI charged to a credit card rather than debited from a bank account. */
+class CardEmiTest {
+
+    private val mine = Account("a-me", "SBI", "Me", "Me", 50_000.0)
+    private val card = Card("c1", "Regalia", "Me", 300_000.0, 0.0, 0.0, "18 Sep")
+
+    private fun emi(from: String = "", onCard: String = "") = Txn(
+        id = "t1", date = "2026-08-09", kind = "EXPENSE", amount = 8_000.0,
+        category = "EMI", fromAccountId = from, cardId = onCard,
+        loanId = "l1", period = "2026-08"
+    )
+
+    /** The instalment is owed on the card; the bank balance moves only when the
+     *  card bill is settled. Debiting both would take the money twice. */
+    @Test
+    fun `a card EMI leaves the bank balance alone`() {
+        val b = Ledger.balances(listOf(mine), listOf(emi(onCard = card.id)))
+        assertEquals(50_000.0, b[mine.id]!!, 0.001)
+    }
+
+    @Test
+    fun `a bank EMI does leave the account`() {
+        val b = Ledger.balances(listOf(mine), listOf(emi(from = mine.id)))
+        assertEquals(42_000.0, b[mine.id]!!, 0.001)
+    }
+
+    /** It is still spending — it just reaches the month through the card. */
+    @Test
+    fun `a card EMI counts as spending for the month`() {
+        val m = Ledger.monthTotals(
+            listOf(emi(onCard = card.id)),
+            "2026-08", setOf(mine.id), setOf(card.id), emptyList()
+        )
+        assertEquals(8_000.0, m.spent, 0.001)
+    }
+
+    @Test
+    fun `a card EMI takes the card owner's side`() {
+        assertEquals(
+            "Me",
+            Ledger.personOf(emi(onCard = card.id), listOf(mine), listOf(card))
+        )
+    }
+}

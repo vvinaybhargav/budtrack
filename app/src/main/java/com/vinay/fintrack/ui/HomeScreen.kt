@@ -31,8 +31,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.vinay.fintrack.FinTrackViewModel
+import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.monthsToDate
+import com.vinay.fintrack.data.prettyDate
+import com.vinay.fintrack.data.today
 
 private const val ALERT_PCT = 0.90f
 
@@ -386,6 +389,19 @@ private fun LoansSection(vm: FinTrackViewModel) {
                             PfField(value = vm.loanDraft.emiText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(emiText = it) }, placeholder = "Monthly EMI", numeric = true)
                             PfField(value = vm.loanDraft.totalMonthsText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(totalMonthsText = it) }, placeholder = "Total months (tenure)", numeric = true)
                             PfField(value = vm.loanDraft.remainingMonthsText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(remainingMonthsText = it) }, placeholder = "Months remaining", numeric = true)
+                            // Bank accounts and credit cards in one list: an EMI
+                            // on a card is billed to the card, not debited.
+                            PfSelect(
+                                label = "Paid from",
+                                value = vm.editLoanSourceName,
+                                options = vm.emiSourceOptions,
+                                onSelect = vm::setEditLoanSource
+                            )
+                            PfField(
+                                value = vm.loanDraft.dueText,
+                                onValueChange = { vm.loanDraft = vm.loanDraft.copy(dueText = it) },
+                                placeholder = "EMI due on, e.g. 05-09-2026"
+                            )
                             EditorActions({ vm.deleteLoan(l.id) }, vm::cancelEditLoan, vm::saveLoan)
                         }
                     } else {
@@ -404,10 +420,15 @@ private fun LoansSection(vm: FinTrackViewModel) {
                                     )
                                     Muted(
                                         "${inr(l.monthlyEmi)}/mo · ${l.remainingMonths} of " +
-                                            "${l.totalMonths} months left",
+                                            "${l.totalMonths} months left" +
+                                            if (l.nextDue.isEmpty()) ""
+                                            else " · due in ${Ledger.untilText(today(), l.nextDue)}",
                                         Modifier.padding(top = 2.dp, bottom = 6.dp)
                                     )
-                                    OutlineTag("Loan")
+                                    // Says where it is charged, since a card EMI
+                                    // moves no bank balance until the bill.
+                                    Muted(vm.emiSourceLabel(l), Modifier.padding(bottom = 6.dp))
+                                    if (l.onCard) OutlineTag("Card EMI") else OutlineTag("Loan")
                                 }
                                 // No account prompt — the loan already knows where the EMI comes from.
                                 if (vm.isLoanConfirmed(l.id)) {
@@ -543,7 +564,14 @@ private fun CommitmentsSection(vm: FinTrackViewModel) {
                             .clickable { vm.openEditEntry(e) }
                     ) {
                         Text(e.category, color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        Muted("${e.person} · ${inr(e.monthly)}/mo", Modifier.padding(top = 2.dp, bottom = 6.dp))
+                        // When it is next payable, so a bill isn't sitting there
+                        // asking to be confirmed weeks before it goes out.
+                        val when_ = if (e.nextDue.isEmpty()) ""
+                        else " · due in ${Ledger.untilText(today(), e.nextDue)}"
+                        Muted(
+                            "${e.person} · ${inr(e.monthly)}/mo$when_",
+                            Modifier.padding(top = 2.dp, bottom = 6.dp)
+                        )
                         when (kind) {
                             "Investment" -> Tag(kind, Pf.Accent100, Pf.Accent800)
                             "Savings" -> Tag(kind, Pf.Accent2_100, Pf.Accent2_800)
@@ -623,9 +651,19 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
                                 e.note.ifEmpty { e.category },
                                 color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
                             )
+                            // With a due date, say the date and how many months
+                            // are left to reach it — that is what makes the
+                            // monthly figure make sense.
+                            val plan = if (e.nextDue.isNotEmpty()) {
+                                val n = Ledger.instalmentsUntil(today(), e.nextDue)
+                                "${inr(e.monthly)}/mo · ${inr(e.amount)} due " +
+                                    "${prettyDate(e.nextDue)}, $n month${if (n == 1) "" else "s"} to go"
+                            } else {
+                                "${inr(e.monthly)}/mo · ${inr(e.amount)} every ${e.everyMonths} months"
+                            }
                             Muted(
                                 if (put > 0) "${inr(put)} of ${inr(e.monthly)} put by · ${inr(left)} left"
-                                else "${inr(e.monthly)}/mo · ${inr(e.amount)} every ${e.everyMonths} months",
+                                else plan,
                                 Modifier.padding(top = 2.dp, bottom = 6.dp)
                             )
                             Tag(

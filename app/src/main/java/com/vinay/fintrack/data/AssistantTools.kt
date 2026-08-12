@@ -87,19 +87,41 @@ object AssistantTools {
             "Add a recurring entry — a monthly cost, or a set-aside paid every few " +
                 "months. This is a plan, not a payment; it is confirmed each month."
         ) {
-            put("amount", num("The full amount charged each time. Required."))
+            put("amount", num(
+                "The whole amount charged each time the bill comes, NOT the monthly " +
+                    "share. A ₹55,000 yearly premium is 55000. Required."
+            ))
             put("category", str("One of the existing categories."))
-            put("every_months", int("Months between payments, 1 to 12. Default 1."))
+            put("every_months", int(
+                "How many months between one payment and the next, 1 to 12. A yearly " +
+                    "premium or annual bill is 12; half-yearly is 6; quarterly is 3. " +
+                    "Use 1 only when the full amount really is charged every single " +
+                    "month, like rent. If the user names one due date for a large " +
+                    "bill, it is not monthly. Required — never guess 1 by default."
+            ))
+            put("due_date", str(
+                "When the bill is actually due, as YYYY-MM-DD, if the user says. " +
+                    "The share each month is then worked out from the months left " +
+                    "before that date, not from every_months."
+            ))
             put("kind", enum("What sort of commitment.", listOf("expense", "savings", "income")))
-            put("joint", bool("True for shared, false for the current profile's own."))
+            put("joint", bool(
+                "True ONLY if the user says this is joint, shared, household or " +
+                    "both of you. Leave it out otherwise — anything unsaid is the " +
+                    "user's own personal side."
+            ))
             put("note", str("Description."))
-            required("amount")
+            // Required, because defaulting it to 1 turned a ₹55,000 yearly premium
+            // into a ₹55,000 monthly commitment — a twelvefold error that read as
+            // a plausible sentence.
+            required("amount", "every_months")
         })
         add(tool("edit_commitment", "Change a recurring entry.") {
             put("id", str("Entry id from list_commitments. Required."))
             put("amount", num("New amount."))
             put("category", str("New category."))
             put("every_months", int("New period in months, 1 to 12."))
+            put("due_date", str("New due date as YYYY-MM-DD."))
             put("note", str("New description."))
             required("id")
         })
@@ -135,11 +157,21 @@ object AssistantTools {
             put("last_digits", str("Last 3-4 digits, for matching card spends."))
             required("name", "limit")
         })
-        add(tool("add_loan", "Add a loan with an EMI.") {
+        add(tool(
+            "add_loan",
+            "Add a loan with an EMI — a bank loan, or a purchase split into " +
+                "instalments on a credit card."
+        ) {
             put("name", str("Loan name. Required."))
             put("emi", num("Monthly EMI. Required."))
             put("total_months", int("Tenure in months. Required."))
             put("remaining_months", int("Months still to pay. Defaults to the tenure."))
+            put("card", str(
+                "Card name, when the EMI is charged to a credit card rather than " +
+                    "debited from a bank account. Leave out for a normal loan."
+            ))
+            put("account", str("Bank account the EMI is debited from, if not a card EMI."))
+            put("due_date", str("The day the EMI comes out, as YYYY-MM-DD."))
             required("name", "emi", "total_months")
         })
         add(tool("update_account", "Change an account's name, balance or digits.") {
@@ -199,8 +231,22 @@ object AssistantTools {
         - A set-aside is paid every few months; each month you put by a share of
           it, and confirming transfers that to a savings account rather than
           spending it.
+        - A recurring cost and a set-aside are not the same thing. Rent charged
+          every month is recurring: every_months 1, and the amount leaves the
+          account each month. One large bill with a due date — insurance, school
+          fees, road tax — is a set-aside: give the whole bill as the amount and
+          every_months for how often it comes round, 12 for a yearly one. Then
+          say the monthly share back, so a wrong period is obvious: "₹55,000 a
+          year, ₹4,583 a month".
         - Personal is this profile's own; Joint is shared. A transaction takes its
           side from the account it moved through.
+        - Personal is the default. Only mark something joint when the user
+          actually says it is shared, household, ours or both of you. Never infer
+          it from whichever side happens to be on screen.
+        - Today's date is $today. When a bill has a due date, pass it as
+          due_date, and work the monthly share from the months left until then —
+          ₹55,000 due on 29 January, decided in August, is ₹11,000 a month over
+          five months, not a twelfth of it.
 
         Before deleting anything, say exactly what will go and wait for a clear
         yes. For edits, say what you changed. Keep replies short and plain —

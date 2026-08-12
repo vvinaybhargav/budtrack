@@ -4,7 +4,9 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.vinay.fintrack.data.AssistantTools
+import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.OpenAi
+import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.Txn
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.isoFromDayFirst
@@ -102,9 +104,11 @@ class Assistant(private val vm: FinTrackViewModel) {
                 val e = vm.updateCommitment(
                     a.str("id").orEmpty(), a.num("amount"),
                     a.str("category")?.let { vm.categoryNamed(it) },
-                    a.int("every_months"), a.str("note")
+                    a.int("every_months"), a.str("note"), a.str("due_date")
                 ) ?: return@runCatching "No commitment with that id."
-                "Updated ${e.category}: ${inr(e.amount)} every ${e.everyMonths} month(s)."
+                "Updated ${e.category}: ${inr(e.amount)} every ${e.everyMonths} month(s)" +
+                    (if (e.nextDue.isNotEmpty()) ", due ${prettyDate(e.nextDue)}" else "") +
+                    " — ${inr(e.monthly)} a month."
             }
             "delete_commitment" -> {
                 val e = vm.entryById(a.str("id").orEmpty())
@@ -136,9 +140,12 @@ class Assistant(private val vm: FinTrackViewModel) {
                 val total = a.int("total_months") ?: 0
                 val l = vm.addLoanDirect(
                     a.str("name").orEmpty(), a.num("emi") ?: 0.0, total,
-                    a.int("remaining_months") ?: total
+                    a.int("remaining_months") ?: total,
+                    a.str("card").orEmpty(), a.str("account").orEmpty(),
+                    a.str("due_date").orEmpty()
                 )
-                "Added ${l.name}, ${inr(l.monthlyEmi)} a month."
+                "Added ${l.name}, ${inr(l.monthlyEmi)} a month — ${vm.emiSourceLabel(l)}" +
+                    (if (l.nextDue.isNotEmpty()) ", due ${prettyDate(l.nextDue)}" else "") + "."
             }
             "update_account" -> {
                 val acc = vm.accountNamed(a.str("name").orEmpty())
@@ -226,12 +233,15 @@ class Assistant(private val vm: FinTrackViewModel) {
         vm.annualSetAsides.forEach {
             appendLine("  [${it.id}] ${it.category} ${inr(it.amount)} every ${it.everyMonths} " +
                 "month(s) = ${inr(it.monthly)}/mo" +
+                (if (it.nextDue.isNotEmpty()) ", due ${prettyDate(it.nextDue)}" else "") +
+                " — ${it.person}" +
                 if (vm.isConfirmed(it.id)) " — done this month" else "")
         }
         appendLine("Loans:")
         vm.visibleLoans.forEach {
             appendLine("  [${it.id}] ${it.name} ${inr(it.monthlyEmi)}/mo, " +
-                "${it.remainingMonths} of ${it.totalMonths} months left" +
+                "${it.remainingMonths} of ${it.totalMonths} months left, ${vm.emiSourceLabel(it)}" +
+                (if (it.nextDue.isNotEmpty()) ", due ${prettyDate(it.nextDue)}" else "") +
                 if (vm.isLoanConfirmed(it.id)) " — paid this month" else "")
         }
     }
@@ -311,15 +321,32 @@ class Assistant(private val vm: FinTrackViewModel) {
         val e = vm.addCommitmentDirect(
             amount = amount,
             category = vm.categoryNamed(a.str("category").orEmpty()),
-            everyMonths = a.int("every_months") ?: 1,
+            everyMonths = a.int("every_months") ?: 1,   // schema requires it; 1 only if omitted anyway
             type = type,
-            joint = a.bool("joint") ?: (vm.bucketView == "JOINT"),
-            note = a.str("note").orEmpty()
+            // Personal unless the user actually said shared. Following whichever
+            // side happened to be on screen put private commitments on the joint
+            // side because of where the user was standing at the time.
+            joint = a.bool("joint") ?: false,
+            note = a.str("note").orEmpty(),
+            dueDate = a.str("due_date").orEmpty()
         )
-        return if (e.everyMonths > 1)
-            "Added ${e.category} ${inr(e.amount)} every ${e.everyMonths} months — " +
-                "${inr(e.monthly)} to set aside each month."
-        else "Added ${e.category} ${inr(e.amount)} a month."
+        val side = if (e.bucket == "JOINT") "joint" else "personal"
+        // Always states the figures it worked out, so a period or a date read
+        // wrongly shows up as a number the user can see is wrong, rather than
+        // as a plausible sentence.
+        return when {
+            e.nextDue.isNotEmpty() ->
+                "Added ${e.category} ${inr(e.amount)} due ${prettyDate(e.nextDue)} on the " +
+                    "$side side — ${inr(e.monthly)} a month over the " +
+                    "${Ledger.instalmentsUntil(today(), e.nextDue)} months left."
+            e.everyMonths > 1 ->
+                "Added ${e.category} ${inr(e.amount)} every ${e.everyMonths} months on the " +
+                    "$side side — ${inr(e.monthly)} to set aside each month."
+            else ->
+                "Added ${e.category} on the $side side as ${inr(e.amount)} charged every " +
+                    "single month, ${inr(e.amount * 12)} a year. Tell the user this plainly, " +
+                    "and check it is what they meant if they described one due date."
+        }
     }
 
     // ── plumbing ───────────────────────────────────────────────────────

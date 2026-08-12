@@ -111,6 +111,21 @@ private fun LoanForm(vm: FinTrackViewModel) {
             PfField("Tenure (months)", vm.newLoanDraft.totalMonthsText, { vm.newLoanDraft = vm.newLoanDraft.copy(totalMonthsText = it) }, Modifier.weight(1f), "e.g. 84", numeric = true)
             PfField("Months remaining", vm.newLoanDraft.remainingMonthsText, { vm.newLoanDraft = vm.newLoanDraft.copy(remainingMonthsText = it) }, Modifier.weight(1f), "e.g. 42", numeric = true)
         }
+        // Accounts and cards together: a card EMI is a purchase split into
+        // instalments, which is the same arrangement paid to a different place.
+        PfSelect("Paid from", vm.newLoanSourceName, vm.emiSourceOptions, vm::setLoanSource)
+        PfField(
+            "First EMI due on",
+            vm.newLoanDraft.dueText,
+            { vm.newLoanDraft = vm.newLoanDraft.copy(dueText = it) },
+            placeholder = "dd-mm-yyyy, e.g. 05-09-2026"
+        )
+        Muted(
+            if (vm.newLoanDraft.cardId.isNotEmpty())
+                "On a card the instalment adds to what the card owes. Nothing leaves " +
+                    "your bank until you settle the card bill."
+            else "Debited from this account each month when you confirm it."
+        )
         PrimaryButton(
             "Add loan",
             vm::addNewLoan,
@@ -200,21 +215,48 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
         PfField("Amount (₹)", vm.draft.amountText, { vm.draft = vm.draft.copy(amountText = it) }, placeholder = "e.g. 5000", numeric = true)
         val oneOff = !isEditing && vm.addKind == "ONE_TIME"
         if (!oneOff) {
-            // Only a set-aside has a period to choose; a recurring commitment is
-            // monthly by definition, which is what separates the two.
-            if (isEditing || vm.addKind == "SET_ASIDE") {
-                PfSelect(
-                    "Paid",
-                    periodLabel(vm.draft.periodMonths),
-                    PERIOD_OPTIONS,
-                    { vm.draft = vm.draft.copy(periodMonths = periodFromLabel(it)) }
+            // A due date suits both: a set-aside needs it to work out the
+            // monthly share, and a recurring bill uses it to say when it is
+            // next payable rather than sitting there confirmable all month.
+            if (isEditing || vm.addKind == "SET_ASIDE" || vm.addKind == "RECURRING") {
+                PfField(
+                    "Due on",
+                    vm.draft.dueText,
+                    { vm.draft = vm.draft.copy(dueText = it) },
+                    placeholder = "dd-mm-yyyy, e.g. 29-01-2027"
                 )
                 val amount = vm.draft.amountText.toDoubleOrNull() ?: 0.0
-                if (amount > 0) {
-                    Muted(
-                        "Put by ${inr(amount / vm.draft.periodMonths.coerceAtLeast(1))} a month " +
-                            "towards it. Confirming that on Home moves it to a savings " +
-                            "account rather than spending it."
+                val due = vm.draftDueIso
+                val setAside = isEditing || vm.addKind == "SET_ASIDE"
+                when {
+                    due.isNotEmpty() && !setAside ->
+                        Muted("Due in ${vm.draftDueIn}, then the same day each month.")
+                    due.isNotEmpty() && amount > 0 -> {
+                        val months = vm.draftInstalments
+                        Muted(
+                            "Due in ${vm.draftDueIn} — put by " +
+                                "${inr(amount / months.coerceAtLeast(1))} a month over " +
+                                "$months month${if (months == 1) "" else "s"}. Confirming that " +
+                                "on Home moves it to savings rather than spending it."
+                        )
+                    }
+                    due.isNotEmpty() -> Muted("Due in ${vm.draftDueIn}. Add the amount.")
+                    vm.draft.dueText.isNotBlank() ->
+                        Muted("That isn't a date yet — write it as 29-01-2027.")
+                    setAside ->
+                        Muted("Give the date it is due and the full amount; the monthly " +
+                            "share is worked out from the months left.")
+                    else -> Muted("The day it comes out each month, if you know it.")
+                }
+                // Only a set-aside splits an amount over months, and only when no
+                // date is known — an older one, or a bill you would rather not pin
+                // down. A recurring bill is monthly by definition.
+                if (due.isEmpty() && setAside) {
+                    PfSelect(
+                        "Or split evenly over",
+                        periodLabel(vm.draft.periodMonths),
+                        PERIOD_OPTIONS,
+                        { vm.draft = vm.draft.copy(periodMonths = periodFromLabel(it)) }
                     )
                 }
             }

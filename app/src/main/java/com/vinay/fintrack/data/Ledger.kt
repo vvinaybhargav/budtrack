@@ -193,6 +193,112 @@ object Ledger {
         return (base + extra) / 100.0
     }
 
+    /**
+     * The next time a bill falls due, rolled past any dates already gone.
+     *
+     * A due date stored once would otherwise be stuck in the past forever, and
+     * every share after the first payment would divide by zero months left.
+     */
+    fun nextDue(dueIso: String, everyMonths: Int, todayIso: String): String {
+        if (dueIso.isEmpty()) return ""
+        val step = everyMonths.coerceIn(1, 12)
+        var due = dueIso
+        // Bounded: twenty steps clears twenty years even at yearly, and a
+        // nonsense date can never spin here.
+        repeat(20) {
+            if (due >= todayIso) return due
+            due = addMonths(due, step)
+        }
+        return due
+    }
+
+    /** Same day, [months] later, clamped to a month that has that day. */
+    fun addMonths(dateIso: String, months: Int): String {
+        val parts = dateIso.split("-")
+        if (parts.size < 3) return dateIso
+        val year = parts[0].toIntOrNull() ?: return dateIso
+        val month = parts[1].toIntOrNull() ?: return dateIso
+        val day = parts[2].toIntOrNull() ?: return dateIso
+        val zero = (year * 12) + (month - 1) + months
+        val newYear = zero / 12
+        val newMonth = (zero % 12) + 1
+        return "%04d-%02d-%02d".format(newYear, newMonth, minOf(day, daysIn(newYear, newMonth)))
+    }
+
+    private fun daysIn(year: Int, month: Int): Int = when (month) {
+        1, 3, 5, 7, 8, 10, 12 -> 31
+        4, 6, 9, 11 -> 30
+        else -> if (isLeap(year)) 29 else 28
+    }
+
+    /**
+     * How many monthly instalments are left before a bill falls due.
+     *
+     * Counted from this month up to, but not including, the month it is due:
+     * decided in August for a bill due in January, that is August through
+     * December — five. The due month itself is left out so the money is there
+     * before the day rather than on it, and being early costs nothing while
+     * being short costs the whole point of saving up.
+     */
+    fun instalmentsUntil(todayIso: String, dueIso: String): Int {
+        if (dueIso.isEmpty()) return 1
+        val now = monthIndex(todayIso) ?: return 1
+        val due = monthIndex(dueIso) ?: return 1
+        return (due - now).coerceAtLeast(1)
+    }
+
+    /**
+     * "5 months, 17 days" — how far off a date is, in the terms you'd say it.
+     *
+     * Whole months are counted first by advancing the month and keeping the
+     * day, then the remaining days; that way 12 August to 29 January is five
+     * months and seventeen days rather than an awkward 170.
+     */
+    fun untilText(todayIso: String, dueIso: String): String {
+        val days = daysBetween(todayIso, dueIso)
+        if (days <= 0) return "due now"
+        var months = 0
+        while (months < 600 && addMonths(todayIso, months + 1) <= dueIso) months++
+        val rest = daysBetween(addMonths(todayIso, months), dueIso)
+        val m = if (months > 0) "$months month${if (months == 1) "" else "s"}" else ""
+        val d = if (rest > 0) "$rest day${if (rest == 1) "" else "s"}" else ""
+        return listOf(m, d).filter { it.isNotEmpty() }.joinToString(", ").ifEmpty { "due today" }
+    }
+
+    /** Whole days between two ISO dates, by day number since a fixed origin. */
+    fun daysBetween(fromIso: String, toIso: String): Int {
+        val a = dayNumber(fromIso) ?: return 0
+        val b = dayNumber(toIso) ?: return 0
+        return b - a
+    }
+
+    /** Days since 1970-01-01, computed rather than parsed so this stays pure. */
+    private fun dayNumber(dateIso: String): Int? {
+        val p = dateIso.split("-")
+        if (p.size < 3) return null
+        val y = p[0].toIntOrNull() ?: return null
+        val m = p[1].toIntOrNull() ?: return null
+        val d = p[2].toIntOrNull() ?: return null
+        var days = 0
+        for (year in 1970 until y) days += if (isLeap(year)) 366 else 365
+        for (month in 1 until m) days += daysIn(y, month)
+        return days + d - 1
+    }
+
+    private fun isLeap(year: Int) = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+
+    /** The amount split over the months genuinely left, never over more. */
+    fun shareUntilDue(amount: Double, todayIso: String, dueIso: String): Double =
+        monthlyShare(amount, instalmentsUntil(todayIso, dueIso))
+
+    private fun monthIndex(dateIso: String): Int? {
+        val parts = dateIso.split("-")
+        if (parts.size < 2) return null
+        val year = parts[0].toIntOrNull() ?: return null
+        val month = parts[1].toIntOrNull() ?: return null
+        return year * 12 + (month - 1)
+    }
+
     /** True when a bank alert and an existing confirmation are the same payment. */
     fun isSamePayment(existing: Txn, amount: Double, date: String, isCredit: Boolean): Boolean {
         val wanted = if (isCredit) "INCOME" else "EXPENSE"

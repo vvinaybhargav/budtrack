@@ -20,7 +20,10 @@ data class Entry(
     val accountId: String = "",
     /** How many months between payments, 1–12. Zero means fall back to
      *  [frequency], so entries written before this field still read correctly. */
-    val periodMonths: Int = 0
+    val periodMonths: Int = 0,
+    /** When the bill is actually due, as YYYY-MM-DD. Empty means it isn't
+     *  known, and the amount is simply split over [everyMonths]. */
+    val dueDate: String = ""
 ) {
     val everyMonths: Int
         get() = when {
@@ -31,8 +34,24 @@ data class Entry(
 
     /** What it costs each month: a quarterly bill is a third of itself, an
      *  annual one a twelfth. A one-off is simply its own amount. */
+    /** The due date this is next working towards, rolled past any that have
+     *  already gone by. Empty when no date was given. */
+    val nextDue: String get() = Ledger.nextDue(dueDate, everyMonths, today())
+
+    /**
+     * What to put by this month.
+     *
+     * With a due date this is the amount divided by the months left before it,
+     * not by the full period: ₹55,000 due on 29 January, decided in August, is
+     * ₹11,000 a month over five months — not the ₹4,583 that a blind twelfth
+     * would give, which would leave you ₹27,500 short on the day.
+     */
     val monthly: Double
-        get() = if (frequency == "ONE_TIME") amount else Ledger.monthlyShare(amount, everyMonths)
+        get() = when {
+            frequency == "ONE_TIME" -> amount
+            dueDate.isNotEmpty() -> Ledger.shareUntilDue(amount, today(), nextDue)
+            else -> Ledger.monthlyShare(amount, everyMonths)
+        }
 
     /** Anything that isn't monthly needs putting aside between payments. */
     val isSetAside: Boolean get() = frequency != "ONE_TIME" && everyMonths > 1
@@ -61,8 +80,21 @@ data class Loan(
     val totalMonths: Int,
     val remainingMonths: Int,
     /** EMI is always paid from here, so confirming a loan needs no prompt. */
-    val accountId: String = ""
-)
+    val accountId: String = "",
+    /**
+     * Set when the EMI is charged to a credit card rather than a bank account —
+     * a purchase converted to instalments. The instalment adds to what the card
+     * owes; no bank balance moves until the card bill itself is settled.
+     */
+    val cardId: String = "",
+    /** The day the EMI comes out, as YYYY-MM-DD. Empty when it isn't known. */
+    val dueDate: String = ""
+) {
+    /** The next EMI date, rolled past any already gone. Monthly by definition. */
+    val nextDue: String get() = Ledger.nextDue(dueDate, 1, today())
+
+    val onCard: Boolean get() = cardId.isNotEmpty()
+}
 
 /**
  * An actual movement of money, unlike [Entry] which is only the recurring plan.
@@ -194,6 +226,12 @@ private val dayFirst = java.text.SimpleDateFormat("dd-MM-yyyy", Locale("en", "IN
 
 /** Today as people write it here: 11-08-2026. */
 fun todayDayFirst(): String = dayFirst.format(Calendar.getInstance().time)
+
+/** "2027-01-29" → "29-01-2027", the way the forms take a date back. */
+fun dayFirstOf(iso: String): String {
+    val p = iso.split("-")
+    return if (p.size < 3) "" else "${p[2]}-${p[1]}-${p[0]}"
+}
 
 /**
  * "11-08-2026" → "2026-08-11", day first as written in India. Accepts `-`,
