@@ -16,9 +16,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -37,6 +43,32 @@ import com.vinay.fintrack.FinTrackViewModel
 @Composable
 fun ChatScreen(vm: FinTrackViewModel) {
     val listState = rememberLazyListState()
+
+    val context = LocalContext.current
+    val speechRecognizerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val data = result.data
+            val results = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spokenText = results?.firstOrNull().orEmpty()
+            if (spokenText.isNotBlank()) {
+                vm.chatInput = spokenText
+            }
+        }
+    }
+
+    val triggerSpeechRecognition = {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak now to ask FinTrack...")
+        }
+        runCatching {
+            speechRecognizerLauncher.launch(intent)
+        }.onFailure {
+            android.widget.Toast.makeText(context, "Voice input not supported on this device.", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // Follow the conversation as it grows.
     LaunchedEffect(vm.chat.size, vm.chatBusy) {
@@ -157,6 +189,21 @@ fun ChatScreen(vm: FinTrackViewModel) {
                 modifier = Modifier.weight(1f),
                 singleLine = false
             )
+            if (vm.chatReady && !vm.chatBusy) {
+                IconButton(
+                    onClick = { triggerSpeechRecognition() },
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(Pf.Surface2, Radius.Pill)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = "Voice Input",
+                        Modifier.size(18.dp),
+                        tint = Pf.Accent
+                    )
+                }
+            }
             IconButton(
                 onClick = vm::sendChat,
                 enabled = !vm.chatBusy && vm.chatInput.isNotBlank(),
