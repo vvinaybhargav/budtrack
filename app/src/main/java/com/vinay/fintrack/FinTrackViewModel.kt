@@ -2135,7 +2135,26 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun setTxnCategory(category: String) {
         val txn = editingTxn ?: return
         replaceTxn(txn.copy(category = category))
-        learnPayeeCategory(payeeOf(txn), category)
+        val payee = payeeOf(txn)
+        learnPayeeCategory(payee, category)
+
+        if (txn.source.startsWith("sms") && payee.isNotBlank() && category != UNCATEGORISED && category.isNotBlank()) {
+            val cleanPattern = payee.trim()
+            update { s ->
+                val nextRules = s.smsRules + (cleanPattern to category)
+                val updatedTxns = s.txns.map { t ->
+                    if (t.source == "sms" && t.note.lowercase().contains(cleanPattern.lowercase())) {
+                        t.copy(category = category)
+                    } else {
+                        t
+                    }
+                }
+                s.copy(smsRules = nextRules, txns = updatedTxns)
+            }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(appContext, "Category saved for future transactions!", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     /** Teaches the payee, then re-files anything unsorted from the same one. */

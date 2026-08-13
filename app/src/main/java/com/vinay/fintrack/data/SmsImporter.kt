@@ -120,10 +120,14 @@ class SmsImporter(private val context: Context) {
                 log += "matched ${inr(p.amount)} ${p.party} to an existing confirmation"
                 continue
             }
-            // A card spend adds to what the card owes; it doesn't leave any
-            // bank account until the bill is paid.
-            val card = ((matchCardByTail(state.cards, p.accountTail) as? AccountMatch.One)
-                ?: (matchCardByBank(state.cards, p.body) as? AccountMatch.One))?.accountId
+            val lowerBody = p.body.lowercase()
+            val isCardSms = lowerBody.contains("card") || lowerBody.contains("creditcard")
+            val card = if (isCardSms) {
+                ((matchCardByTail(state.cards, p.accountTail) as? AccountMatch.One)
+                    ?: (matchCardByBank(state.cards, p.body) as? AccountMatch.One))?.accountId
+            } else {
+                (matchCardByTail(state.cards, p.accountTail) as? AccountMatch.One)?.accountId
+            }
             val accountId =
                 if (card != null) "" else accountFor(state, p.accountTail, p.body, log)
 
