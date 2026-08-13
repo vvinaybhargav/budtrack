@@ -308,15 +308,22 @@ class Assistant(private val vm: FinTrackViewModel) {
     // ── reads ──────────────────────────────────────────────────────────
 
     private fun overview(): String = buildString {
-        appendLine("Profile: ${vm.activeProfile.orEmpty()}, viewing the ${vm.bucketLabel} side.")
-        appendLine("Total balance: ${inr(vm.totalBalance)}")
-        appendLine("Recorded this month — received ${inr(vm.actualIncome)}, " +
-            "spent ${inr(vm.actualSpent)}, set aside ${inr(vm.actualSaved)}, " +
-            "invested ${inr(vm.actualInvested)}")
-        appendLine("Planned each month — ${inr(vm.plannedIncome)} in, " +
-            "${inr(vm.plannedExpense)} out")
-        appendLine("Set aside needed this month: ${inr(vm.annualSetAsideMonthly)}, " +
-            "done ${inr(vm.annualSetAsideDone)}")
+        appendLine("Profile: ${vm.activeProfile.orEmpty()}")
+        
+        appendLine("--- PERSONAL SIDE ---")
+        val pBalance = vm.totalBalanceFor("PERSONAL")
+        val pTotals = vm.monthTotalsFor("PERSONAL")
+        appendLine("Total Balance: ${inr(pBalance)}")
+        appendLine("Recorded this month — received ${inr(pTotals.income)}, spent ${inr(pTotals.spent)}, set aside ${inr(pTotals.saved)}, invested ${inr(pTotals.invested)}")
+        appendLine("Planned each month — ${inr(vm.plannedIncomeFor("PERSONAL"))} in, ${inr(vm.plannedExpenseFor("PERSONAL"))} out")
+        
+        appendLine("--- JOINT SIDE ---")
+        val jBalance = vm.totalBalanceFor("JOINT")
+        val jTotals = vm.monthTotalsFor("JOINT")
+        appendLine("Total Balance: ${inr(jBalance)}")
+        appendLine("Recorded this month — received ${inr(jTotals.income)}, spent ${inr(jTotals.spent)}, set aside ${inr(jTotals.saved)}, invested ${inr(jTotals.invested)}")
+        appendLine("Planned each month — ${inr(vm.plannedIncomeFor("JOINT"))} in, ${inr(vm.plannedExpenseFor("JOINT"))} out")
+
         if (vm.budgets.isEmpty()) appendLine("No budgets set.")
         else {
             appendLine("Budgets (spent of limit):")
@@ -338,32 +345,63 @@ class Assistant(private val vm: FinTrackViewModel) {
             appendLine("Cards:")
             vm.visibleCards.forEach {
                 appendLine("  ${it.name} — owes ${inr(it.balance)} of ${inr(it.limit)}, " +
-                    "due ${it.due}${if (it.paid) ", paid" else ""}")
+                    "due ${it.due}${if (it.paid) ", paid" else ""} (${it.owner})")
             }
         }
     }
 
     private fun commitmentsText(): String = buildString {
-        appendLine("Monthly commitments:")
-        vm.commitments.forEach {
-            appendLine("  [${it.id}] ${it.category} ${inr(it.amount)} — ${it.person}" +
+        appendLine("Monthly Commitments:")
+        val pCommitments = vm.scopedEntriesFor("PERSONAL").filter {
+            it.frequency != "ONE_TIME" && !it.isSetAside &&
+            (it.category != "EMI" || !vm.coveredByLoan(it))
+        }
+        val jCommitments = vm.scopedEntriesFor("JOINT").filter {
+            it.frequency != "ONE_TIME" && !it.isSetAside &&
+            (it.category != "EMI" || !vm.coveredByLoan(it))
+        }
+        
+        appendLine("  Personal:")
+        pCommitments.forEach {
+            appendLine("    [${it.id}] ${it.category} ${inr(it.amount)}" +
                 (if (it.note.isNotBlank()) " (${it.note})" else "") +
-                if (vm.isConfirmed(it.id)) " — done this month" else "")
+                if (vm.isConfirmed(it.id)) " — done" else "")
         }
+        appendLine("  Joint:")
+        jCommitments.forEach {
+            appendLine("    [${it.id}] ${it.category} ${inr(it.amount)}" +
+                (if (it.note.isNotBlank()) " (${it.note})" else "") +
+                if (vm.isConfirmed(it.id)) " — done" else "")
+        }
+
         appendLine("Set-asides:")
-        vm.annualSetAsides.forEach {
-            appendLine("  [${it.id}] ${it.category} ${inr(it.amount)} every ${it.everyMonths} " +
-                "month(s) = ${inr(it.monthly)}/mo" +
-                (if (it.nextDue.isNotEmpty()) ", due ${prettyDate(it.nextDue)}" else "") +
-                " — ${it.person}" +
-                if (vm.isConfirmed(it.id)) " — done this month" else "")
+        val pSetAsides = vm.annualSetAsidesFor("PERSONAL")
+        val jSetAsides = vm.annualSetAsidesFor("JOINT")
+        
+        appendLine("  Personal (need ${inr(vm.plannedSetAsideFor("PERSONAL"))}/mo, ${inr(vm.annualSetAsideDoneFor("PERSONAL"))} done):")
+        pSetAsides.forEach {
+            appendLine("    [${it.id}] ${it.category} ${inr(it.amount)} every ${it.everyMonths} months = ${inr(it.monthly)}/mo" +
+                if (vm.isConfirmed(it.id)) " — done" else "")
         }
+        appendLine("  Joint (need ${inr(vm.plannedSetAsideFor("JOINT"))}/mo, ${inr(vm.annualSetAsideDoneFor("JOINT"))} done):")
+        jSetAsides.forEach {
+            appendLine("    [${it.id}] ${it.category} ${inr(it.amount)} every ${it.everyMonths} months = ${inr(it.monthly)}/mo" +
+                if (vm.isConfirmed(it.id)) " — done" else "")
+        }
+
         appendLine("Loans:")
-        vm.visibleLoans.forEach {
-            appendLine("  [${it.id}] ${it.name} ${inr(it.monthlyEmi)}/mo, " +
-                "${it.remainingMonths} of ${it.totalMonths} months left, ${vm.emiSourceLabel(it)}" +
-                (if (it.nextDue.isNotEmpty()) ", due ${prettyDate(it.nextDue)}" else "") +
-                if (vm.isLoanConfirmed(it.id)) " — paid this month" else "")
+        val pLoans = vm.scopedLoansFor("PERSONAL")
+        val jLoans = vm.scopedLoansFor("JOINT")
+        
+        appendLine("  Personal:")
+        pLoans.forEach {
+            appendLine("    [${it.id}] ${it.name} ${inr(it.monthlyEmi)}/mo, ${it.remainingMonths} of ${it.totalMonths} months left" +
+                if (vm.isLoanConfirmed(it.id)) " — paid" else "")
+        }
+        appendLine("  Joint:")
+        jLoans.forEach {
+            appendLine("    [${it.id}] ${it.name} ${inr(it.monthlyEmi)}/mo, ${it.remainingMonths} of ${it.totalMonths} months left" +
+                if (vm.isLoanConfirmed(it.id)) " — paid" else "")
         }
     }
 

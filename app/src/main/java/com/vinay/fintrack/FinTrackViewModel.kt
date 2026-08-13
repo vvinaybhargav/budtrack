@@ -1555,16 +1555,27 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * flipping to Joint shows the shared accounts and commitments alone rather
      * than mixing them with personal ones.
      */
-    private fun inScope(person: String) =
-        if (bucketView == "JOINT") person == "Joint" else person == activeProfile
+    private fun inScopeFor(person: String, view: String) =
+        if (view == "JOINT") person == "Joint" else person == activeProfile
 
-    /** Closed ones are excluded here rather than at each use: a finished bill
-     *  must leave Home, the plan and the budgets together, not one at a time. */
-    val scopedEntries: List<Entry>
-        get() = visibleEntries.filter { inScope(it.person) && !it.closed }
-    val scopedAccounts: List<Account> get() = visibleAccounts.filter { inScope(it.person) }
-    val scopedLoans: List<Loan> get() = visibleLoans.filter { inScope(it.person) }
-    val scopedCards: List<Card> get() = visibleCards.filter { inScope(it.owner) }
+    fun scopedEntriesFor(view: String): List<Entry> =
+        visibleEntries.filter { inScopeFor(it.person, view) && !it.closed }
+
+    fun scopedAccountsFor(view: String): List<Account> =
+        visibleAccounts.filter { inScopeFor(it.person, view) }
+
+    fun scopedLoansFor(view: String): List<Loan> =
+        visibleLoans.filter { inScopeFor(it.person, view) }
+
+    fun scopedCardsFor(view: String): List<Card> =
+        visibleCards.filter { inScopeFor(it.owner, view) }
+
+    private fun inScope(person: String) = inScopeFor(person, bucketView)
+
+    val scopedEntries: List<Entry> get() = scopedEntriesFor(bucketView)
+    val scopedAccounts: List<Account> get() = scopedAccountsFor(bucketView)
+    val scopedLoans: List<Loan> get() = scopedLoansFor(bucketView)
+    val scopedCards: List<Card> get() = scopedCardsFor(bucketView)
 
     /**
      * Every account, for moving money between them.
@@ -1624,34 +1635,47 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // planned* is what the entries say should happen each month; actual* is what
     // did. The two were conflated, so the month's figures never moved however
     // many transactions were added or deleted.
-    val plannedIncome: Double get() = scopedEntries.filter { it.type == "INCOME" }.sumOf { it.monthly }
+    fun plannedIncomeFor(view: String): Double =
+        scopedEntriesFor(view).filter { it.type == "INCOME" }.sumOf { it.monthly }
 
-    /**
-     * Everything expected out each month on this side: ordinary expenses, the
-     * monthly share of each set-aside, and the loans' EMIs.
-     *
-     * EMI-category entries are left out because the loans already account for
-     * them — the seed carries both, and counting each would double the figure.
-     */
-    val plannedExpense: Double
-        get() = plannedRecurring + plannedSetAside + plannedLoans
+    fun plannedExpenseFor(view: String): Double =
+        plannedRecurringFor(view) + plannedSetAsideFor(view) + plannedLoansFor(view)
 
-    /**
-     * The month broken into four sums that do not overlap.
-     *
-     * They have to be disjoint or the total is nonsense: a recurring bill you
-     * have already confirmed is a transaction as well as a plan, so counting it
-     * as spending and as a commitment charges the month twice. Three planned
-     * buckets, then whatever was actually spent that belongs to none of them.
-     */
-    val plannedRecurring: Double
-        get() = scopedEntries
+    fun plannedRecurringFor(view: String): Double =
+        scopedEntriesFor(view)
             .filter { it.type == "EXPENSE" && !it.isSetAside && !coveredByLoan(it) }
             .sumOf { it.monthly }
 
-    val plannedSetAside: Double get() = annualSetAsideMonthly
+    fun plannedSetAsideFor(view: String): Double =
+        annualSetAsidesFor(view).sumOf { it.monthly }
 
-    val plannedLoans: Double get() = scopedLoans.sumOf { it.monthlyEmi }
+    fun plannedLoansFor(view: String): Double =
+        scopedLoansFor(view).sumOf { it.monthlyEmi }
+
+    fun annualSetAsidesFor(view: String): List<Entry> =
+        scopedEntriesFor(view).filter { it.isSetAside && it.type != "INCOME" }
+
+    fun annualSetAsideDoneFor(view: String): Double =
+        annualSetAsidesFor(view).sumOf { setAsideDone(it).coerceAtMost(it.monthly) }
+
+    fun totalBalanceFor(view: String): Double =
+        scopedAccountsFor(view).sumOf { balanceOf(it) }
+
+    fun monthTotalsFor(view: String): Ledger.MonthTotals {
+        return Ledger.monthTotals(
+            persisted.txns,
+            cycle(),
+            scopedAccountsFor(view).map { it.id }.toSet(),
+            scopedCardsFor(view).map { it.id }.toSet(),
+            INVEST_CATEGORIES
+        )
+    }
+
+    val plannedIncome: Double get() = plannedIncomeFor(bucketView)
+    val plannedExpense: Double get() = plannedExpenseFor(bucketView)
+    val plannedRecurring: Double get() = plannedRecurringFor(bucketView)
+    val plannedSetAside: Double get() = plannedSetAsideFor(bucketView)
+    val plannedLoans: Double get() = plannedLoansFor(bucketView)
 
     /**
      * Real spending this cycle that no commitment or loan accounts for — the
@@ -1830,9 +1854,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Regular monthly outgoings — everything except EMIs (own section) and annuals. */
-    /** True when a loan already accounts for this entry, so showing or counting
-     *  it as well would be the same debt twice. */
-    private fun coveredByLoan(e: Entry): Boolean =
+    fun coveredByLoan(e: Entry): Boolean =
         e.category == "EMI" && loans.any {
             it.person == e.person && kotlin.math.abs(it.monthlyEmi - e.amount) < 0.5
         }
@@ -1852,15 +1874,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * doesn't spend the money — it transfers it to a set-aside account, so the cash
      * is waiting when the yearly bill actually lands.
      */
-    val annualSetAsides: List<Entry>
-        get() = scopedEntries.filter { it.isSetAside && it.type != "INCOME" }
+    val annualSetAsides: List<Entry> get() = annualSetAsidesFor(bucketView)
 
-    val annualSetAsideMonthly: Double get() = annualSetAsides.sumOf { it.monthly }
+    val annualSetAsideMonthly: Double get() = plannedSetAsideFor(bucketView)
 
     /** What has actually been put by, part-payments included, rather than a
      *  count of the ones fully met. */
-    val annualSetAsideDone: Double
-        get() = annualSetAsides.sumOf { setAsideDone(it).coerceAtMost(it.monthly) }
+    val annualSetAsideDone: Double get() = annualSetAsideDoneFor(bucketView)
 
     fun commitmentKind(e: Entry): String = when (e.category) {
         in INVEST_CATEGORIES -> "Investment"
@@ -2443,14 +2463,82 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * are what list_transactions is for.
      */
     private fun liveContext(): String = buildString {
-        val side = if (bucketView == "JOINT") "joint" else "personal"
-        appendLine("Figures below are for the $side side; the accounts listed are " +
-            "everything this profile can use.")
-        appendLine("Balance on this side ${inr(totalBalance)}.")
-        appendLine("Recorded this month: received ${inr(actualIncome)}, spent ${inr(actualSpent)}, " +
-            "set aside ${inr(actualSaved)}, invested ${inr(actualInvested)}.")
-        appendLine("Planned each month: ${inr(plannedIncome)} in, ${inr(plannedExpense)} out " +
-            "(expenses, set-asides and EMIs).")
+        appendLine("FinTrack Household Financial Context.")
+        appendLine("Active Profile: ${activeProfile.orEmpty()}")
+        
+        appendLine("--- PERSONAL DATA ---")
+        val pBalance = totalBalanceFor("PERSONAL")
+        val pTotals = monthTotalsFor("PERSONAL")
+        appendLine("Balance: ${inr(pBalance)}")
+        appendLine("Recorded this month: received ${inr(pTotals.income)}, spent ${inr(pTotals.spent)}, set aside ${inr(pTotals.saved)}, invested ${inr(pTotals.invested)}")
+        appendLine("Planned each month: ${inr(plannedIncomeFor("PERSONAL"))} in, ${inr(plannedExpenseFor("PERSONAL"))} out")
+        
+        val pEntries = scopedEntriesFor("PERSONAL").filter {
+            it.frequency != "ONE_TIME" && !it.isSetAside &&
+            (it.category != "EMI" || !coveredByLoan(it))
+        }
+        if (pEntries.isNotEmpty()) {
+            appendLine("Monthly commitments:")
+            pEntries.forEach {
+                appendLine("  [${it.id}] ${it.category} ${inr(it.amount)}" +
+                    (if (it.note.isNotBlank()) " (${it.note})" else "") +
+                    if (isConfirmed(it.id)) " — done" else "")
+            }
+        }
+        val pSetAsides = annualSetAsidesFor("PERSONAL")
+        if (pSetAsides.isNotEmpty()) {
+            appendLine("Set-asides (need ${inr(plannedSetAsideFor("PERSONAL"))}/mo, ${inr(annualSetAsideDoneFor("PERSONAL"))} done):")
+            pSetAsides.forEach {
+                appendLine("  [${it.id}] ${it.category} ${inr(it.amount)} every ${it.everyMonths} months = ${inr(it.monthly)}/mo" +
+                    if (isConfirmed(it.id)) " — done" else "")
+            }
+        }
+        val pLoans = scopedLoansFor("PERSONAL")
+        if (pLoans.isNotEmpty()) {
+            appendLine("Loans:")
+            pLoans.forEach {
+                appendLine("  [${it.id}] ${it.name} ${inr(it.monthlyEmi)}/mo, ${it.remainingMonths}/${it.totalMonths} months left" +
+                    if (isLoanConfirmed(it.id)) " — paid" else "")
+            }
+        }
+
+        appendLine("--- JOINT DATA ---")
+        val jBalance = totalBalanceFor("JOINT")
+        val jTotals = monthTotalsFor("JOINT")
+        appendLine("Balance: ${inr(jBalance)}")
+        appendLine("Recorded this month: received ${inr(jTotals.income)}, spent ${inr(jTotals.spent)}, set aside ${inr(jTotals.saved)}, invested ${inr(jTotals.invested)}")
+        appendLine("Planned each month: ${inr(plannedIncomeFor("JOINT"))} in, ${inr(plannedExpenseFor("JOINT"))} out")
+        
+        val jEntries = scopedEntriesFor("JOINT").filter {
+            it.frequency != "ONE_TIME" && !it.isSetAside &&
+            (it.category != "EMI" || !coveredByLoan(it))
+        }
+        if (jEntries.isNotEmpty()) {
+            appendLine("Monthly commitments:")
+            jEntries.forEach {
+                appendLine("  [${it.id}] ${it.category} ${inr(it.amount)}" +
+                    (if (it.note.isNotBlank()) " (${it.note})" else "") +
+                    if (isConfirmed(it.id)) " — done" else "")
+            }
+        }
+        val jSetAsides = annualSetAsidesFor("JOINT")
+        if (jSetAsides.isNotEmpty()) {
+            appendLine("Set-asides (need ${inr(plannedSetAsideFor("JOINT"))}/mo, ${inr(annualSetAsideDoneFor("JOINT"))} done):")
+            jSetAsides.forEach {
+                appendLine("  [${it.id}] ${it.category} ${inr(it.amount)} every ${it.everyMonths} months = ${inr(it.monthly)}/mo" +
+                    if (isConfirmed(it.id)) " — done" else "")
+            }
+        }
+        val jLoans = scopedLoansFor("JOINT")
+        if (jLoans.isNotEmpty()) {
+            appendLine("Loans:")
+            jLoans.forEach {
+                appendLine("  [${it.id}] ${it.name} ${inr(it.monthlyEmi)}/mo, ${it.remainingMonths}/${it.totalMonths} months left" +
+                    if (isLoanConfirmed(it.id)) " — paid" else "")
+            }
+        }
+
+        appendLine("--- ACCOUNTS & CARDS ---")
         appendLine("Accounts:")
         visibleAccounts.forEach {
             appendLine("  ${it.name} = ${inr(balanceOf(it))} (${it.person}" +
@@ -2459,33 +2547,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         if (visibleCards.isNotEmpty()) {
             appendLine("Cards:")
             visibleCards.forEach {
-                appendLine("  ${it.name} owes ${inr(it.balance)} of ${inr(it.limit)}, due ${it.due}" +
+                appendLine("  ${it.name} owes ${inr(it.balance)} of ${inr(it.limit)}, due ${it.due} (${it.owner})" +
                     if (it.paid) " (paid)" else "")
-            }
-        }
-        if (commitments.isNotEmpty()) {
-            appendLine("Monthly commitments:")
-            commitments.forEach {
-                appendLine("  [${it.id}] ${it.category} ${inr(it.amount)}" +
-                    (if (it.note.isNotBlank()) " (${it.note})" else "") +
-                    if (isConfirmed(it.id)) " — done" else "")
-            }
-        }
-        if (annualSetAsides.isNotEmpty()) {
-            appendLine("Set-asides (need ${inr(annualSetAsideMonthly)}/mo, " +
-                "${inr(annualSetAsideDone)} done):")
-            annualSetAsides.forEach {
-                appendLine("  [${it.id}] ${it.category} ${inr(it.amount)} every " +
-                    "${it.everyMonths} months = ${inr(it.monthly)}/mo" +
-                    if (isConfirmed(it.id)) " — done" else "")
-            }
-        }
-        if (visibleLoans.isNotEmpty()) {
-            appendLine("Loans:")
-            visibleLoans.forEach {
-                appendLine("  [${it.id}] ${it.name} ${inr(it.monthlyEmi)}/mo, " +
-                    "${it.remainingMonths}/${it.totalMonths} months left" +
-                    if (isLoanConfirmed(it.id)) " — paid" else "")
             }
         }
         if (budgets.isNotEmpty()) {
