@@ -466,23 +466,12 @@ private fun MonthPlan(vm: FinTrackViewModel) {
         
         Spacer(Modifier.height(Space.s3))
         
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Space.s3)
-        ) {
-            KpiCard(
-                label = "Expected In",
-                amount = vm.plannedIncome,
-                accentColor = Color(0xFF00BFA5),
-                modifier = Modifier.weight(1f)
-            )
-            KpiCard(
-                label = "Spending Limit",
-                amount = vm.unplannedSpent,
-                accentColor = Pf.Text,
-                modifier = Modifier.weight(1f)
-            )
-        }
+        KpiCard(
+            label = "Spending Limit",
+            amount = vm.unplannedSpent,
+            accentColor = Pf.Text,
+            modifier = Modifier.fillMaxWidth()
+        )
         
         Spacer(Modifier.height(Space.s3))
         
