@@ -86,9 +86,16 @@ fun calculateSixMonthOutlook(
         val setAsideInMonth = entries.filter {
             it.type == "SAVINGS" || (it.type == "EXPENSE" && it.isSetAside)
         }.sumOf { e ->
-            val due = Ledger.nextDue(e.dueDate, e.everyMonths, on)
-            if (due.isEmpty()) Ledger.monthlyShare(e.amount, e.everyMonths)
-            else Ledger.shareUntilDue(e.amount, on, due, resetDays[e.person] ?: 1)
+            if (e.dueDate.isEmpty()) {
+                Ledger.monthlyShare(e.amount, e.everyMonths)
+            } else {
+                val nextDueFromToday = Ledger.nextDue(e.dueDate, e.everyMonths, todayIso)
+                if (on > nextDueFromToday) {
+                    Ledger.monthlyShare(e.amount, e.everyMonths)
+                } else {
+                    e.monthly(resetDays[e.person] ?: 1)
+                }
+            }
         }
         totalSetAside += setAsideInMonth
     }
