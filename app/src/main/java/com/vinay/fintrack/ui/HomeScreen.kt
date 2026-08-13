@@ -416,10 +416,32 @@ private fun OutlookSection(vm: FinTrackViewModel) {
 
 @Composable
 private fun MonthPlan(vm: FinTrackViewModel) {
-    val left = vm.monthLeft
+    val nextMonth = vm.outlook(1).firstOrNull()
+    val salary = vm.plannedIncome
+    val nextLoans = nextMonth?.loans ?: 0.0
+    val nextSetAside = nextMonth?.setAside ?: 0.0
+    val nextRecurring = nextMonth?.recurring ?: 0.0
+    val nextExpenses = nextLoans + nextSetAside + nextRecurring
+    val nextLeft = salary - nextExpenses
+
+    // Current Month calculations
+    val currentUnplannedSpent = vm.unplannedSpent
+    
+    val totalLoans = vm.scopedLoans.sumOf { it.monthlyEmi }
+    val confirmedLoans = vm.scopedLoans.filter { vm.isLoanConfirmed(it.id) }.sumOf { it.monthlyEmi }
+    
+    val totalSetAside = vm.annualSetAsides.sumOf { it.monthly }
+    val confirmedSetAside = vm.annualSetAsides.sumOf { vm.setAsideDone(it).coerceAtMost(it.monthly) }
+    
+    val totalRecurring = vm.plannedRecurring
+    val confirmedRecurring = vm.scopedEntries
+        .filter { it.type == "EXPENSE" && !it.isSetAside && !vm.coveredByLoan(it) && vm.isConfirmed(it.id) }
+        .sumOf { it.amount }
+
     Column {
-        SectionTitle("Left this month · ${vm.bucketLabel}", Modifier.padding(bottom = Space.s3))
+        SectionTitle("Month Plan · ${vm.bucketLabel}", Modifier.padding(bottom = Space.s3))
         
+        // 1. Next Month Estimated Balance Card
         Row(
             Modifier
                 .fillMaxWidth()
@@ -436,13 +458,13 @@ private fun MonthPlan(vm: FinTrackViewModel) {
                 Modifier
                     .width(4.dp)
                     .fillMaxHeight()
-                    .background(if (left < 0) Pf.Accent400 else Color(0xFF00BFA5))
+                    .background(if (nextLeft < 0) Pf.Accent400 else Color(0xFF00BFA5))
             )
             Column(
                 Modifier.padding(Space.s4)
             ) {
                 Text(
-                    if (left < 0) "SHORTAGE" else "SAVINGS",
+                    "NEXT MONTH ESTIMATED BALANCE",
                     color = Pf.Muted,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
@@ -450,54 +472,56 @@ private fun MonthPlan(vm: FinTrackViewModel) {
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    inr(kotlin.math.abs(left)),
-                    color = if (left < 0) Pf.Accent400 else Color(0xFF00BFA5),
+                    inr(nextLeft),
+                    color = if (nextLeft < 0) Pf.Accent400 else Color(0xFF00BFA5),
                     fontSize = 24.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Next month asks for ${inr(vm.nextMonthOut)} before any spending.",
+                    "Salary: ${inr(salary)} · Expenses: ${inr(nextExpenses)} (Loans: ${inr(nextLoans)}, Set Aside: ${inr(nextSetAside)}, Subs: ${inr(nextRecurring)})",
                     color = Pf.Muted,
-                    fontSize = 12.sp
+                    fontSize = 11.sp
                 )
             }
         }
         
         Spacer(Modifier.height(Space.s3))
         
+        // 2. Spending Limit (Current Month Expenses)
         KpiCard(
-            label = "Spending Limit",
-            amount = vm.unplannedSpent,
+            label = "Expenses this month",
+            amountText = inr(currentUnplannedSpent),
             accentColor = Pf.Text,
             modifier = Modifier.fillMaxWidth()
         )
         
         Spacer(Modifier.height(Space.s3))
         
+        // 3. Grid of Loans & Set Asides
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Space.s3)
         ) {
             KpiCard(
                 label = "Loans & EMIs",
-                amount = vm.plannedLoans,
+                amountText = "${inr(confirmedLoans)} of ${inr(totalLoans)}",
                 accentColor = Color(0xFFFF5252),
                 modifier = Modifier.weight(1f)
             )
             KpiCard(
                 label = "Set Aside",
-                amount = vm.plannedSetAside,
+                amountText = "${inr(confirmedSetAside)} of ${inr(totalSetAside)}",
                 accentColor = Color(0xFFB388FF),
                 modifier = Modifier.weight(1f)
             )
         }
         
-        if (vm.plannedRecurring > 0) {
+        if (totalRecurring > 0) {
             Spacer(Modifier.height(Space.s3))
             KpiCard(
                 label = "Recurring Subscriptions",
-                amount = vm.plannedRecurring,
+                amountText = "${inr(confirmedRecurring)} of ${inr(totalRecurring)}",
                 accentColor = Color(0xFF80D8FF),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -508,7 +532,7 @@ private fun MonthPlan(vm: FinTrackViewModel) {
 @Composable
 private fun KpiCard(
     label: String,
-    amount: Double,
+    amountText: String,
     accentColor: Color,
     modifier: Modifier = Modifier
 ) {
@@ -527,7 +551,7 @@ private fun KpiCard(
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            inr(amount),
+            amountText,
             color = accentColor,
             fontSize = 16.sp,
             fontWeight = FontWeight.ExtraBold
