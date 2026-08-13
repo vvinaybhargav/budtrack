@@ -27,6 +27,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -436,39 +442,130 @@ private fun MonthPlan(vm: FinTrackViewModel) {
     val left = vm.monthLeft
     Column {
         SectionTitle("Left this month · ${vm.bucketLabel}", Modifier.padding(bottom = Space.s3))
-        PfCard(padding = PaddingValues(Space.s4)) {
-            PlanRow("Expected in", vm.plannedIncome, bold = true)
-            Hairline()
-            PlanRow("Spending", vm.unplannedSpent, minus = true)
-            PlanRow("Loans & EMIs", vm.plannedLoans, minus = true)
-            PlanRow("Recurring", vm.plannedRecurring, minus = true)
-            PlanRow("Set aside", vm.plannedSetAside, minus = true)
-            Hairline()
-            Row(
+        
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min)
+                .background(Pf.Surface, Radius.Lg)
+                .border(
+                    width = 1.dp,
+                    color = Pf.Hairline,
+                    shape = Radius.Lg
+                )
+                .clip(Radius.Lg)
+        ) {
+            Box(
                 Modifier
-                    .fillMaxWidth()
-                    .padding(top = Space.s3),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(if (left < 0) Pf.Accent400 else Color(0xFF00BFA5))
+            )
+            Column(
+                Modifier.padding(Space.s4)
             ) {
                 Text(
-                    if (left < 0) "Short by" else "Left over",
-                    color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold
+                    if (left < 0) "SHORT BY" else "LEFT OVER",
+                    color = Pf.Muted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp
                 )
+                Spacer(Modifier.height(4.dp))
                 Text(
                     inr(kotlin.math.abs(left)),
-                    // Red only when it does not add up — a figure worth noticing.
-                    color = if (left < 0) Pf.Accent400 else Pf.Accent2,
-                    fontSize = 22.sp,
+                    color = if (left < 0) Pf.Accent400 else Color(0xFF00BFA5),
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Next month asks for ${inr(vm.nextMonthOut)} before any spending.",
+                    color = Pf.Muted,
+                    fontSize = 12.sp
+                )
             }
-            Muted(
-                "Next month asks for ${inr(vm.nextMonthOut)} before any spending.",
-                Modifier.padding(top = Space.s2),
-                size = 12
+        }
+        
+        Spacer(Modifier.height(Space.s3))
+        
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Space.s3)
+        ) {
+            KpiCard(
+                label = "Expected In",
+                amount = vm.plannedIncome,
+                accentColor = Color(0xFF00BFA5),
+                modifier = Modifier.weight(1f)
+            )
+            KpiCard(
+                label = "Spending Limit",
+                amount = vm.unplannedSpent,
+                accentColor = Pf.Text,
+                modifier = Modifier.weight(1f)
             )
         }
+        
+        Spacer(Modifier.height(Space.s3))
+        
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Space.s3)
+        ) {
+            KpiCard(
+                label = "Loans & EMIs",
+                amount = vm.plannedLoans,
+                accentColor = Color(0xFFFF5252),
+                modifier = Modifier.weight(1f)
+            )
+            KpiCard(
+                label = "Set Aside",
+                amount = vm.plannedSetAside,
+                accentColor = Color(0xFFB388FF),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        
+        if (vm.plannedRecurring > 0) {
+            Spacer(Modifier.height(Space.s3))
+            KpiCard(
+                label = "Recurring Subscriptions",
+                amount = vm.plannedRecurring,
+                accentColor = Color(0xFF80D8FF),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+private fun KpiCard(
+    label: String,
+    amount: Double,
+    accentColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .background(Pf.Surface, Radius.Md)
+            .border(1.dp, Pf.Hairline, Radius.Md)
+            .padding(Space.s3)
+    ) {
+        Text(
+            label.uppercase(),
+            color = Pf.Muted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.5.sp
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            inr(amount),
+            color = accentColor,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
     }
 }
 
