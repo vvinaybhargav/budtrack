@@ -333,7 +333,7 @@ private fun OutlookSection(vm: FinTrackViewModel) {
     Column {
         SectionTitle("Next 6 Months Outlook · ${vm.bucketLabel}", Modifier.padding(bottom = Space.s1))
         Muted(
-            "Estimated surplus based on your salary, active EMIs, recurring bills, and set-asides.",
+            "Estimated savings based on your salary, active EMIs, recurring bills, and set-asides.",
             Modifier.padding(bottom = Space.s3)
         )
         
@@ -354,7 +354,7 @@ private fun OutlookSection(vm: FinTrackViewModel) {
         ) {
             Column {
                 Text(
-                    "PROJECTED 6-MONTH SURPLUS",
+                    "PROJECTED 6-MONTH SAVINGS",
                     color = Pf.Muted,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
@@ -392,7 +392,7 @@ private fun OutlookSection(vm: FinTrackViewModel) {
                     Hairline()
                     
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Net Surplus", Modifier.weight(1.5f), color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text("Net Savings", Modifier.weight(1.5f), color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         Text(
                             inr(outlook.monthlySurplus),
                             Modifier.weight(1f),
@@ -465,7 +465,7 @@ private fun MonthPlan(vm: FinTrackViewModel) {
                 Modifier.padding(Space.s4)
             ) {
                 Text(
-                    if (left < 0) "SHORT BY" else "LEFT OVER",
+                    if (left < 0) "SHORTAGE" else "SAVINGS",
                     color = Pf.Muted,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,

@@ -314,7 +314,7 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                     }
                 }
                 Muted(
-                    "Your month turns over on this day. Salary amount is used to project your 6-month outlook surplus."
+                    "Your month turns over on this day. Salary amount is used to project your 6-month outlook savings."
                 )
                 val others = vm.salaryDaysByProfile.filter { it.first != vm.activeProfile }
                 if (others.isNotEmpty()) {
