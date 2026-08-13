@@ -329,7 +329,9 @@ private fun AccountsSection(vm: FinTrackViewModel) {
  */
 @Composable
 private fun OutlookSection(vm: FinTrackViewModel) {
-    val outlook = vm.getSixMonthOutlook()
+    val months = vm.outlook(6)
+    val totalSavings = months.sumOf { it.left }
+    
     Column {
         SectionTitle("Next 6 Months Outlook · ${vm.bucketLabel}", Modifier.padding(bottom = Space.s1))
         Muted(
@@ -361,79 +363,54 @@ private fun OutlookSection(vm: FinTrackViewModel) {
                     letterSpacing = 1.sp
                 )
                 
-                val surplusColor = if (outlook.totalSurplus >= 0) {
-                    Color(0xFF00BFA5) // Teal
-                } else {
-                    Color(0xFFFF5252) // Orange-Red
-                }
-                
                 Text(
-                    inr(outlook.totalSurplus),
+                    inr(totalSavings),
                     Modifier.padding(top = 4.dp, bottom = Space.s4),
-                    color = surplusColor,
+                    color = if (totalSavings >= 0) Color(0xFF00BFA5) else Color(0xFFFF5252),
                     fontSize = 32.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
                 
                 Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-                    Row(Modifier.fillMaxWidth()) {
-                        Text("Category", Modifier.weight(1.5f), color = Pf.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text("Monthly", Modifier.weight(1f), color = Pf.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                        Text("6-Month Total", Modifier.weight(1.2f), color = Pf.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                    }
-                    
-                    Hairline()
-                    
-                    GridRow("Salary", outlook.monthlySalary, outlook.totalSalary, false)
-                    GridRow("Loans & EMIs", -outlook.monthlyLoans, -outlook.totalLoans, true)
-                    GridRow("Recurring Bills", -outlook.monthlyRecurring, -outlook.totalRecurring, true)
-                    GridRow("Set Aside", -outlook.monthlySetAside, -outlook.totalSetAside, true)
-                    
-                    Hairline()
-                    
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Net Savings", Modifier.weight(1.5f), color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            inr(outlook.monthlySurplus),
-                            Modifier.weight(1f),
-                            color = if (outlook.monthlySurplus >= 0) Color(0xFF00BFA5) else Color(0xFFFF5252),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.End
-                        )
-                        Text(
-                            inr(outlook.totalSurplus),
-                            Modifier.weight(1.2f),
-                            color = surplusColor,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.End
-                        )
+                    months.forEach { m ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        m.label,
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    if (m.loanEnding.isNotEmpty()) {
+                                        Spacer(Modifier.width(8.dp))
+                                        Tag(
+                                            text = "Last: ${m.loanEnding}",
+                                            background = Color(0xFFFFCC80),
+                                            contentColor = Color(0xFF5D4037)
+                                        )
+                                    }
+                                }
+                                Muted(
+                                    "Salary ${inr(m.income)} · Expenses ${inr(m.out)}",
+                                    size = 11
+                                )
+                            }
+                            Text(
+                                inr(m.left),
+                                color = if (m.left >= 0) Color(0xFF00BFA5) else Color(0xFFFF5252),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun GridRow(label: String, monthly: Double, total: Double, isExpense: Boolean) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1.5f), color = Pf.Text, fontSize = 13.sp)
-        Text(
-            inr(kotlin.math.abs(monthly)),
-            Modifier.weight(1f),
-            color = if (isExpense) Pf.Text else Color(0xFF00BFA5),
-            fontSize = 13.sp,
-            textAlign = androidx.compose.ui.text.style.TextAlign.End
-        )
-        Text(
-            inr(kotlin.math.abs(total)),
-            Modifier.weight(1.2f),
-            color = if (isExpense) Pf.Text else Color(0xFF00BFA5),
-            fontSize = 13.sp,
-            textAlign = androidx.compose.ui.text.style.TextAlign.End
-        )
     }
 }
 

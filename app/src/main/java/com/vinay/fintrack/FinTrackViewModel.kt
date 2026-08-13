@@ -1636,7 +1636,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // did. The two were conflated, so the month's figures never moved however
     // many transactions were added or deleted.
     fun plannedIncomeFor(view: String): Double =
-        scopedEntriesFor(view).filter { it.type == "INCOME" }.sumOf { it.monthly }
+        if (view == "JOINT") {
+            persisted.salaries.values.sum()
+        } else {
+            persisted.salaries[activeProfile.orEmpty()] ?: 0.0
+        }
 
     fun plannedExpenseFor(view: String): Double =
         plannedRecurringFor(view) + plannedSetAsideFor(view) + plannedLoansFor(view)
@@ -1746,9 +1750,16 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val on = Ledger.addMonths(today(), ahead)
 
         val setAside = annualSetAsides.sumOf { e ->
-            val due = Ledger.nextDue(e.dueDate, e.everyMonths, on)
-            if (due.isEmpty()) Ledger.monthlyShare(e.amount, e.everyMonths)
-            else Ledger.shareUntilDue(e.amount, on, due)
+            if (e.dueDate.isEmpty()) {
+                Ledger.monthlyShare(e.amount, e.everyMonths)
+            } else {
+                val nextDueFromToday = Ledger.nextDue(e.dueDate, e.everyMonths, today())
+                if (on > nextDueFromToday) {
+                    Ledger.monthlyShare(e.amount, e.everyMonths)
+                } else {
+                    e.monthly(salaryResetDayFor(e.person))
+                }
+            }
         }
         // Still paying only while instalments remain: an EMI that ends in March
         // must not go on being subtracted in April.
