@@ -47,9 +47,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
         verticalArrangement = Arrangement.spacedBy(Space.s6)
     ) {
         item { ScopeSwitch(vm) }
-        item { SmsSuggestionBanner(vm) }
         item { BalanceCard(vm) }
-        item { SpendVelocityCard(vm) }
         item { AccountsSection(vm) }
         item { MonthPlan(vm) }
         item { MonthStats(vm) }
