@@ -472,6 +472,9 @@ fun categoryForParty(
     // An existing category named in the payee wins outright.
     categories.firstOrNull { it.isNotBlank() && p.contains(it.lowercase()) }?.let { return it }
 
+    // Use comprehensive semantic keyword matcher
+    findBestCategoryForDescription(party, categories)?.let { return it }
+
     val known = mapOf(
         "Eating Out" to listOf("swiggy", "zomato", "restaurant", "cafe", "eatclub", "dominos", "kfc"),
         "Groceries" to listOf("bigbasket", "blinkit", "zepto", "grocer", "dmart", "mart", "instamart"),
@@ -502,6 +505,41 @@ fun categoryForParty(
  *  the same biller, so they must not make it a different payee. */
 fun payeeKey(party: String): String =
     party.lowercase().filter { it.isLetterOrDigit() || it == ' ' }.trim().take(24)
+
+fun findBestCategoryForDescription(description: String, categories: List<String>): String? {
+    val desc = description.lowercase().trim()
+    if (desc.isEmpty()) return null
+
+    val associations = listOf(
+        listOf(listOf("grooming", "salon", "personal care", "parlour"), listOf("haircut", "barber", "salon", "parlour", "shave", "spa", "waxing", "massage", "cosmetics", "makeup", "grooming")),
+        listOf(listOf("eating out", "food", "dining", "restaurant"), listOf("swiggy", "zomato", "restaurant", "cafe", "eatclub", "dominos", "kfc", "bakery", "biryani", "pizza", "burger", "tea", "coffee", "dhaba", "juice", "starbucks")),
+        listOf(listOf("groceries", "grocer", "supermarket", "daily needs"), listOf("bigbasket", "blinkit", "zepto", "grocer", "dmart", "mart", "instamart", "milk", "dairy", "vegetable", "fruit", "provision")),
+        listOf(listOf("utilities", "bills", "broadband", "mobile recharge"), listOf("electricity", "power", "energy", "discom", "gas", "water", "broadband", "airtel", "jio", "vodafone", "bescom", "recharge", "wifi", "bill")),
+        listOf(listOf("fuel", "petrol"), listOf("petrol", "diesel", "fuel", "hpcl", "bpcl", "indianoil", "shell", "cng")),
+        listOf(listOf("travel", "transport", "cab", "taxi"), listOf("uber", "ola", "rapido", "irctc", "indigo", "makemytrip", "redbus", "cab", "taxi", "auto", "metro", "ticket", "flight", "toll", "fastag")),
+        listOf(listOf("shopping", "clothing", "apparel"), listOf("amazon", "flipkart", "myntra", "ajio", "meesho", "nykaa", "shopping", "clothing", "fashion", "zara", "h&m")),
+        listOf(listOf("health", "medical", "pharmacy"), listOf("pharmacy", "apollo", "medplus", "hospital", "clinic", "diagnostic", "doctor", "medicine", "test")),
+        listOf(listOf("entertainment", "subscriptions", "ott"), listOf("netflix", "prime", "spotify", "youtube", "hotstar", "movie", "multiplex", "cinema", "bookmyshow", "games", "playstation", "xbox")),
+        listOf(listOf("home expenses", "rent", "household"), listOf("rent", "maid", "cook", "garbage", "plumber", "carpenter", "electrician", "maintenance", "furniture", "appliance"))
+    )
+
+    for (assoc in associations) {
+        val categoryNames = assoc[0]
+        val keywords = assoc[1]
+        
+        if (keywords.any { desc.contains(it) }) {
+            for (catName in categoryNames) {
+                val matchedUserCategory = categories.firstOrNull { uCat ->
+                    uCat.lowercase().contains(catName) || catName.contains(uCat.lowercase())
+                }
+                if (matchedUserCategory != null) {
+                    return matchedUserCategory
+                }
+            }
+        }
+    }
+    return null
+}
 
 // looksLikeSenderId and titleCase lived here, to turn a payee into a category
 // name. Nothing does that any more — a payee is not a category — so they went

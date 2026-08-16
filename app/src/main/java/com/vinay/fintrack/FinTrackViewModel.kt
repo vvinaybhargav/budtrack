@@ -29,6 +29,7 @@ import com.vinay.fintrack.data.matchCardByBank
 import com.vinay.fintrack.data.matchCardByTail
 import com.vinay.fintrack.data.parseBankSms
 import com.vinay.fintrack.data.categoryForParty
+import com.vinay.fintrack.data.findBestCategoryForDescription
 import com.vinay.fintrack.data.Store
 import com.vinay.fintrack.data.SyncStatus
 import com.vinay.fintrack.data.parseFirebaseConfig
@@ -1274,16 +1275,48 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         tab = Tab.HOME
     }
 
+    fun navigateToCreateAccountFromTail(tail: String) {
+        newAccountDraft = NewAccountDraft(
+            name = "Bank A/c ••$tail",
+            owner = activeProfile ?: "Me",
+            balanceText = "0",
+            numberTail = tail
+        )
+        selectAddKind("BANK_ACCOUNT")
+        cancelEditTxn()
+        tab = Tab.ADD
+    }
+
+    fun navigateToCreateCardFromTail(tail: String) {
+        newCardDraft = NewCardDraft(
+            name = "Card ••$tail",
+            owner = activeProfile ?: "Me",
+            limitText = "0",
+            balanceText = "0",
+            numberTail = tail
+        )
+        selectAddKind("CREDIT_CARD")
+        cancelEditTxn()
+        tab = Tab.ADD
+    }
+
     fun addNewAccount() {
         if (newAccountDraft.name.isBlank()) return
+        val accId = newId("a")
         update { s ->
-            s.copy(
-                accounts = s.accounts + Account(
-                    newId("a"), newAccountDraft.name, ownerLabel(newAccountDraft.owner),
-                    newAccountDraft.owner, newAccountDraft.balanceText.toDoubleOrNull() ?: 0.0,
-                    newAccountDraft.numberTail
-                )
+            val nextAccounts = s.accounts + Account(
+                accId, newAccountDraft.name, ownerLabel(newAccountDraft.owner),
+                newAccountDraft.owner, newAccountDraft.balanceText.toDoubleOrNull() ?: 0.0,
+                newAccountDraft.numberTail
             )
+            // Auto-assign any pending imports that had this numberTail!
+            val updatedTxns = s.txns.map { t ->
+                if (t.accountTail.isNotEmpty() && t.accountTail == newAccountDraft.numberTail && t.fromAccountId.isEmpty() && t.toAccountId.isEmpty()) {
+                    if (t.kind == "INCOME") t.copy(toAccountId = accId, accountTail = "")
+                    else t.copy(fromAccountId = accId, accountTail = "")
+                } else t
+            }
+            s.copy(accounts = nextAccounts, txns = updatedTxns)
         }
         newAccountDraft = NewAccountDraft(owner = activeProfile ?: "Me")
         tab = Tab.HOME
@@ -1296,22 +1329,28 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
         val statementDay = newCardDraft.statementDayText.toIntOrNull() ?: 20
         val statementAmount = newCardDraft.statementAmountText.toDoubleOrNull() ?: 0.0
+        val ccId = newId("cc")
         update { s ->
-            s.copy(
-                cards = s.cards + Card(
-                    id = newId("cc"),
-                    name = newCardDraft.name,
-                    owner = newCardDraft.owner,
-                    limit = limit,
-                    balance = newCardDraft.balanceText.toDoubleOrNull() ?: 0.0,
-                    minDue = newCardDraft.minDueText.toDoubleOrNull() ?: 0.0,
-                    due = newCardDraft.due,
-                    numberTail = newCardDraft.numberTail,
-                    dueDate = resolvedDueDate,
-                    statementDay = statementDay,
-                    statementAmount = statementAmount
-                )
+            val nextCards = s.cards + Card(
+                id = ccId,
+                name = newCardDraft.name,
+                owner = newCardDraft.owner,
+                limit = limit,
+                balance = newCardDraft.balanceText.toDoubleOrNull() ?: 0.0,
+                minDue = newCardDraft.minDueText.toDoubleOrNull() ?: 0.0,
+                due = newCardDraft.due,
+                numberTail = newCardDraft.numberTail,
+                dueDate = resolvedDueDate,
+                statementDay = statementDay,
+                statementAmount = statementAmount
             )
+            // Auto-assign any pending imports that had this numberTail!
+            val updatedTxns = s.txns.map { t ->
+                if (t.accountTail.isNotEmpty() && t.accountTail == newCardDraft.numberTail && t.cardId.isEmpty()) {
+                    t.copy(cardId = ccId, accountTail = "")
+                } else t
+            }
+            s.copy(cards = nextCards, txns = updatedTxns)
         }
         newCardDraft = NewCardDraft(owner = activeProfile ?: "Me")
         tab = Tab.HOME
@@ -2229,6 +2268,51 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun linkTxnToCommitment(txnId: String, loanId: String?, entryId: String?) {
+        val txn = persisted.txns.firstOrNull { it.id == txnId } ?: return
+        val nextLoanId = loanId.orEmpty()
+        val nextEntryId = entryId.orEmpty()
+        var nextPeriod = txn.period
+        var nextCategory = txn.category
+
+        if (nextLoanId.isNotEmpty()) {
+            val l = loans.firstOrNull { it.id == nextLoanId }
+            if (l != null) {
+                nextPeriod = cycleFor(l.person)
+                nextCategory = "EMI"
+            }
+        } else if (nextEntryId.isNotEmpty()) {
+            val e = entries.firstOrNull { it.id == nextEntryId }
+            if (e != null) {
+                nextPeriod = cycleFor(e.person)
+                nextCategory = e.category
+            }
+        }
+
+        update { s ->
+            s.copy(
+                txns = s.txns.map { t ->
+                    if (t.id == txnId) {
+                        t.copy(
+                            loanId = nextLoanId,
+                            entryId = nextEntryId,
+                            period = nextPeriod,
+                            category = nextCategory
+                        )
+                    } else t
+                }
+            )
+        }
+        if (editingTxn?.id == txnId) {
+            editingTxn = editingTxn?.copy(
+                loanId = nextLoanId,
+                entryId = nextEntryId,
+                period = nextPeriod,
+                category = nextCategory
+            )
+        }
+    }
+
     /** Teaches the payee, then re-files anything unsorted from the same one. */
     private fun learnPayeeCategory(payee: String, category: String) {
         val key = payeeKey(payee)
@@ -2269,14 +2353,19 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             if (matchedRuleCategory != null) {
                 category = matchedRuleCategory
             } else {
-                // Check past transactions
-                val pastTxnCategory = txns.firstOrNull {
-                    it.note.trim().equals(text, ignoreCase = true) &&
-                        it.category != UNCATEGORISED &&
-                        it.category.isNotBlank()
-                }?.category
-                if (pastTxnCategory != null) {
-                    category = pastTxnCategory
+                val matchedSemanticCategory = findBestCategoryForDescription(text, categories)
+                if (matchedSemanticCategory != null) {
+                    category = matchedSemanticCategory
+                } else {
+                    // Check past transactions
+                    val pastTxnCategory = txns.firstOrNull {
+                        it.note.trim().equals(text, ignoreCase = true) &&
+                            it.category != UNCATEGORISED &&
+                            it.category.isNotBlank()
+                    }?.category
+                    if (pastTxnCategory != null) {
+                        category = pastTxnCategory
+                    }
                 }
             }
         }

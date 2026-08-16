@@ -33,6 +33,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.inr
 
@@ -316,6 +318,24 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                                 "later messages match on their own."
                         else "No balance moves until this is set."
                     )
+                    if (txn.accountTail.isNotBlank()) {
+                        Spacer(Modifier.height(Space.s2))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            SecondaryButton(
+                                "Add Account (••${txn.accountTail})",
+                                { vm.navigateToCreateAccountFromTail(txn.accountTail) },
+                                Modifier.weight(1f)
+                            )
+                            SecondaryButton(
+                                "Add Card (••${txn.accountTail})",
+                                { vm.navigateToCreateCardFromTail(txn.accountTail) },
+                                Modifier.weight(1f)
+                            )
+                        }
+                    }
                 } else {
                     Muted("Account")
                 }
@@ -336,6 +356,46 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                     value = txn.category,
                     options = vm.categories,
                     onSelect = vm::setTxnCategory
+                )
+            }
+            Column {
+                Muted("Link to Commitment / Loan")
+                val currentLinkText = when {
+                    txn.loanId.isNotEmpty() -> {
+                        val l = vm.loans.firstOrNull { it.id == txn.loanId }
+                        if (l != null) "Loan: ${l.name} (₹${inr(l.monthlyEmi)})" else "Linked Loan"
+                    }
+                    txn.entryId.isNotEmpty() -> {
+                        val e = vm.entries.firstOrNull { it.id == txn.entryId }
+                        if (e != null) {
+                            val labelPrefix = if (e.isSetAside) "Set aside" else "Recurring"
+                            "$labelPrefix: ${e.category} (₹${inr(e.monthly)})"
+                        } else "Linked Recurring"
+                    }
+                    else -> "None / Unlinked"
+                }
+
+                val linkOptionsMap = remember(txn.id, vm.loans, vm.entries) {
+                    val m = mutableMapOf<String, Pair<String?, String?>>()
+                    m["None / Unlinked"] = Pair(null, null)
+                    
+                    vm.loans.filter { !vm.isLoanConfirmed(it.id) || it.id == txn.loanId }.forEach { l ->
+                        m["Loan: ${l.name} (₹${inr(l.monthlyEmi)})"] = Pair(l.id, null)
+                    }
+                    vm.entries.filter { !vm.isConfirmed(it.id) || it.id == txn.entryId }.forEach { e ->
+                        val labelPrefix = if (e.isSetAside) "Set aside" else "Recurring"
+                        m["$labelPrefix: ${e.category} (₹${inr(e.monthly)})"] = Pair(null, e.id)
+                    }
+                    m
+                }
+
+                PfSelect(
+                    value = currentLinkText,
+                    options = linkOptionsMap.keys.toList(),
+                    onSelect = { selectedLabel ->
+                        val pair = linkOptionsMap[selectedLabel]
+                        vm.linkTxnToCommitment(txn.id, pair?.first, pair?.second)
+                    }
                 )
             }
             Muted("An account owned by you puts this under Personal; a joint account puts it under Joint.")
