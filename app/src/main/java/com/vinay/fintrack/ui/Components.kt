@@ -233,9 +233,15 @@ fun PfField(
     singleLine: Boolean = true,
     trailingIcon: @Composable (() -> Unit)? = null
 ) {
+    val displayLabel = label ?: if (placeholder.isNotEmpty() &&
+        !placeholder.lowercase().contains("search") &&
+        !placeholder.lowercase().contains("ask") &&
+        !placeholder.lowercase().contains("message") &&
+        !placeholder.lowercase().contains("type")) placeholder else null
+
     Column(modifier) {
-        if (label != null) {
-            Muted(label, Modifier.padding(bottom = 5.dp))
+        if (displayLabel != null) {
+            Muted(displayLabel, Modifier.padding(bottom = 5.dp))
         }
         OutlinedTextField(
             value = value,
