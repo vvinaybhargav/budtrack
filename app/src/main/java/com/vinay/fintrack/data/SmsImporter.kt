@@ -106,6 +106,7 @@ class SmsImporter(private val context: Context) {
         var added = 0
         val log = mutableListOf<String>()
         val cardSpend = mutableMapOf<String, Double>()
+        val cardSettlements = mutableMapOf<String, Double>()
         val bodies = mutableMapOf<String, String>()
         val smsSuggestions = state.smsSuggestions.toMutableMap()
 
@@ -194,14 +195,20 @@ class SmsImporter(private val context: Context) {
 
             // A refund to a card reduces what the card owes, the mirror of a
             // spend on it. Ignoring it left the returned money owed forever.
-            if (card != null && (!p.isCredit || p.isRefund)) {
-                val delta = if (p.isRefund) -p.amount else p.amount
-                cardSpend[card] = (cardSpend[card] ?: 0.0) + delta
+            if (card != null) {
+                if (p.isCredit && !p.isRefund) {
+                    cardSettlements[card] = (cardSettlements[card] ?: 0.0) + p.amount
+                } else {
+                    val delta = if (p.isRefund) -p.amount else p.amount
+                    cardSpend[card] = (cardSpend[card] ?: 0.0) + delta
+                }
             }
             added++
             val who = p.party.ifEmpty { "unnamed payment" }
-            log += if (card != null) "added ${inr(p.amount)} $who to the card"
-            else "added ${inr(p.amount)} $who"
+            log += if (card != null) {
+                if (p.isCredit && !p.isRefund) "settled ${inr(p.amount)} of card bill"
+                else "added ${inr(p.amount)} $who to the card"
+            } else "added ${inr(p.amount)} $who"
         }
 
         // A category invented from a payee has to join the list, or budgets and
@@ -215,9 +222,20 @@ class SmsImporter(private val context: Context) {
             txns = txns,
             categories = state.categories + fresh,
             cards = state.cards.map { c ->
+                var updated = c
                 cardSpend[c.id]?.let {
-                    c.copy(balance = (c.balance + it).coerceAtLeast(0.0), paid = false)
-                } ?: c
+                    updated = updated.copy(balance = (updated.balance + it).coerceAtLeast(0.0), paid = false)
+                }
+                cardSettlements[c.id]?.let {
+                    val nextBal = (updated.balance - it).coerceAtLeast(0.0)
+                    val nextStatement = (updated.statementAmount - it).coerceAtLeast(0.0)
+                    updated = updated.copy(
+                        balance = nextBal,
+                        statementAmount = nextStatement,
+                        paid = nextStatement <= 0.0
+                    )
+                }
+                updated
             },
             importedRefs = capRefs(state.importedRefs + items.map { it.dedupeKey }),
             smsBodies = capBodies(state.smsBodies + bodies),

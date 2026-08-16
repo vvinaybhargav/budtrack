@@ -419,6 +419,10 @@ fun SettingsScreen(vm: FinTrackViewModel) {
 
         item { Hairline() }
 
+        item { SmsRulesSection(vm) }
+
+        item { Hairline() }
+
         item {
             Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
                 Heading("Sync")
@@ -715,3 +719,54 @@ private fun hasSmsPermission(context: android.content.Context): Boolean =
     listOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS).all {
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     }
+
+@Composable
+private fun SmsRulesSection(vm: FinTrackViewModel) {
+    val rules = vm.smsRules
+    if (rules.isEmpty()) return
+
+    Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+        Heading("Saved Categorisation Rules")
+        Muted("SMS patterns mapped to categories. Tap the trash icon to delete a rule.")
+
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(Pf.Surface, Radius.Md)
+                .border(1.dp, Pf.Hairline, Radius.Md)
+                .padding(horizontal = Space.s4, vertical = Space.s2)
+        ) {
+            rules.entries.forEachIndexed { index, (pattern, category) ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = Space.s2),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            pattern,
+                            color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold
+                        )
+                        Muted("Maps to: $category", size = 12)
+                    }
+                    IconButton(
+                        onClick = { vm.deleteSmsRule(pattern) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete rule",
+                            tint = Pf.Accent400,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                if (index < rules.size - 1) {
+                    Hairline()
+                }
+            }
+        }
+    }
+}

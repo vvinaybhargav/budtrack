@@ -2239,6 +2239,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearSortMessage() { sortMessage = "" }
 
+    fun deleteSmsRule(pattern: String) {
+        update { s ->
+            s.copy(smsRules = s.smsRules - pattern)
+        }
+    }
+
     /** Imported rows with no account yet — the only ones that need you. */
     val txnsNeedingAccount: List<Txn> get() = txns.filter { needsAccount(it) }
 

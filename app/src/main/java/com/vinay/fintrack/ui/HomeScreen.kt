@@ -53,6 +53,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
         verticalArrangement = Arrangement.spacedBy(Space.s6)
     ) {
         item { ScopeSwitch(vm) }
+        item { CardStatementAlert(vm) }
         item { BalanceCard(vm) }
         item { AccountsSection(vm) }
         item { MonthPlan(vm) }
@@ -240,6 +241,52 @@ private fun ScopeSwitch(vm: FinTrackViewModel) {
             vm.setScope(false)
         }
         ScopeTab("Joint", vm.bucketView == "JOINT", Modifier.weight(1f)) { vm.setScope(true) }
+    }
+}
+
+@Composable
+private fun CardStatementAlert(vm: FinTrackViewModel) {
+    val todayStr = today()
+    val cardsNeedingInput = vm.cards.filter { c ->
+        c.balance > 0.0 && c.statementAmount == 0.0 && !c.paid && 
+        (todayStr.substring(8, 10).toIntOrNull() ?: 1).let { day ->
+            day >= c.statementDay || day < c.due
+        }
+    }
+
+    if (cardsNeedingInput.isNotEmpty()) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(bottom = Space.s2),
+            verticalArrangement = Arrangement.spacedBy(Space.s2)
+        ) {
+            cardsNeedingInput.forEach { c ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Pf.Accent100, Radius.Md)
+                        .border(1.dp, Pf.Accent, Radius.Md)
+                        .clickable { vm.startEditCard(c) }
+                        .padding(Space.s3),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Statement generated for ${c.name}",
+                            color = Pf.Accent800, fontSize = 13.sp, fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Muted(
+                            "Outstanding balance is ${inr(c.balance)}. Tap to enter statement amount actually due.",
+                            size = 11
+                        )
+                    }
+                    Tag("Billed", Pf.Accent, Color.White)
+                }
+            }
+        }
     }
 }
 
