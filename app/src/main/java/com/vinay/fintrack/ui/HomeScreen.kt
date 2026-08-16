@@ -168,7 +168,7 @@ private fun ConfirmSheet(vm: FinTrackViewModel) {
 @Composable
 private fun CardSettleSheet(vm: FinTrackViewModel) {
     val cardId = vm.settlingCardId ?: return
-    val card = vm.persisted.cards.firstOrNull { it.id == cardId } ?: return
+    val card = vm.cards.firstOrNull { it.id == cardId } ?: return
 
     Dialog(onDismissRequest = vm::cancelSettleCard) {
         Column(
