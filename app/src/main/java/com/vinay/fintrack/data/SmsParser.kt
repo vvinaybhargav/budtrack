@@ -115,8 +115,13 @@ fun parseBankSms(
 
     if (NOT_A_TRANSACTION.any { lower.contains(it) }) return null
 
-    val isCredit = firstIndexOf(lower, CREDIT_WORDS).let { credit ->
-        val debit = firstIndexOf(lower, DEBIT_WORDS)
+    val directionBody = lower
+        .replace("credit card", "cc")
+        .replace("creditcard", "cc")
+        .replace("credit-card", "cc")
+
+    val isCredit = firstIndexOf(directionBody, CREDIT_WORDS).let { credit ->
+        val debit = firstIndexOf(directionBody, DEBIT_WORDS)
         when {
             credit < 0 && debit < 0 -> return null
             credit < 0 -> false

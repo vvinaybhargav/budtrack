@@ -39,6 +39,9 @@ object DueReminder {
 
     private const val REQUEST = 4711
 
+    const val ACTION_CHECK_UNPROCESSED = "com.vinay.fintrack.CHECK_UNPROCESSED"
+    private const val UNPROCESSED_REQUEST = 4712
+
     fun schedule(context: Context) {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
         val next = Calendar.getInstance().apply {
@@ -55,6 +58,18 @@ object DueReminder {
                 pendingIntent(context)
             )
         }.onFailure { Log.w(TAG, "could not schedule reminders", it) }
+
+        val nextUnprocessed = Calendar.getInstance().apply {
+            add(Calendar.HOUR_OF_DAY, 6)
+        }
+        runCatching {
+            manager.setInexactRepeating(
+                AlarmManager.RTC,
+                nextUnprocessed.timeInMillis,
+                6 * 60 * 60 * 1000L, // 6 hours
+                unprocessedPendingIntent(context)
+            )
+        }.onFailure { Log.w(TAG, "could not schedule unprocessed reminders", it) }
     }
 
     private fun pendingIntent(context: Context): PendingIntent =
@@ -62,6 +77,16 @@ object DueReminder {
             context,
             REQUEST,
             Intent(context, DueReceiver::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+    private fun unprocessedPendingIntent(context: Context): PendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            UNPROCESSED_REQUEST,
+            Intent(context, DueReceiver::class.java).apply {
+                action = ACTION_CHECK_UNPROCESSED
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -275,6 +300,56 @@ object DueReminder {
         }
     }
 
+    fun checkUnprocessed(context: Context) {
+        val store = Store(context)
+        val state = store.load()
+        
+        val needAccount = state.txns.count { t ->
+            t.source.startsWith("sms") && t.cardId.isEmpty() &&
+                t.fromAccountId.isEmpty() && t.toAccountId.isEmpty()
+        }
+        val unsorted = state.txns.count { it.category == "Uncategorised" }
+        
+        if (needAccount > 0 || unsorted > 0) {
+            val title = "Unprocessed Transactions"
+            val body = buildString {
+                if (needAccount > 0 && unsorted > 0) {
+                    append("$needAccount need an account & $unsorted need a category.")
+                } else if (needAccount > 0) {
+                    append("$needAccount transactions need an account.")
+                } else {
+                    append("$unsorted transactions need a category.")
+                }
+                append(" Tap to organize them.")
+            }
+            
+            val open = Intent(context, com.vinay.fintrack.MainActivity::class.java).apply {
+                action = Intent.ACTION_MAIN
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("com.vinay.fintrack.GO_TO_ENTRIES", true)
+            }
+            val pending = PendingIntent.getActivity(
+                context, 9999, open,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            
+            val note = androidx.core.app.NotificationCompat.Builder(context, "due")
+                .setSmallIcon(com.vinay.fintrack.R.drawable.ic_notify)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(body))
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(pending)
+                .setAutoCancel(true)
+                .build()
+                
+            runCatching {
+                val manager = context.getSystemService(android.app.NotificationManager::class.java)
+                manager?.notify(900999, note)
+            }
+        }
+    }
+
     private fun whenWord(days: Int): String = when (days) {
         0 -> "today"
         1 -> "tomorrow"
@@ -293,13 +368,16 @@ class DueReceiver : BroadcastReceiver() {
             DueReminder.schedule(app)
             return
         }
-        // Reading state touches disk, so it happens off the main thread; the
-        // receiver is kept alive until it finishes.
         val pending = goAsync()
         Thread {
             try {
-                runCatching { DueReminder.check(app) }
-                    .onFailure { Log.w("DueReceiver", "reminder check failed", it) }
+                runCatching {
+                    if (intent.action == DueReminder.ACTION_CHECK_UNPROCESSED) {
+                        DueReminder.checkUnprocessed(app)
+                    } else {
+                        DueReminder.check(app)
+                    }
+                }.onFailure { Log.w("DueReceiver", "reminder check failed", it) }
             } finally {
                 pending.finish()
             }

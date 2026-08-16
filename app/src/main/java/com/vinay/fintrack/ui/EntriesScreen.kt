@@ -78,19 +78,37 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                         .padding(Space.s3)
                 ) {
                     if (needAccount > 0) {
-                        Text(
-                            "$needAccount need an account",
-                            color = Pf.Accent400, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
-                        )
-                        Muted("Their balances haven't moved. Tap one to set it.")
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    vm.entriesCategoryFilter = "Needs Account"
+                                }
+                                .padding(vertical = Space.s1)
+                        ) {
+                            Text(
+                                "$needAccount need an account",
+                                color = Pf.Accent400, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                            )
+                            Muted("Their balances haven't moved. Tap one to set it.")
+                        }
                     }
                     if (unsorted > 0) {
-                        Text(
-                            "$unsorted not categorised",
-                            Modifier.padding(top = if (needAccount > 0) Space.s2 else 0.dp),
-                            color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
-                        )
-                        Muted("File one and that payee stays filed.")
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    vm.entriesCategoryFilter = "Uncategorised"
+                                }
+                                .padding(vertical = Space.s1)
+                        ) {
+                            Text(
+                                "$unsorted not categorised",
+                                Modifier.padding(top = if (needAccount > 0) Space.s2 else 0.dp),
+                                color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                            )
+                            Muted("File one and that payee stays filed.")
+                        }
                         Row(Modifier.padding(top = Space.s2)) {
                             SecondaryButton(
                                 if (vm.sortingCategories) "Sorting…" else "Sort with AI",
@@ -122,6 +140,9 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(Space.s2)
             ) {
                 Chip("All", vm.entriesCategoryFilter == null, onClick = { vm.setCategoryFilter(null) })
+                if (needAccount > 0) {
+                    Chip("Needs Account", vm.entriesCategoryFilter == "Needs Account", onClick = { vm.setCategoryFilter("Needs Account") })
+                }
                 vm.txnChips.forEach { c ->
                     Chip(c, vm.entriesCategoryFilter == c, onClick = { vm.setCategoryFilter(c) })
                 }

@@ -1959,7 +1959,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         get() = txns
             .filter { inBucket(it) }
             .filter { t ->
-                (entriesCategoryFilter == null || t.category == entriesCategoryFilter) &&
+                val matchesCategory = when (entriesCategoryFilter) {
+                    null -> true
+                    "Needs Account" -> needsAccount(t)
+                    else -> t.category == entriesCategoryFilter
+                }
+                matchesCategory &&
                     (entriesSearch.isEmpty() ||
                         t.category.contains(entriesSearch, true) ||
                         t.note.contains(entriesSearch, true) ||

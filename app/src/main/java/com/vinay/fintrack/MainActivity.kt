@@ -86,6 +86,11 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         vm.refreshFromDisk()
         openTappedTransaction()
+        if (intent?.getBooleanExtra("com.vinay.fintrack.GO_TO_ENTRIES", false) == true) {
+            intent.removeExtra("com.vinay.fintrack.GO_TO_ENTRIES")
+            vm.tab = Tab.ENTRIES
+            vm.entriesCategoryFilter = "Needs Account"
+        }
     }
 
     /**
