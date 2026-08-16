@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.SyncStatus
+import com.vinay.fintrack.data.Ledger
+import com.vinay.fintrack.data.today
 
 @Composable
 fun SettingsScreen(vm: FinTrackViewModel) {
@@ -323,6 +325,78 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                             others.joinToString(", ") { "${it.first}: ${it.second}" },
                         Modifier.padding(top = Space.s2)
                     )
+                }
+
+                Column(Modifier.padding(top = Space.s4)) {
+                    Text(
+                        "Salary Overrides (Next 3 Months)",
+                        color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = Space.s2)
+                    )
+                    val profile = vm.activeProfile.orEmpty()
+                    val nextMonths = (1..3).map { ahead ->
+                        val d = Ledger.addMonths(today(), ahead)
+                        val yr = d.substring(0, 4)
+                        val monthInt = d.substring(5, 7).toInt()
+                        val monthLabel = when (monthInt) {
+                            1 -> "Jan"
+                            2 -> "Feb"
+                            3 -> "Mar"
+                            4 -> "Apr"
+                            5 -> "May"
+                            6 -> "Jun"
+                            7 -> "Jul"
+                            8 -> "Aug"
+                            9 -> "Sep"
+                            10 -> "Oct"
+                            11 -> "Nov"
+                            12 -> "Dec"
+                            else -> ""
+                        }
+                        val yearMonth = "%s-%02d".format(yr, monthInt)
+                        val displayLabel = "$monthLabel $yr"
+                        Triple(yearMonth, displayLabel, monthLabel)
+                    }
+
+                    nextMonths.forEach { (yearMonth, displayLabel, _) ->
+                        val override = vm.getSalaryOverride(profile, yearMonth)
+                        val amountVal = override?.amount ?: vm.salaryAmount
+                        val resetDayVal = override?.resetDay ?: vm.salaryResetDayFor(profile)
+                        
+                        Row(
+                            Modifier.fillMaxWidth().padding(bottom = Space.s3),
+                            horizontalArrangement = Arrangement.spacedBy(Space.s3),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                displayLabel,
+                                color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.width(90.dp)
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Muted("Pay Day")
+                                PfSelect(
+                                    value = resetDayVal.toString(),
+                                    options = (1..28).map { it.toString() },
+                                    onSelect = { day ->
+                                        vm.setSalaryOverride(profile, yearMonth, amountVal, day.toIntOrNull() ?: 1)
+                                    }
+                                )
+                            }
+                            Column(Modifier.weight(1.5f)) {
+                                Muted("Amount (₹)")
+                                PfField(
+                                    value = if (amountVal > 0.0) amountVal.toLong().toString() else "",
+                                    onValueChange = { amtText ->
+                                        val amt = amtText.toDoubleOrNull()
+                                        vm.setSalaryOverride(profile, yearMonth, amt, resetDayVal)
+                                    },
+                                    numeric = true,
+                                    placeholder = "Amount"
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

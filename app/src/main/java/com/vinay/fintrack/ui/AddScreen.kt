@@ -176,6 +176,10 @@ private fun CardForm(vm: FinTrackViewModel) {
             PfField("Minimum due (₹)", vm.newCardDraft.minDueText, { vm.newCardDraft = vm.newCardDraft.copy(minDueText = it) }, Modifier.weight(1f), "e.g. 2200", numeric = true)
             PfField("Due day of month (1-31)", vm.newCardDraft.dueText, { vm.newCardDraft = vm.newCardDraft.copy(dueText = it) }, Modifier.weight(1f), "e.g. 18", numeric = true)
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
+            PfField("Statement day of month (1-31)", vm.newCardDraft.statementDayText, { vm.newCardDraft = vm.newCardDraft.copy(statementDayText = it) }, Modifier.weight(1f), "e.g. 20", numeric = true)
+            PfField("Statement amount / Actually Due (₹)", vm.newCardDraft.statementAmountText, { vm.newCardDraft = vm.newCardDraft.copy(statementAmountText = it) }, Modifier.weight(1f), "e.g. 12000", numeric = true)
+        }
         PfField(
             "Last digits of the card",
             vm.newCardDraft.numberTail,

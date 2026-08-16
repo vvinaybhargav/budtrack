@@ -16,6 +16,7 @@ import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.Loan
 import com.vinay.fintrack.data.OpenAi
 import com.vinay.fintrack.data.PersistedState
+import com.vinay.fintrack.data.SalaryOverride
 import com.vinay.fintrack.data.SAVINGS_CATEGORIES
 import com.vinay.fintrack.data.hashPin
 import com.vinay.fintrack.data.looksLikePlainPin
@@ -101,7 +102,9 @@ data class NewCardDraft(
     /** Last digits as the bank's SMS shows them, for matching card spends. */
     val numberTail: String = "",
     /** Bill date as the form takes it (dd-mm-yyyy), so it can be reminded about. */
-    val dueText: String = ""
+    val dueText: String = "",
+    val statementDayText: String = "20",
+    val statementAmountText: String = ""
 )
 
 class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
@@ -729,8 +732,37 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s -> s.copy(salaries = s.salaries + (activeProfile.orEmpty() to amount)) }
     }
 
-    fun salaryResetDayFor(person: String): Int =
-        persisted.salaryDays[person] ?: persisted.cycleResetDay
+    fun getSalaryOverride(profile: String, yearMonth: String): SalaryOverride? {
+        return persisted.salaryOverrides["${profile}_$yearMonth"]
+    }
+
+    fun setSalaryOverride(profile: String, yearMonth: String, amount: Double?, resetDay: Int?) {
+        update { s ->
+            val key = "${profile}_$yearMonth"
+            val current = s.salaryOverrides[key]
+            val defaultAmt = s.salaries[profile] ?: 0.0
+            val defaultDay = s.salaryDays[profile] ?: s.cycleResetDay
+            
+            if (amount == null && resetDay == null) {
+                s.copy(salaryOverrides = s.salaryOverrides - key)
+            } else {
+                val nextOverride = SalaryOverride(
+                    amount = amount ?: current?.amount ?: defaultAmt,
+                    resetDay = resetDay ?: current?.resetDay ?: defaultDay
+                )
+                s.copy(salaryOverrides = s.salaryOverrides + (key to nextOverride))
+            }
+        }
+    }
+
+    fun salaryResetDayFor(person: String, onDate: String = ""): Int {
+        if (onDate.isNotEmpty()) {
+            val yearMonth = onDate.substring(0, 7)
+            val override = persisted.salaryOverrides["${person}_$yearMonth"]
+            if (override != null) return override.resetDay
+        }
+        return persisted.salaryDays[person] ?: persisted.cycleResetDay
+    }
 
     /**
      * The cycle a given person is on. Two salaries rarely land on the same
@@ -1262,6 +1294,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         if (newCardDraft.name.isBlank() || limit <= 0) return
         val dueDay = newCardDraft.dueText.toIntOrNull() ?: 0
         val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
+        val statementDay = newCardDraft.statementDayText.toIntOrNull() ?: 20
+        val statementAmount = newCardDraft.statementAmountText.toDoubleOrNull() ?: 0.0
         update { s ->
             s.copy(
                 cards = s.cards + Card(
@@ -1273,7 +1307,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     minDue = newCardDraft.minDueText.toDoubleOrNull() ?: 0.0,
                     due = newCardDraft.due,
                     numberTail = newCardDraft.numberTail,
-                    dueDate = resolvedDueDate
+                    dueDate = resolvedDueDate,
+                    statementDay = statementDay,
+                    statementAmount = statementAmount
                 )
             )
         }
@@ -1391,7 +1427,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             minDueText = c.minDue.toLong().toString(),
             due = c.due,
             numberTail = c.numberTail,
-            dueText = if (c.dueDate.isEmpty()) "" else c.dueDate.split("-").getOrNull(2)?.toIntOrNull()?.toString() ?: ""
+            dueText = if (c.dueDate.isEmpty()) "" else c.dueDate.split("-").getOrNull(2)?.toIntOrNull()?.toString() ?: "",
+            statementDayText = c.statementDay.toString(),
+            statementAmountText = if (c.statementAmount > 0.0) c.statementAmount.toLong().toString() else ""
         )
     }
 
@@ -1401,6 +1439,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val id = editingCardId ?: return
         val dueDay = cardDraft.dueText.toIntOrNull() ?: 0
         val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
+        val statementDay = cardDraft.statementDayText.toIntOrNull() ?: 20
+        val statementAmount = cardDraft.statementAmountText.toDoubleOrNull() ?: 0.0
         update { s ->
             s.copy(cards = s.cards.map {
                 if (it.id == id) it.copy(
@@ -1410,7 +1450,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     minDue = cardDraft.minDueText.toDoubleOrNull() ?: 0.0,
                     due = cardDraft.due,
                     numberTail = cardDraft.numberTail,
-                    dueDate = resolvedDueDate
+                    dueDate = resolvedDueDate,
+                    statementDay = statementDay,
+                    statementAmount = statementAmount
                 ) else it
             })
         }
@@ -1635,12 +1677,26 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // planned* is what the entries say should happen each month; actual* is what
     // did. The two were conflated, so the month's figures never moved however
     // many transactions were added or deleted.
-    fun plannedIncomeFor(view: String): Double =
-        if (view == "JOINT") {
+    fun plannedIncomeFor(view: String, onDate: String = ""): Double {
+        if (onDate.isNotEmpty()) {
+            val yearMonth = onDate.substring(0, 7)
+            return if (view == "JOINT") {
+                persisted.profiles.keys.sumOf { p ->
+                    val override = persisted.salaryOverrides["${p}_$yearMonth"]
+                    override?.amount ?: (persisted.salaries[p] ?: 0.0)
+                }
+            } else {
+                val activeP = activeProfile.orEmpty()
+                val override = persisted.salaryOverrides["${activeP}_$yearMonth"]
+                override?.amount ?: (persisted.salaries[activeP] ?: 0.0)
+            }
+        }
+        return if (view == "JOINT") {
             persisted.salaries.values.sum()
         } else {
             persisted.salaries[activeProfile.orEmpty()] ?: 0.0
         }
+    }
 
     fun plannedExpenseFor(view: String): Double =
         plannedRecurringFor(view) + plannedSetAsideFor(view) + plannedLoansFor(view)
@@ -1757,7 +1813,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 if (on > nextDueFromToday) {
                     Ledger.monthlyShare(e.amount, e.everyMonths)
                 } else {
-                    e.monthly(salaryResetDayFor(e.person))
+                    e.monthly(salaryResetDayFor(e.person, on))
                 }
             }
         }
@@ -1771,7 +1827,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             recurring = plannedRecurring,
             loans = Ledger.paise(running.sumOf { it.monthlyEmi }),
             setAside = Ledger.paise(setAside),
-            income = plannedIncome,
+            income = plannedIncomeFor(bucketView, on),
             loanEnding = ending?.name.orEmpty()
         )
     }
@@ -3322,11 +3378,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             ?: ""
             
         val now = today()
+        val settleAmount = if (card.statementAmount > 0.0) card.statementAmount else card.balance
         val txn = Txn(
             id = newId("t"),
             date = now,
             kind = "EXPENSE",
-            amount = card.balance,
+            amount = settleAmount,
             category = "Credit Card Bill",
             fromAccountId = fromAccId,
             cardId = card.id,
@@ -3339,8 +3396,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             s.copy(
                 txns = s.txns + txn,
                 cards = s.cards.map {
-                    if (it.id == cardId) it.copy(balance = 0.0, paid = true)
-                    else it
+                    if (it.id == cardId) {
+                        val nextBal = (it.balance - settleAmount).coerceAtLeast(0.0)
+                        it.copy(balance = nextBal, statementAmount = 0.0, paid = true)
+                    } else it
                 }
             )
         }

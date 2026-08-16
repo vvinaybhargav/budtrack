@@ -803,6 +803,8 @@ private fun CardsSection(vm: FinTrackViewModel) {
                             PfField(label = "Minimum due (₹)", value = vm.cardDraft.minDueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(minDueText = it) }, placeholder = "Minimum due", numeric = true)
                             // A real date, so the bill can be reminded about.
                             PfField(label = "Due day of month (1-31)", value = vm.cardDraft.dueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(dueText = it) }, placeholder = "Due day of month (1-31)", numeric = true)
+                            PfField(label = "Statement day of month (1-31)", value = vm.cardDraft.statementDayText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(statementDayText = it) }, placeholder = "Statement day (1-31)", numeric = true)
+                            PfField(label = "Statement amount / Actually Due (₹)", value = vm.cardDraft.statementAmountText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(statementAmountText = it) }, placeholder = "Statement amount", numeric = true)
                             // Lets a card spend in a bank SMS find this card.
                             PfField(label = "Last 3-4 digits (for SMS matching)", value = vm.cardDraft.numberTail, onValueChange = { vm.cardDraft = vm.cardDraft.copy(numberTail = it) }, placeholder = "Last 3-4 digits of the card", numeric = true)
                             EditorActions({ vm.deleteCard(c.id) }, vm::cancelEditCard, vm::saveCard)
@@ -823,7 +825,9 @@ private fun CardsSection(vm: FinTrackViewModel) {
                                         color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
                                     )
                                     Muted(
-                                        "${inr(c.balance)} of ${inr(c.limit)} · due ${c.dueText}" +
+                                        (if (c.statementAmount > 0.0) "Actually Due: ${inr(c.statementAmount)} (Total Owed: ${inr(c.balance)} of ${inr(c.limit)})"
+                                        else "${inr(c.balance)} of ${inr(c.limit)}") +
+                                            " · due ${c.dueText}" +
                                             (if (c.nextDue.isEmpty() || c.paid) ""
                                             else " · in ${Ledger.untilText(today(), c.nextDue)}"),
                                         Modifier.padding(top = 2.dp, bottom = 6.dp)
@@ -842,7 +846,7 @@ private fun CardsSection(vm: FinTrackViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Muted("Min due ${inr(c.minDue)}")
+                                Muted("Min due ${inr(c.minDue)} · Billed ${c.statementDay}th")
                                 Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                                     if (!c.paid && c.balance > 0.0) {
                                         PrimaryButton("Settle Bill", { vm.settleCardBill(c.id) })

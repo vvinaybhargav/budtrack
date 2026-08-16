@@ -178,7 +178,9 @@ data class Card(
      * compared to nothing — so the one payment with a real late fee attached was
      * the only thing the app could not warn about.
      */
-    val dueDate: String = ""
+    val dueDate: String = "",
+    val statementDay: Int = 20,
+    val statementAmount: Double = 0.0
 ) {
     /** The next bill date, past any already gone. Cards bill monthly. */
     val nextDue: String get() = Ledger.nextDue(dueDate, 1, today())

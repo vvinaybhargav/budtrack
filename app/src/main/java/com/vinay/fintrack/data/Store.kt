@@ -76,7 +76,14 @@ data class PersistedState(
      */
     val payeeCategories: Map<String, String> = emptyMap(),
     val smsSuggestions: Map<String, String> = emptyMap(),
-    val smsRules: Map<String, String> = emptyMap()
+    val smsRules: Map<String, String> = emptyMap(),
+    val salaryOverrides: Map<String, SalaryOverride> = emptyMap()
+)
+
+@Serializable
+data class SalaryOverride(
+    val amount: Double,
+    val resetDay: Int
 )
 
 class Store(context: Context) {
