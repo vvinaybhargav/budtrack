@@ -12,27 +12,27 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 object Pf {
-    val Bg = Color(0xFF0F0B16)
-    val Surface = Color(0xFF1D1727)
-    val Surface2 = Color(0xFF2E273C)
-    val Text = Color(0xFFF2F1F5)
-    val Muted = Color(0xFF94909D)
-    val Hairline = Color(0xFFA398BA).copy(alpha = 0.18f)
+    val Bg = Color(0xFF0D0D0B)
+    val Surface = Color(0xFF1B1A17)
+    val Surface2 = Color(0xFF282622)
+    val Text = Color(0xFFF7F4EB)
+    val Muted = Color(0xFF9E988A)
+    val Hairline = Color(0xFFEBE5D8).copy(alpha = 0.12f)
 
-    val Accent = Color(0xFF996DF0)
-    val Accent100 = Color(0xFF312748)
-    val Accent400 = Color(0xFFA887F5)
-    val Accent600 = Color(0xFF8154D5)
-    val Accent700 = Color(0xFF6A3DB5)
-    val Accent800 = Color(0xFFD0C8EC)
+    val Accent = Color(0xFFEE5E4C) // Claude Coral
+    val Accent100 = Color(0xFF3B1E1A)
+    val Accent400 = Color(0xFFF79489)
+    val Accent600 = Color(0xFFD54C3A)
+    val Accent700 = Color(0xFFB33A29)
+    val Accent800 = Color(0xFFFBE4E1)
 
-    val Accent2 = Color(0xFF27B892)
-    val Accent2_100 = Color(0xFF0D362A)
-    val Accent2_800 = Color(0xFFAED9C9)
+    val Accent2 = Color(0xFF4CAE7C) // Warm Green
+    val Accent2_100 = Color(0xFF1B3D2B)
+    val Accent2_800 = Color(0xFFCBEAD7)
 
-    val Neutral100 = Color(0xFF2A2534)
-    val Neutral700 = Color(0xFF5A5566)
-    val Neutral800 = Color(0xFFCFCCD6)
+    val Neutral100 = Color(0xFF262422)
+    val Neutral700 = Color(0xFF70685E)
+    val Neutral800 = Color(0xFFDED8CD)
 }
 
 object Radius {

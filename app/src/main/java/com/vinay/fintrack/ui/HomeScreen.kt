@@ -255,7 +255,7 @@ private fun AccountsSection(vm: FinTrackViewModel) {
                 PfCard {
                     if (vm.editingAccountId == a.id) {
                         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                            PfField(value = vm.accountDraft.name, onValueChange = { vm.accountDraft = vm.accountDraft.copy(name = it) }, placeholder = "Account name")
+                            PfField(label = "Account name", value = vm.accountDraft.name, onValueChange = { vm.accountDraft = vm.accountDraft.copy(name = it) }, placeholder = "Account name")
                             // A picker, not free text: this is the profile the
                             // account belongs to, so it decides which side the
                             // account shows under and where its bank messages go.
@@ -265,9 +265,9 @@ private fun AccountsSection(vm: FinTrackViewModel) {
                                 options = vm.ownerOptions,
                                 onSelect = { vm.accountDraft = vm.accountDraft.copy(owner = it) }
                             )
-                            PfField(value = vm.accountDraft.balanceText, onValueChange = { vm.accountDraft = vm.accountDraft.copy(balanceText = it) }, placeholder = "Balance", numeric = true)
+                            PfField(label = "Balance (₹)", value = vm.accountDraft.balanceText, onValueChange = { vm.accountDraft = vm.accountDraft.copy(balanceText = it) }, placeholder = "Balance", numeric = true)
                             // Lets a bank SMS land on this account instead of the default.
-                            PfField(value = vm.accountDraft.numberTail, onValueChange = { vm.accountDraft = vm.accountDraft.copy(numberTail = it) }, placeholder = "Last 3-4 digits, as the bank SMS shows", numeric = true)
+                            PfField(label = "Last 3-4 digits (for SMS matching)", value = vm.accountDraft.numberTail, onValueChange = { vm.accountDraft = vm.accountDraft.copy(numberTail = it) }, placeholder = "Last 3-4 digits, as the bank SMS shows", numeric = true)
                             EditorActions({ vm.deleteAccount(a.id) }, vm::cancelEditAccount, vm::saveAccount)
                         }
                     } else {
@@ -689,11 +689,11 @@ private fun LoansSection(vm: FinTrackViewModel) {
                 PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
                     if (vm.editingLoanId == l.id) {
                         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                            PfField(value = vm.loanDraft.name, onValueChange = { vm.loanDraft = vm.loanDraft.copy(name = it) }, placeholder = "Loan name")
-                            PfSelect(value = vm.loanDraft.person, options = vm.draftPersonOptions, onSelect = { vm.loanDraft = vm.loanDraft.copy(person = it) })
-                            PfField(value = vm.loanDraft.emiText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(emiText = it) }, placeholder = "Monthly EMI", numeric = true)
-                            PfField(value = vm.loanDraft.totalMonthsText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(totalMonthsText = it) }, placeholder = "Total months (tenure)", numeric = true)
-                            PfField(value = vm.loanDraft.remainingMonthsText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(remainingMonthsText = it) }, placeholder = "Months remaining", numeric = true)
+                            PfField(label = "Loan name", value = vm.loanDraft.name, onValueChange = { vm.loanDraft = vm.loanDraft.copy(name = it) }, placeholder = "Loan name")
+                            PfSelect(label = "Belongs to", value = vm.loanDraft.person, options = vm.draftPersonOptions, onSelect = { vm.loanDraft = vm.loanDraft.copy(person = it) })
+                            PfField(label = "Monthly EMI (₹)", value = vm.loanDraft.emiText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(emiText = it) }, placeholder = "Monthly EMI", numeric = true)
+                            PfField(label = "Total months (tenure)", value = vm.loanDraft.totalMonthsText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(totalMonthsText = it) }, placeholder = "Total months (tenure)", numeric = true)
+                            PfField(label = "Months remaining", value = vm.loanDraft.remainingMonthsText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(remainingMonthsText = it) }, placeholder = "Months remaining", numeric = true)
                             // Bank accounts and credit cards in one list: an EMI
                             // on a card is billed to the card, not debited.
                             PfSelect(
@@ -703,6 +703,7 @@ private fun LoansSection(vm: FinTrackViewModel) {
                                 onSelect = vm::setEditLoanSource
                             )
                             PfField(
+                                label = "Due day of month (1-31)",
                                 value = vm.loanDraft.dueText,
                                 onValueChange = { vm.loanDraft = vm.loanDraft.copy(dueText = it) },
                                 placeholder = "Due day of month (1-31)",
@@ -795,15 +796,15 @@ private fun CardsSection(vm: FinTrackViewModel) {
                 PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
                     if (vm.editingCardId == c.id) {
                         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                            PfField(value = vm.cardDraft.name, onValueChange = { vm.cardDraft = vm.cardDraft.copy(name = it) }, placeholder = "Card name")
+                            PfField(label = "Card name", value = vm.cardDraft.name, onValueChange = { vm.cardDraft = vm.cardDraft.copy(name = it) }, placeholder = "Card name")
                             PfSelect(label = "Belongs to", value = vm.cardDraft.owner, options = vm.ownerOptions, onSelect = { vm.cardDraft = vm.cardDraft.copy(owner = it) })
-                            PfField(value = vm.cardDraft.limitText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(limitText = it) }, placeholder = "Credit limit", numeric = true)
-                            PfField(value = vm.cardDraft.balanceText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(balanceText = it) }, placeholder = "Current balance", numeric = true)
-                            PfField(value = vm.cardDraft.minDueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(minDueText = it) }, placeholder = "Minimum due", numeric = true)
+                            PfField(label = "Credit limit (₹)", value = vm.cardDraft.limitText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(limitText = it) }, placeholder = "Credit limit", numeric = true)
+                            PfField(label = "Current balance (₹)", value = vm.cardDraft.balanceText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(balanceText = it) }, placeholder = "Current balance", numeric = true)
+                            PfField(label = "Minimum due (₹)", value = vm.cardDraft.minDueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(minDueText = it) }, placeholder = "Minimum due", numeric = true)
                             // A real date, so the bill can be reminded about.
-                            PfField(value = vm.cardDraft.dueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(dueText = it) }, placeholder = "Due day of month (1-31)", numeric = true)
+                            PfField(label = "Due day of month (1-31)", value = vm.cardDraft.dueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(dueText = it) }, placeholder = "Due day of month (1-31)", numeric = true)
                             // Lets a card spend in a bank SMS find this card.
-                            PfField(value = vm.cardDraft.numberTail, onValueChange = { vm.cardDraft = vm.cardDraft.copy(numberTail = it) }, placeholder = "Last 3-4 digits of the card", numeric = true)
+                            PfField(label = "Last 3-4 digits (for SMS matching)", value = vm.cardDraft.numberTail, onValueChange = { vm.cardDraft = vm.cardDraft.copy(numberTail = it) }, placeholder = "Last 3-4 digits of the card", numeric = true)
                             EditorActions({ vm.deleteCard(c.id) }, vm::cancelEditCard, vm::saveCard)
                         }
                     } else {
