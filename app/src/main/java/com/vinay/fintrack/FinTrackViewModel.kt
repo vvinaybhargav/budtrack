@@ -3369,6 +3369,65 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    var settlingCardId by mutableStateOf<String?>(null); private set
+    var settleAmountDraft by mutableStateOf("")
+    var settleAccountNameDraft by mutableStateOf("")
+
+    fun startSettleCard(cardId: String) {
+        val card = persisted.cards.firstOrNull { it.id == cardId } ?: return
+        settlingCardId = cardId
+        val defaultAmt = if (card.statementAmount > 0.0) card.statementAmount else card.balance
+        settleAmountDraft = defaultAmt.toLong().toString()
+        settleAccountNameDraft = defaultAccount
+    }
+
+    fun cancelSettleCard() {
+        settlingCardId = null
+    }
+
+    fun confirmSettleCard() {
+        val cardId = settlingCardId ?: return
+        val card = persisted.cards.firstOrNull { it.id == cardId } ?: return
+        val amount = settleAmountDraft.toDoubleOrNull() ?: 0.0
+        if (amount <= 0.0) return
+
+        val fromAccId = persisted.accounts.firstOrNull { it.name == settleAccountNameDraft }?.id
+            ?: persisted.accounts.firstOrNull()?.id
+            ?: ""
+
+        val now = today()
+        val txn = Txn(
+            id = newId("t"),
+            date = now,
+            kind = "EXPENSE",
+            amount = amount,
+            category = "Credit Card Bill",
+            fromAccountId = fromAccId,
+            cardId = card.id,
+            period = Ledger.cycleOf(now, cycleResetDay),
+            note = "Settled ${card.name} Bill",
+            at = System.currentTimeMillis()
+        )
+
+        update { s ->
+            s.copy(
+                txns = s.txns + txn,
+                cards = s.cards.map {
+                    if (it.id == cardId) {
+                        val nextBal = (it.balance - amount).coerceAtLeast(0.0)
+                        val nextStatement = (it.statementAmount - amount).coerceAtLeast(0.0)
+                        it.copy(
+                            balance = nextBal,
+                            statementAmount = nextStatement,
+                            paid = nextStatement <= 0.0
+                        )
+                    } else it
+                }
+            )
+        }
+        settlingCardId = null
+    }
+
     fun settleCardBill(cardId: String) {
         val card = persisted.cards.firstOrNull { it.id == cardId } ?: return
         if (card.balance <= 0.0) return

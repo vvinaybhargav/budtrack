@@ -65,6 +65,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
         item { OutlookSection(vm) }
     }
     ConfirmSheet(vm)
+    CardSettleSheet(vm)
 }
 
 /**
@@ -158,6 +159,63 @@ private fun ConfirmSheet(vm: FinTrackViewModel) {
                     vm::commitConfirm,
                     Modifier.weight(1f),
                     enabled = pending.isReady
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardSettleSheet(vm: FinTrackViewModel) {
+    val cardId = vm.settlingCardId ?: return
+    val card = vm.persisted.cards.firstOrNull { it.id == cardId } ?: return
+
+    Dialog(onDismissRequest = vm::cancelSettleCard) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(Pf.Surface, Radius.Lg)
+                .border(1.dp, Pf.Hairline, Radius.Lg)
+                .padding(Space.s4),
+            verticalArrangement = Arrangement.spacedBy(Space.s3)
+        ) {
+            Text(
+                "Settle Credit Card",
+                color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold
+            )
+            Text(
+                "Paying off ${card.name} (${card.owner})",
+                color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+            )
+            
+            PfField(
+                label = "Amount to Settle (₹)",
+                value = vm.settleAmountDraft,
+                onValueChange = { vm.settleAmountDraft = it },
+                numeric = true
+            )
+            
+            Column {
+                Muted("Paid from Account")
+                PfSelect(
+                    value = vm.settleAccountNameDraft,
+                    options = vm.visibleAccounts.map { it.name },
+                    onSelect = { vm.settleAccountNameDraft = it }
+                )
+            }
+            
+            Muted("Settle payment creates an expense transaction from the selected account and reduces the card balance.")
+            
+            Row(
+                Modifier.fillMaxWidth().padding(top = Space.s2),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                SecondaryButton("Cancel", vm::cancelSettleCard, Modifier.weight(1f))
+                PrimaryButton(
+                    "Settle",
+                    vm::confirmSettleCard,
+                    Modifier.weight(1f),
+                    enabled = (vm.settleAmountDraft.toDoubleOrNull() ?: 0.0) > 0.0 && vm.settleAccountNameDraft.isNotBlank()
                 )
             }
         }
@@ -849,7 +907,7 @@ private fun CardsSection(vm: FinTrackViewModel) {
                                 Muted("Min due ${inr(c.minDue)} · Billed ${c.statementDay}th")
                                 Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                                     if (!c.paid && c.balance > 0.0) {
-                                        PrimaryButton("Settle Bill", { vm.settleCardBill(c.id) })
+                                        PrimaryButton("Settle Bill", { vm.startSettleCard(c.id) })
                                     }
                                     SecondaryButton(
                                         if (c.paid) "Paid" else "Pay bill",
