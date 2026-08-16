@@ -733,6 +733,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s -> s.copy(salaries = s.salaries + (activeProfile.orEmpty() to amount)) }
     }
 
+    fun salaryAmountFor(profile: String): Double =
+        persisted.salaries[profile] ?: 0.0
+
+    fun setSalaryAmountFor(profile: String, amount: Double) {
+        update { s -> s.copy(salaries = s.salaries + (profile to amount)) }
+    }
+
     fun getSalaryOverride(profile: String, yearMonth: String): SalaryOverride? {
         return persisted.salaryOverrides["${profile}_$yearMonth"]
     }

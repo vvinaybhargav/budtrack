@@ -387,11 +387,11 @@ private fun AccountsSection(vm: FinTrackViewModel) {
  */
 @Composable
 private fun OutlookSection(vm: FinTrackViewModel) {
-    val months = vm.outlook(6)
+    val months = vm.outlook(3)
     val totalSavings = months.sumOf { it.left }
     
     Column {
-        SectionTitle("Next 6 Months Outlook · ${vm.bucketLabel}", Modifier.padding(bottom = Space.s1))
+        SectionTitle("Next 3 Months Outlook · ${vm.bucketLabel}", Modifier.padding(bottom = Space.s1))
         Muted(
             "Estimated savings based on your salary, active EMIs, recurring bills, and set-asides.",
             Modifier.padding(bottom = Space.s3)
