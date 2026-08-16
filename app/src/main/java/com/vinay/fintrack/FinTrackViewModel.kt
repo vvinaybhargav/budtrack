@@ -2201,8 +2201,33 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun setTxnNote(note: String) {
         val txn = editingTxn ?: return
         val text = note.trim()
-        replaceTxn(txn.copy(note = text))
-        if (text.isNotBlank() && (txn.category == UNCATEGORISED || txn.category.isBlank())) {
+        var category = txn.category
+        
+        if (text.isNotBlank() && (category == UNCATEGORISED || category.isBlank())) {
+            val lowerText = text.lowercase()
+            // Check rules first
+            val matchedRuleCategory = smsRules.entries.firstOrNull { (pattern, _) ->
+                lowerText.contains(pattern) || pattern.contains(lowerText)
+            }?.value
+            
+            if (matchedRuleCategory != null) {
+                category = matchedRuleCategory
+            } else {
+                // Check past transactions
+                val pastTxnCategory = txns.firstOrNull {
+                    it.note.trim().equals(text, ignoreCase = true) &&
+                        it.category != UNCATEGORISED &&
+                        it.category.isNotBlank()
+                }?.category
+                if (pastTxnCategory != null) {
+                    category = pastTxnCategory
+                }
+            }
+        }
+        
+        replaceTxn(txn.copy(note = text, category = category))
+        
+        if (category == UNCATEGORISED && text.isNotBlank() && chatReady) {
             categoriseFromDescription(txn.id, text)
         }
     }
