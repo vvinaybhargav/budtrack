@@ -1294,13 +1294,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val smsText = firstTxn?.let { persisted.smsBodies[it.id] }.orEmpty()
 
         if (smsText.isBlank() || !chatReady) {
+            selectAddKind("BANK_ACCOUNT")
             newAccountDraft = NewAccountDraft(
                 name = "Bank A/c ••$tail",
                 owner = activeProfile ?: "Me",
                 balanceText = "0",
                 numberTail = tail
             )
-            selectAddKind("BANK_ACCOUNT")
             cancelEditTxn()
             tab = Tab.ADD
             return
@@ -1312,12 +1312,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         Thread {
             val result = runCatching {
                 OpenAi(key).ask(
-                    instruction = "Analyze the Indian banking SMS message and return a JSON object with these EXACT keys: " +
+                    instruction = "Analyze the Indian banking SMS message to determine if it belongs to a credit card or a bank account. " +
+                        "Usually, words like 'credited to A/c', 'debited from A/c', 'salary credited', 'SB A/c' refer to a 'bank' account. " +
+                        "Words like 'spent on Card', 'Credit Card spent', 'available limit', 'minimum due', 'Card payment' refer to a 'card'. " +
+                        "Return a JSON object with these EXACT keys (no other text, no markdown formatting or backticks): " +
                         "\"type\" (either \"card\" or \"bank\"), " +
-                        "\"name\" (concise bank account or credit card name, e.g. 'HDFC Bank' or 'SBI Card'), " +
-                        "\"limit\" (credit limit as number if mentioned, else null), " +
-                        "\"balance\" (current balance or outstanding card balance as number if mentioned, else null). " +
-                        "Return ONLY raw JSON, no markdown formatting or backticks.",
+                        "\"name\" (concise bank account or credit card name, e.g., 'HDFC Bank' or 'SBI Card'), " +
+                        "\"limit\" (credit limit as number if card, otherwise null), " +
+                        "\"balance\" (outstanding balance for card, or current balance for bank account if mentioned, otherwise null).",
                     question = smsText,
                     maxTokens = 150
                 )
@@ -1346,6 +1348,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 
                 if (parsedType == "card") {
+                    selectAddKind("CREDIT_CARD")
                     newCardDraft = NewCardDraft(
                         name = parsedName,
                         owner = activeProfile ?: "Me",
@@ -1353,15 +1356,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                         balanceText = if (parsedBalance > 0.0) parsedBalance.toLong().toString() else "0",
                         numberTail = tail
                     )
-                    selectAddKind("CREDIT_CARD")
                 } else {
+                    selectAddKind("BANK_ACCOUNT")
                     newAccountDraft = NewAccountDraft(
                         name = parsedName,
                         owner = activeProfile ?: "Me",
                         balanceText = if (parsedBalance > 0.0) parsedBalance.toLong().toString() else "0",
                         numberTail = tail
                     )
-                    selectAddKind("BANK_ACCOUNT")
                 }
                 cancelEditTxn()
                 tab = Tab.ADD
