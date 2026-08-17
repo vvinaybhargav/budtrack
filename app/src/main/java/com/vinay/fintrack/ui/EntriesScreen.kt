@@ -136,6 +136,30 @@ fun EntriesScreen(vm: FinTrackViewModel) {
 
         item {
             Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s3)
+            ) {
+                PfField(
+                    label = "Min Amount (₹)",
+                    value = vm.amountFilterMinText,
+                    onValueChange = { vm.amountFilterMinText = it },
+                    placeholder = "Min ₹",
+                    numeric = true,
+                    modifier = Modifier.weight(1f)
+                )
+                PfField(
+                    label = "Max Amount (₹)",
+                    value = vm.amountFilterMaxText,
+                    onValueChange = { vm.amountFilterMaxText = it },
+                    placeholder = "Max ₹",
+                    numeric = true,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            Row(
                 Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),

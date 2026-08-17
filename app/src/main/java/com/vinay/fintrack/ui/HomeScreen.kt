@@ -22,6 +22,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -250,7 +254,8 @@ private fun CardStatementAlert(vm: FinTrackViewModel) {
     val cardsNeedingInput = vm.cards.filter { c ->
         c.balance > 0.0 && c.statementAmount == 0.0 && !c.paid && 
         (todayStr.substring(8, 10).toIntOrNull() ?: 1).let { day ->
-            day >= c.statementDay || day < c.due
+            val dueDayNum = c.dueDate.substringAfterLast("-").toIntOrNull() ?: 11
+            day >= c.statementDay || day < dueDayNum
         }
     }
 
@@ -697,6 +702,9 @@ private fun MonthStats(vm: FinTrackViewModel) {
         "Set aside" to (inr(vm.actualSaved) to Pf.Text),
         "Invested" to (inr(vm.actualInvested) to Pf.Text)
     )
+    
+    var expanded by remember { mutableStateOf(false) }
+
     Column {
         SectionTitle("This month · ${vm.bucketLabel}", Modifier.padding(bottom = Space.s1))
         Muted(
@@ -705,22 +713,119 @@ private fun MonthStats(vm: FinTrackViewModel) {
             Modifier.padding(bottom = Space.s3)
         )
         PfCard(padding = PaddingValues(0.dp)) {
-            stats.chunked(2).forEach { pair ->
-                Row(Modifier.fillMaxWidth()) {
-                    pair.forEach { (label, valueColor) ->
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .padding(horizontal = Space.s4, vertical = Space.s3)
-                        ) {
-                            Text(label.uppercase(), color = Pf.Muted, fontSize = 11.sp, letterSpacing = 0.7.sp)
-                            Text(
-                                valueColor.first,
-                                Modifier.padding(top = 2.dp),
-                                color = valueColor.second,
-                                fontSize = 19.sp,
-                                fontWeight = FontWeight.ExtraBold
+            Column {
+                stats.chunked(2).forEach { pair ->
+                    Row(Modifier.fillMaxWidth()) {
+                        pair.forEach { (label, valueColor) ->
+                            Column(
+                                Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = Space.s4, vertical = Space.s3)
+                            ) {
+                                Text(label.uppercase(), color = Pf.Muted, fontSize = 11.sp, letterSpacing = 0.7.sp)
+                                Text(
+                                    valueColor.first,
+                                    Modifier.padding(top = 2.dp),
+                                    color = valueColor.second,
+                                    fontSize = 19.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                Hairline()
+                
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = !expanded }
+                        .padding(horizontal = Space.s4, vertical = Space.s3),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (expanded) "Hide Spend Analytics" else "View Spend Analytics & Savings Rate",
+                        color = Pf.Accent, fontSize = 13.sp, fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        if (expanded) "▲" else "▼",
+                        color = Pf.Accent, fontSize = 11.sp
+                    )
+                }
+
+                if (expanded) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Space.s4, bottom = Space.s4),
+                        verticalArrangement = Arrangement.spacedBy(Space.s3)
+                    ) {
+                        // 1. Savings Rate Calculation
+                        val income = vm.actualIncome
+                        val spent = vm.actualSpent
+                        val savingsRate = if (income > 0.0) {
+                            (((income - spent) / income) * 100.0).coerceAtLeast(0.0)
+                        } else 0.0
+                        
+                        Column {
+                            Row(
+                                Modifier.fillMaxWidth().padding(bottom = Space.s1),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Monthly Savings Rate", color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text("${"%.1f".format(savingsRate)}%", color = if (savingsRate >= 20.0) Color(0xFF00BFA5) else Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                            ProgressBar(savingsRate / 100.0, if (savingsRate >= 20.0) Color(0xFF00BFA5) else Pf.Accent)
+                            Muted(
+                                "Calculated as actual savings vs. income received.",
+                                size = 11
                             )
+                        }
+
+                        Hairline()
+
+                        // 2. Category Breakdown Chart
+                        Text(
+                            "Expense Breakdown by Category",
+                            color = Pf.Text, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = Space.s1)
+                        )
+
+                        // Compute category spends from transactions of this cycle
+                        val cycle = vm.cycle()
+                        val currentTxns = vm.filteredTxns.filter { it.kind == "EXPENSE" && it.period == cycle }
+                        val totalExpense = currentTxns.sumOf { it.amount }
+                        
+                        if (totalExpense <= 0.0) {
+                            Muted("No expenses recorded this month yet.")
+                        } else {
+                            val catSpends = currentTxns
+                                .groupBy { it.category }
+                                .mapValues { (_, txs) -> txs.sumOf { it.amount } }
+                                .toList()
+                                .sortedByDescending { it.second }
+                            
+                            catSpends.forEach { (cat, amt) ->
+                                val pct = amt / totalExpense
+                                Column(Modifier.fillMaxWidth()) {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(bottom = 2.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(cat, color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("${(pct * 100).toInt()}%", color = Pf.Muted, fontSize = 11.sp)
+                                        }
+                                        Text(inr(amt), color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    ProgressBar(pct, Pf.Accent)
+                                }
+                            }
                         }
                     }
                 }
@@ -753,12 +858,26 @@ private fun BudgetsSection(vm: FinTrackViewModel) {
                             Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = Space.s2),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(cat, color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(cat, color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.width(8.dp))
+                                if (pct >= 1.0) {
+                                    val over = spend - allowed
+                                    Tag("Overspent by ${inr(over)}", Pf.Accent, Color.White)
+                                } else if (pct >= 0.8) {
+                                    Tag("80%+ Used", Color(0xFFFFA726), Color.Black)
+                                }
+                            }
                             Muted("${inr(spend)} / ${inr(allowed)}", size = 13)
                         }
-                        ProgressBar(pct, if (pct >= ALERT_PCT) Pf.Accent else Pf.Text)
+                        ProgressBar(pct, when {
+                            pct >= 1.0 -> Pf.Accent
+                            pct >= 0.8 -> Color(0xFFFFA726)
+                            else -> Pf.Text
+                        })
                         // Says where the extra room came from, or where it went.
                         if (carried != 0.0) {
                             Muted(

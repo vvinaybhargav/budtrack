@@ -446,6 +446,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
 
     var entriesSearch by mutableStateOf("")
+    var amountFilterMinText by mutableStateOf("")
+    var amountFilterMaxText by mutableStateOf("")
     var entriesCategoryFilter by mutableStateOf<String?>(null)
 
     var editingEntryId by mutableStateOf<String?>(null); private set
@@ -2058,21 +2060,26 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** The Transactions screen shows these and nothing else: real recorded
      *  movements, not the recurring plan. */
     val filteredTxns: List<Txn>
-        get() = txns
-            .filter { inBucket(it) }
-            .filter { t ->
-                val matchesCategory = when (entriesCategoryFilter) {
-                    null -> true
-                    "Needs Account" -> needsAccount(t)
-                    else -> t.category == entriesCategoryFilter
+        get() {
+            val minAmt = amountFilterMinText.toDoubleOrNull() ?: 0.0
+            val maxAmt = amountFilterMaxText.toDoubleOrNull() ?: Double.MAX_VALUE
+            return txns
+                .filter { inBucket(it) }
+                .filter { t ->
+                    val matchesCategory = when (entriesCategoryFilter) {
+                        null -> true
+                        "Needs Account" -> needsAccount(t)
+                        else -> t.category == entriesCategoryFilter
+                    }
+                    matchesCategory &&
+                        (entriesSearch.isEmpty() ||
+                            t.category.contains(entriesSearch, true) ||
+                            t.note.contains(entriesSearch, true) ||
+                            t.ref.contains(entriesSearch, true)) &&
+                        t.amount >= minAmt && t.amount <= maxAmt
                 }
-                matchesCategory &&
-                    (entriesSearch.isEmpty() ||
-                        t.category.contains(entriesSearch, true) ||
-                        t.note.contains(entriesSearch, true) ||
-                        t.ref.contains(entriesSearch, true))
-            }
-            .sortedByDescending { it.sortKey }
+                .sortedByDescending { it.sortKey }
+        }
 
     val txnChips: List<String>
         get() = txns.filter { inBucket(it) }.map { it.category }.distinct()
@@ -2314,14 +2321,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     } else t
                 }
-            )
-        }
-        if (editingTxn?.id == txnId) {
-            editingTxn = editingTxn?.copy(
-                loanId = nextLoanId,
-                entryId = nextEntryId,
-                period = nextPeriod,
-                category = nextCategory
             )
         }
     }
