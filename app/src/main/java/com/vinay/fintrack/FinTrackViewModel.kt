@@ -1284,29 +1284,90 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         tab = Tab.HOME
     }
 
+    var parsingSmsWithAi by mutableStateOf(false)
+
     fun navigateToCreateAccountFromTail(tail: String) {
-        newAccountDraft = NewAccountDraft(
-            name = "Bank A/c ••$tail",
-            owner = activeProfile ?: "Me",
-            balanceText = "0",
-            numberTail = tail
-        )
-        selectAddKind("BANK_ACCOUNT")
-        cancelEditTxn()
-        tab = Tab.ADD
+        val firstTxn = txns.firstOrNull { it.accountTail == tail && needsAccount(it) }
+        val smsText = firstTxn?.let { persisted.smsBodies[it.id] }.orEmpty()
+
+        if (smsText.isBlank() || !chatReady) {
+            newAccountDraft = NewAccountDraft(
+                name = "Bank A/c ••$tail",
+                owner = activeProfile ?: "Me",
+                balanceText = "0",
+                numberTail = tail
+            )
+            selectAddKind("BANK_ACCOUNT")
+            cancelEditTxn()
+            tab = Tab.ADD
+            return
+        }
+
+        parsingSmsWithAi = true
+        val key = persisted.openaiKeyText
+
+        Thread {
+            val result = runCatching {
+                OpenAi(key).ask(
+                    instruction = "Analyze the Indian banking SMS message and return a JSON object with these EXACT keys: " +
+                        "\"type\" (either \"card\" or \"bank\"), " +
+                        "\"name\" (concise bank account or credit card name, e.g. 'HDFC Bank' or 'SBI Card'), " +
+                        "\"limit\" (credit limit as number if mentioned, else null), " +
+                        "\"balance\" (current balance or outstanding card balance as number if mentioned, else null). " +
+                        "Return ONLY raw JSON, no markdown formatting or backticks.",
+                    question = smsText,
+                    maxTokens = 150
+                )
+            }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                parsingSmsWithAi = false
+                val jsonText = result.getOrNull()?.trim().orEmpty()
+                
+                var parsedType = "bank"
+                var parsedName = "Bank A/c ••$tail"
+                var parsedLimit = 0.0
+                var parsedBalance = 0.0
+                
+                if (jsonText.isNotEmpty()) {
+                    try {
+                        val obj = Json.parseToJsonElement(jsonText) as? JsonObject
+                        if (obj != null) {
+                            parsedType = obj["type"]?.jsonPrimitive?.content.orEmpty()
+                            parsedName = obj["name"]?.jsonPrimitive?.content.orEmpty().ifEmpty { parsedName }
+                            parsedLimit = obj["limit"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: 0.0
+                            parsedBalance = obj["balance"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: 0.0
+                        }
+                    } catch (e: Exception) {
+                        // fallback
+                    }
+                }
+                
+                if (parsedType == "card") {
+                    newCardDraft = NewCardDraft(
+                        name = parsedName,
+                        owner = activeProfile ?: "Me",
+                        limitText = if (parsedLimit > 0.0) parsedLimit.toLong().toString() else "0",
+                        balanceText = if (parsedBalance > 0.0) parsedBalance.toLong().toString() else "0",
+                        numberTail = tail
+                    )
+                    selectAddKind("CREDIT_CARD")
+                } else {
+                    newAccountDraft = NewAccountDraft(
+                        name = parsedName,
+                        owner = activeProfile ?: "Me",
+                        balanceText = if (parsedBalance > 0.0) parsedBalance.toLong().toString() else "0",
+                        numberTail = tail
+                    )
+                    selectAddKind("BANK_ACCOUNT")
+                }
+                cancelEditTxn()
+                tab = Tab.ADD
+            }
+        }.start()
     }
 
     fun navigateToCreateCardFromTail(tail: String) {
-        newCardDraft = NewCardDraft(
-            name = "Card ••$tail",
-            owner = activeProfile ?: "Me",
-            limitText = "0",
-            balanceText = "0",
-            numberTail = tail
-        )
-        selectAddKind("CREDIT_CARD")
-        cancelEditTxn()
-        tab = Tab.ADD
+        navigateToCreateAccountFromTail(tail)
     }
 
     fun addNewAccount() {
