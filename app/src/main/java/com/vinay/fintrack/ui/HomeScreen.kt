@@ -74,6 +74,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
     ConfirmSheet(vm)
     CardSettleSheet(vm)
     BorrowedSettleSheet(vm)
+    UnmatchedAccountPromptDialog(vm)
 }
 
 /**
@@ -287,6 +288,67 @@ private fun BorrowedSettleSheet(vm: FinTrackViewModel) {
                     enabled = (vm.settleBorrowedAmountDraft.toDoubleOrNull() ?: 0.0) > 0.0 &&
                               (vm.settleBorrowedAmountDraft.toDoubleOrNull() ?: 0.0) <= outstanding &&
                               vm.settleBorrowedAccountNameDraft.isNotBlank()
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UnmatchedAccountPromptDialog(vm: FinTrackViewModel) {
+    val tail = vm.unmatchedTailForDialog ?: return
+    val smsText = vm.unmatchedSmsTextForDialog
+
+    Dialog(onDismissRequest = vm::cancelUnmatchedAccountPrompt) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(Pf.Surface, Radius.Lg)
+                .border(1.dp, Pf.Hairline, Radius.Lg)
+                .padding(Space.s4),
+            verticalArrangement = Arrangement.spacedBy(Space.s3)
+        ) {
+            Text(
+                "New Account/Card Detected",
+                color = Pf.Text, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold
+            )
+            
+            Text(
+                "A transaction for tail ••$tail was found. How would you like to add it?",
+                color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.Medium
+            )
+
+            if (smsText.isNotEmpty()) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Pf.Surface2, Radius.Md)
+                        .padding(Space.s3)
+                ) {
+                    Muted("Original Message:", size = 11)
+                    Text(
+                        smsText,
+                        color = Pf.Text,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+
+            Row(
+                Modifier.fillMaxWidth().padding(top = Space.s2),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                SecondaryButton("Cancel", vm::cancelUnmatchedAccountPrompt, Modifier.weight(1f))
+                SecondaryButton(
+                    "Bank Account",
+                    vm::confirmUnmatchedAsBank,
+                    Modifier.weight(1.2f)
+                )
+                PrimaryButton(
+                    "Credit Card",
+                    vm::confirmUnmatchedAsCard,
+                    Modifier.weight(1.2f)
                 )
             }
         }

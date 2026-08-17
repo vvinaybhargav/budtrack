@@ -1287,92 +1287,113 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         tab = Tab.HOME
     }
 
-    var parsingSmsWithAi by mutableStateOf(false)
+    var unmatchedTailForDialog by mutableStateOf<String?>(null)
+    var unmatchedSmsTextForDialog by mutableStateOf("")
 
-    fun navigateToCreateAccountFromTail(tail: String) {
+    fun startUnmatchedAccountPrompt(tail: String) {
         val firstTxn = txns.firstOrNull { it.accountTail == tail && needsAccount(it) }
         val smsText = firstTxn?.let { persisted.smsBodies[it.id] }.orEmpty()
+        unmatchedTailForDialog = tail
+        unmatchedSmsTextForDialog = smsText
+    }
 
-        if (smsText.isBlank() || !chatReady) {
-            selectAddKind("BANK_ACCOUNT")
-            newAccountDraft = NewAccountDraft(
-                name = "Bank A/c ••$tail",
-                owner = activeProfile ?: "Me",
-                balanceText = "0",
-                numberTail = tail
-            )
-            cancelEditTxn()
-            tab = Tab.ADD
-            return
+    fun cancelUnmatchedAccountPrompt() {
+        unmatchedTailForDialog = null
+        unmatchedSmsTextForDialog = ""
+    }
+
+    fun parseBankNameFromSms(smsText: String): String {
+        val banks = listOf(
+            "HDFC" to "HDFC",
+            "ICICI" to "ICICI",
+            "SBI" to "SBI",
+            "AXIS" to "Axis",
+            "KOTAK" to "Kotak",
+            "INDUSIND" to "IndusInd",
+            "PNB" to "PNB",
+            "BOB" to "BOB",
+            "YESBK" to "Yes Bank",
+            "YES BANK" to "Yes Bank",
+            "IDFC" to "IDFC",
+            "CITI" to "Citi",
+            "AMEX" to "Amex",
+            "RBL" to "RBL"
+        )
+        for ((key, value) in banks) {
+            if (smsText.contains(key, ignoreCase = true)) {
+                return value
+            }
         }
+        return ""
+    }
 
-        parsingSmsWithAi = true
-        val key = persisted.openaiKeyText
+    fun parseAmountByKeywords(smsText: String, keywords: List<String>): Double {
+        val cleanText = smsText.lowercase()
+        for (kw in keywords) {
+            val idx = cleanText.indexOf(kw.lowercase())
+            if (idx != -1) {
+                val sub = cleanText.substring(idx + kw.length)
+                val match = Regex("""(?:rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)""").find(sub)
+                if (match != null) {
+                    val amtStr = match.groupValues[1].replace(",", "")
+                    val amt = amtStr.toDoubleOrNull()
+                    if (amt != null) return amt
+                }
+            }
+        }
+        return 0.0
+    }
 
-        Thread {
-            val result = runCatching {
-                OpenAi(key).ask(
-                    instruction = "Analyze the Indian banking SMS message to determine if it belongs to a credit card or a bank account. " +
-                        "Usually, words like 'credited to A/c', 'debited from A/c', 'salary credited', 'SB A/c' refer to a 'bank' account. " +
-                        "Words like 'spent on Card', 'Credit Card spent', 'available limit', 'minimum due', 'Card payment' refer to a 'card'. " +
-                        "Return a JSON object with these EXACT keys (no other text, no markdown formatting or backticks): " +
-                        "\"type\" (either \"card\" or \"bank\"), " +
-                        "\"name\" (concise bank account or credit card name, e.g., 'HDFC Bank' or 'SBI Card'), " +
-                        "\"limit\" (credit limit as number if card, otherwise null), " +
-                        "\"balance\" (outstanding balance for card, or current balance for bank account if mentioned, otherwise null).",
-                    question = smsText,
-                    maxTokens = 150
-                )
-            }
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                parsingSmsWithAi = false
-                val jsonText = result.getOrNull()?.trim().orEmpty()
-                
-                var parsedType = "bank"
-                var parsedName = "Bank A/c ••$tail"
-                var parsedLimit = 0.0
-                var parsedBalance = 0.0
-                
-                if (jsonText.isNotEmpty()) {
-                    try {
-                        val obj = Json.parseToJsonElement(jsonText) as? JsonObject
-                        if (obj != null) {
-                            parsedType = obj["type"]?.jsonPrimitive?.content.orEmpty()
-                            parsedName = obj["name"]?.jsonPrimitive?.content.orEmpty().ifEmpty { parsedName }
-                            parsedLimit = obj["limit"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: 0.0
-                            parsedBalance = obj["balance"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: 0.0
-                        }
-                    } catch (e: Exception) {
-                        // fallback
-                    }
-                }
-                
-                if (parsedType == "card") {
-                    selectAddKind("CREDIT_CARD")
-                    newCardDraft = NewCardDraft(
-                        name = parsedName,
-                        owner = activeProfile ?: "Me",
-                        limitText = if (parsedLimit > 0.0) parsedLimit.toLong().toString() else "0",
-                        balanceText = if (parsedBalance > 0.0) parsedBalance.toLong().toString() else "0",
-                        numberTail = tail
-                    )
-                } else {
-                    selectAddKind("BANK_ACCOUNT")
-                    newAccountDraft = NewAccountDraft(
-                        name = parsedName,
-                        owner = activeProfile ?: "Me",
-                        balanceText = if (parsedBalance > 0.0) parsedBalance.toLong().toString() else "0",
-                        numberTail = tail
-                    )
-                }
-                cancelEditTxn()
-                tab = Tab.ADD
-            }
-        }.start()
+    fun confirmUnmatchedAsCard() {
+        val tail = unmatchedTailForDialog ?: return
+        val smsText = unmatchedSmsTextForDialog
+        val bank = parseBankNameFromSms(smsText)
+        val cardName = if (bank.isNotEmpty()) "$bank Card ••$tail" else "Card ••$tail"
+        
+        val limit = parseAmountByKeywords(smsText, listOf("limit", "limit avail", "avail limit", "credit limit"))
+        val balance = parseAmountByKeywords(smsText, listOf("outstanding", "outstand", "bal", "due"))
+
+        selectAddKind("CREDIT_CARD")
+        newCardDraft = NewCardDraft(
+            name = cardName,
+            owner = activeProfile ?: "Me",
+            limitText = if (limit > 0.0) limit.toLong().toString() else "0",
+            balanceText = if (balance > 0.0) balance.toLong().toString() else "0",
+            numberTail = tail
+        )
+        cancelEditTxn()
+        tab = Tab.ADD
+        unmatchedTailForDialog = null
+        unmatchedSmsTextForDialog = ""
+    }
+
+    fun confirmUnmatchedAsBank() {
+        val tail = unmatchedTailForDialog ?: return
+        val smsText = unmatchedSmsTextForDialog
+        val bank = parseBankNameFromSms(smsText)
+        val accName = if (bank.isNotEmpty()) "$bank A/c ••$tail" else "Bank A/c ••$tail"
+
+        val balance = parseAmountByKeywords(smsText, listOf("bal", "balance", "clear bal", "avl bal"))
+
+        selectAddKind("BANK_ACCOUNT")
+        newAccountDraft = NewAccountDraft(
+            name = accName,
+            owner = activeProfile ?: "Me",
+            balanceText = if (balance > 0.0) balance.toLong().toString() else "0",
+            numberTail = tail
+        )
+        cancelEditTxn()
+        tab = Tab.ADD
+        unmatchedTailForDialog = null
+        unmatchedSmsTextForDialog = ""
+    }
+
+    fun navigateToCreateAccountFromTail(tail: String) {
+        startUnmatchedAccountPrompt(tail)
     }
 
     fun navigateToCreateCardFromTail(tail: String) {
-        navigateToCreateAccountFromTail(tail)
+        startUnmatchedAccountPrompt(tail)
     }
 
     fun addNewAccount() {

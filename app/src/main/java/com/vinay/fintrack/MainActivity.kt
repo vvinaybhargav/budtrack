@@ -120,27 +120,6 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
                 Tab.CHAT -> ChatScreen(vm)
                 Tab.SETTINGS -> SettingsScreen(vm)
             }
-            if (vm.parsingSmsWithAi) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.6f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        CircularProgressIndicator(color = Pf.Accent)
-                        Text(
-                            "Analyzing bank SMS with AI...",
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
         }
         BottomNav(vm)
     }
