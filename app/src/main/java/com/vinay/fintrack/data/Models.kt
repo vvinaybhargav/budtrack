@@ -142,6 +142,7 @@ data class Txn(
     val borrowedFrom: String = "",
     val returned: Boolean = false,
     val returnDate: String = "",
+    val returnedAmount: Double = 0.0,
     /**
      * The account digits the bank message quoted, when they matched no account.
      *

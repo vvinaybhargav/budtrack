@@ -392,7 +392,16 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                 val currentLinkText = when {
                     txn.loanId.isNotEmpty() -> {
                         val l = vm.loans.firstOrNull { it.id == txn.loanId }
-                        if (l != null) "Loan: ${l.name} (₹${inr(l.monthlyEmi)})" else "Linked Loan"
+                        if (l != null) {
+                            "Loan: ${l.name} (₹${inr(l.monthlyEmi)})"
+                        } else {
+                            val b = vm.borrowedLentTxns.firstOrNull { it.id == txn.loanId }
+                            if (b != null) {
+                                val role = if (b.kind == "INCOME" || b.kind == "REFUND") "Borrowed from ${b.borrowedFrom}" else "Lent to ${b.borrowedFrom}"
+                                val outstanding = b.amount - b.returnedAmount
+                                "Settle Debt: $role (Outstanding ₹${inr(outstanding)})"
+                            } else "Linked Loan"
+                        }
                     }
                     txn.entryId.isNotEmpty() -> {
                         val e = vm.entries.firstOrNull { it.id == txn.entryId }
@@ -404,7 +413,7 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                     else -> "None / Unlinked"
                 }
 
-                val linkOptionsMap = remember(txn.id, vm.loans, vm.entries) {
+                val linkOptionsMap = remember(txn.id, vm.loans, vm.entries, vm.borrowedLentTxns) {
                     val m = mutableMapOf<String, Pair<String?, String?>>()
                     m["None / Unlinked"] = Pair(null, null)
                     
@@ -414,6 +423,11 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                     vm.entries.filter { !vm.isConfirmed(it.id) || it.id == txn.entryId }.forEach { e ->
                         val labelPrefix = if (e.isSetAside) "Set aside" else "Recurring"
                         m["$labelPrefix: ${e.category} (₹${inr(e.monthly)})"] = Pair(null, e.id)
+                    }
+                    vm.borrowedLentTxns.filter { it.id != txn.id }.forEach { b ->
+                        val outstanding = b.amount - b.returnedAmount
+                        val role = if (b.kind == "INCOME" || b.kind == "REFUND") "Borrowed from ${b.borrowedFrom}" else "Lent to ${b.borrowedFrom}"
+                        m["Settle Debt: $role (Outstanding ₹${inr(outstanding)})"] = Pair(b.id, null)
                     }
                     m
                 }

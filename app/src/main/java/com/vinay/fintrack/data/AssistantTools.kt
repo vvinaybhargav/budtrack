@@ -72,6 +72,8 @@ object AssistantTools {
             put("account", str("Account name."))
             put("note", str("Payee or description."))
             put("date", str("dd-MM-yyyy. Default today."))
+            put("borrowed_from", str("Profile name (e.g. 'Wife') or custom name this was borrowed from / lent to."))
+            put("return_date", str("Target return date as YYYY-MM-DD."))
             required("amount")
         })
         add(tool("edit_transaction", "Change a recorded transaction.") {
@@ -81,6 +83,9 @@ object AssistantTools {
             put("account", str("New account name."))
             put("note", str("New payee or description."))
             put("date", str("New date as dd-MM-yyyy."))
+            put("borrowed_from", str("New profile/custom name this was borrowed from / lent to."))
+            put("return_date", str("New target return date as YYYY-MM-DD."))
+            put("returned", bool("True if this borrowed/lent money has been returned/settled."))
             required("id")
         })
         add(tool(
@@ -256,6 +261,16 @@ object AssistantTools {
             put("day", int("Day of the month, 1 to 28. Required."))
             put("profile", str("Whose salary date. Defaults to the current profile."))
             required("day")
+        })
+        add(tool(
+            "set_salary_override",
+            "Set a salary override amount and/or reset day for a specific profile and month."
+        ) {
+            put("profile", str("Profile name. Required."))
+            put("year_month", str("Month as YYYY-MM (e.g. '2026-09'). Required."))
+            put("amount", num("Override salary amount. Omit or set negative to clear override."))
+            put("reset_day", int("Override salary reset day (1-28)."))
+            required("profile", "year_month")
         })
         add(tool("update_account", "Change an account's name, balance or digits.") {
             put("name", str("Current account name. Required."))

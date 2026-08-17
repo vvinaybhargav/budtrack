@@ -73,6 +73,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
     }
     ConfirmSheet(vm)
     CardSettleSheet(vm)
+    BorrowedSettleSheet(vm)
 }
 
 /**
@@ -223,6 +224,69 @@ private fun CardSettleSheet(vm: FinTrackViewModel) {
                     vm::confirmSettleCard,
                     Modifier.weight(1f),
                     enabled = (vm.settleAmountDraft.toDoubleOrNull() ?: 0.0) > 0.0 && vm.settleAccountNameDraft.isNotBlank()
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BorrowedSettleSheet(vm: FinTrackViewModel) {
+    val txnId = vm.settlingBorrowedTxnId ?: return
+    val txn = vm.borrowedLentTxns.firstOrNull { it.id == txnId } ?: return
+
+    val isBorrowed = txn.kind == "INCOME" || txn.kind == "REFUND"
+    val outstanding = txn.amount - txn.returnedAmount
+
+    Dialog(onDismissRequest = vm::cancelSettleBorrowed) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(Pf.Surface, Radius.Lg)
+                .border(1.dp, Pf.Hairline, Radius.Lg)
+                .padding(Space.s4),
+            verticalArrangement = Arrangement.spacedBy(Space.s3)
+        ) {
+            Text(
+                if (isBorrowed) "Settle Borrowed Money" else "Settle Lent Money",
+                color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold
+            )
+            Text(
+                if (isBorrowed) "Repaying ${txn.borrowedFrom} (Outstanding: ₹${inr(outstanding)})"
+                else "Collecting from ${txn.borrowedFrom} (Outstanding: ₹${inr(outstanding)})",
+                color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+            )
+            
+            PfField(
+                label = "Amount to Repay / Collect (₹)",
+                value = vm.settleBorrowedAmountDraft,
+                onValueChange = { vm.settleBorrowedAmountDraft = it },
+                numeric = true
+            )
+            
+            Column {
+                Muted(if (isBorrowed) "Paid from Account" else "Received into Account")
+                PfSelect(
+                    value = vm.settleBorrowedAccountNameDraft,
+                    options = vm.visibleAccounts.map { it.name },
+                    onSelect = { vm.settleBorrowedAccountNameDraft = it }
+                )
+            }
+            
+            Muted("Settle payment creates a transaction from/into the selected account and reduces the outstanding balance.")
+            
+            Row(
+                Modifier.fillMaxWidth().padding(top = Space.s2),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                SecondaryButton("Cancel", vm::cancelSettleBorrowed, Modifier.weight(1f))
+                PrimaryButton(
+                    "Settle",
+                    vm::confirmSettleBorrowed,
+                    Modifier.weight(1f),
+                    enabled = (vm.settleBorrowedAmountDraft.toDoubleOrNull() ?: 0.0) > 0.0 &&
+                              (vm.settleBorrowedAmountDraft.toDoubleOrNull() ?: 0.0) <= outstanding &&
+                              vm.settleBorrowedAccountNameDraft.isNotBlank()
                 )
             }
         }
@@ -1097,7 +1161,7 @@ private fun BorrowedLentSection(vm: FinTrackViewModel) {
                         }
                         SecondaryButton(
                             text = "Settle",
-                            onClick = { vm.setTxnReturned(txn.id, true) }
+                            onClick = { vm.startSettleBorrowed(txn.id) }
                         )
                     }
                 }

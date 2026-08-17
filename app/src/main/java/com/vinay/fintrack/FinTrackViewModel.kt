@@ -2329,11 +2329,46 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         var nextPeriod = txn.period
         var nextCategory = txn.category
 
+        // 1. If currently linked to a borrowed transaction, revert its returned amount
+        val prevBorrowedId = txn.loanId
+        if (prevBorrowedId.isNotEmpty() && prevBorrowedId != nextLoanId) {
+            val b = persisted.txns.firstOrNull { it.id == prevBorrowedId }
+            if (b != null) {
+                val nextReturnedAmt = (b.returnedAmount - txn.amount).coerceAtLeast(0.0)
+                update { s ->
+                    s.copy(txns = s.txns.map {
+                        if (it.id == b.id) it.copy(returnedAmount = nextReturnedAmt, returned = false) else it
+                    })
+                }
+            }
+        }
+
+        // 2. Set next period and category
         if (nextLoanId.isNotEmpty()) {
             val l = loans.firstOrNull { it.id == nextLoanId }
             if (l != null) {
                 nextPeriod = cycleFor(l.person)
                 nextCategory = "EMI"
+            } else {
+                // Check if nextLoanId is a borrowed/lent transaction
+                val b = txns.firstOrNull { it.id == nextLoanId }
+                if (b != null) {
+                    nextPeriod = cycleFor(b.borrowedFrom)
+                    nextCategory = "Settle Debt"
+                    
+                    // Update the borrowed transaction's returnedAmount
+                    if (prevBorrowedId != nextLoanId) {
+                        val nextReturnedAmt = (b.returnedAmount + txn.amount).coerceAtMost(b.amount)
+                        update { s ->
+                            s.copy(txns = s.txns.map {
+                                if (it.id == b.id) it.copy(
+                                    returnedAmount = nextReturnedAmt,
+                                    returned = nextReturnedAmt >= b.amount
+                                ) else it
+                            })
+                        }
+                    }
+                }
             }
         } else if (nextEntryId.isNotEmpty()) {
             val e = entries.firstOrNull { it.id == nextEntryId }
@@ -3141,7 +3176,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         credit: Boolean,
         accountId: String,
         note: String,
-        dateIso: String
+        dateIso: String,
+        borrowedFrom: String = "",
+        returnDate: String = "",
+        returnedAmount: Double = 0.0
     ): Txn {
         return addTxn { id ->
             Txn(
@@ -3156,7 +3194,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 note = note,
                 // A time only when it happened today. Stamping a back-dated
                 // payment with midnight would show an hour nobody recorded.
-                at = if (dateIso == today()) System.currentTimeMillis() else 0L
+                at = if (dateIso == today()) System.currentTimeMillis() else 0L,
+                borrowedFrom = borrowedFrom,
+                returnDate = returnDate,
+                returnedAmount = returnedAmount
             )
         }
     }
@@ -3168,7 +3209,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         category: String? = null,
         accountId: String? = null,
         note: String? = null,
-        dateIso: String? = null
+        dateIso: String? = null,
+        borrowedFrom: String? = null,
+        returned: Boolean? = null,
+        returnDate: String? = null,
+        returnedAmount: Double? = null
     ): Txn? {
         val t = txnById(id) ?: return null
         val credit = t.kind == "INCOME"
@@ -3180,7 +3225,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             period = (dateIso ?: t.date).take(7),
             at = if (dateIso != null) millisOfDate(dateIso) else t.at,
             fromAccountId = if (accountId != null && !credit) accountId else t.fromAccountId,
-            toAccountId = if (accountId != null && credit) accountId else t.toAccountId
+            toAccountId = if (accountId != null && credit) accountId else t.toAccountId,
+            borrowedFrom = borrowedFrom ?: t.borrowedFrom,
+            returned = returned ?: t.returned,
+            returnDate = returnDate ?: t.returnDate,
+            returnedAmount = returnedAmount ?: t.returnedAmount
         )
         update { s -> s.copy(txns = s.txns.map { if (it.id == id) updated else it }) }
         sync.upsertTxn(updated)
@@ -3597,6 +3646,64 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 }
             )
         }
+    }
+
+    var settlingBorrowedTxnId by mutableStateOf<String?>(null); private set
+    var settleBorrowedAmountDraft by mutableStateOf("")
+    var settleBorrowedAccountNameDraft by mutableStateOf("")
+
+    fun startSettleBorrowed(txnId: String) {
+        val t = txns.firstOrNull { it.id == txnId } ?: return
+        settlingBorrowedTxnId = txnId
+        val outstanding = t.amount - t.returnedAmount
+        settleBorrowedAmountDraft = outstanding.toLong().toString()
+        settleBorrowedAccountNameDraft = defaultAccount
+    }
+
+    fun cancelSettleBorrowed() {
+        settlingBorrowedTxnId = null
+    }
+
+    fun confirmSettleBorrowed() {
+        val txnId = settlingBorrowedTxnId ?: return
+        val t = txns.firstOrNull { it.id == txnId } ?: return
+        val amount = settleBorrowedAmountDraft.toDoubleOrNull() ?: 0.0
+        if (amount <= 0.0) return
+
+        val accId = persisted.accounts.firstOrNull { it.name == settleBorrowedAccountNameDraft }?.id
+            ?: persisted.accounts.firstOrNull()?.id
+            ?: ""
+
+        val isBorrowed = t.kind == "INCOME" || t.kind == "REFUND"
+        val now = today()
+        
+        val repaymentTxn = Txn(
+            id = newId("t"),
+            date = now,
+            kind = if (isBorrowed) "EXPENSE" else "INCOME",
+            amount = amount,
+            category = "Settle Debt",
+            fromAccountId = if (isBorrowed) accId else "",
+            toAccountId = if (isBorrowed) "" else accId,
+            period = Ledger.cycleOf(now, cycleResetDay),
+            note = if (isBorrowed) "Paid back ${t.borrowedFrom}" else "Received from ${t.borrowedFrom}",
+            at = System.currentTimeMillis(),
+            loanId = t.id
+        )
+
+        val nextReturnedAmt = (t.returnedAmount + amount).coerceAtMost(t.amount)
+
+        update { s ->
+            s.copy(
+                txns = (s.txns.map {
+                    if (it.id == t.id) it.copy(
+                        returnedAmount = nextReturnedAmt,
+                        returned = nextReturnedAmt >= t.amount
+                    ) else it
+                }) + repaymentTxn
+            )
+        }
+        settlingBorrowedTxnId = null
     }
 
     fun addSmsRule(pattern: String, category: String) {

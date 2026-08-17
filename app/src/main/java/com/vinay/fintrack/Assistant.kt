@@ -268,6 +268,14 @@ class Assistant(private val vm: FinTrackViewModel) {
                 "$who is paid on day $day. Everything confirmed becomes payable " +
                     "again then."
             }
+            "set_salary_override" -> {
+                val profile = a.str("profile").orEmpty()
+                val ym = a.str("year_month").orEmpty()
+                val amt = a.num("amount")
+                val day = a.int("reset_day") ?: 1
+                vm.setSalaryOverride(profile, ym, amt, day)
+                "Set salary override for $profile in $ym to ${amt?.let { inr(it) } ?: "default"} (Reset day: $day)."
+            }
             "update_account" -> {
                 val acc = vm.accountNamed(a.str("name").orEmpty())
                     ?: return@runCatching "No account by that name."
@@ -459,7 +467,9 @@ class Assistant(private val vm: FinTrackViewModel) {
         val accountId = account?.id ?: vm.resolvedOneOffAccount
         val date = a.str("date")?.let { isoFromDayFirst(it) } ?: today()
         val t = vm.addTransactionDirect(
-            amount, category, credit, accountId, a.str("note").orEmpty().ifEmpty { category }, date
+            amount, category, credit, accountId, a.str("note").orEmpty().ifEmpty { category }, date,
+            borrowedFrom = a.str("borrowed_from").orEmpty(),
+            returnDate = a.str("return_date").orEmpty()
         )
         return "Recorded ${describe(t)}."
     }
@@ -472,7 +482,10 @@ class Assistant(private val vm: FinTrackViewModel) {
             category = a.str("category")?.let { vm.categoryNamed(it) },
             accountId = a.str("account")?.let { vm.accountNamed(it)?.id },
             note = a.str("note"),
-            dateIso = a.str("date")?.let { isoFromDayFirst(it) }
+            dateIso = a.str("date")?.let { isoFromDayFirst(it) },
+            borrowedFrom = a.str("borrowed_from"),
+            returned = a.bool("returned"),
+            returnDate = a.str("return_date")
         ) ?: return "No transaction with that id."
         return "Updated ${describe(t)}."
     }
@@ -569,7 +582,7 @@ class Assistant(private val vm: FinTrackViewModel) {
             "set_budget", "add_category", "set_default_account",
             "pay_set_aside", "close_commitment", "update_card", "update_loan",
             "delete_account", "delete_card", "delete_loan", "set_budget_rollover",
-            "set_payee_category"
+            "set_payee_category", "set_salary_override"
         )
     }
 }
