@@ -37,6 +37,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.ui.platform.LocalContext
+import java.util.Calendar
+import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.inr
 
@@ -458,6 +461,58 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
             }
 
             if (txn.borrowedFrom.isNotEmpty()) {
+                val context = LocalContext.current
+                val calendar = Calendar.getInstance()
+                
+                if (txn.returnDate.isNotEmpty()) {
+                    val parts = txn.returnDate.split("-")
+                    if (parts.size == 3) {
+                        calendar.set(Calendar.YEAR, parts[0].toIntOrNull() ?: calendar.get(Calendar.YEAR))
+                        calendar.set(Calendar.MONTH, (parts[1].toIntOrNull() ?: 1) - 1)
+                        calendar.set(Calendar.DAY_OF_MONTH, parts[2].toIntOrNull() ?: calendar.get(Calendar.DAY_OF_MONTH))
+                    }
+                }
+
+                val datePickerDialog = remember(txn.id, txn.returnDate) {
+                    android.app.DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            val formatted = "%04d-%02d-%02d".format(year, month + 1, dayOfMonth)
+                            vm.setTxnReturnDate(txn.id, formatted)
+                        },
+                        calendar.get(Calendar.YEAR),
+                        calendar.get(Calendar.MONTH),
+                        calendar.get(Calendar.DAY_OF_MONTH)
+                    )
+                }
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s3),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PfField(
+                        label = "Target Return Date (Optional)",
+                        value = if (txn.returnDate.isNotEmpty()) prettyDate(txn.returnDate) else "",
+                        onValueChange = { /* read only */ },
+                        placeholder = "Select date...",
+                        trailingIcon = {
+                            SecondaryButton(
+                                text = "Pick Date",
+                                onClick = { datePickerDialog.show() }
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    
+                    if (txn.returnDate.isNotEmpty()) {
+                        SecondaryButton(
+                            text = "Clear",
+                            onClick = { vm.setTxnReturnDate(txn.id, "") }
+                        )
+                    }
+                }
+
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(Space.s2),

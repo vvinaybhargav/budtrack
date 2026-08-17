@@ -1062,7 +1062,18 @@ private fun BorrowedLentSection(vm: FinTrackViewModel) {
         SectionTitle("Borrowed & Lent", Modifier.padding(bottom = Space.s3))
         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
             items.forEach { txn ->
-                val isBorrowed = txn.kind == "INCOME" || txn.kind == "REFUND"
+                val isMyTxn = vm.visibleAccounts.any { it.id == txn.fromAccountId || it.id == txn.toAccountId } ||
+                              vm.cards.any { it.id == txn.cardId }
+                
+                val title = if (isMyTxn) {
+                    val isBorrowed = txn.kind == "INCOME" || txn.kind == "REFUND"
+                    if (isBorrowed) "Borrowed from ${txn.borrowedFrom}" else "Lent to ${txn.borrowedFrom}"
+                } else {
+                    val isBorrowed = !(txn.kind == "INCOME" || txn.kind == "REFUND")
+                    val otherProfileName = vm.profileNames.firstOrNull { it != vm.activeProfile } ?: "Partner"
+                    if (isBorrowed) "Borrowed from $otherProfileName" else "Lent to $otherProfileName"
+                }
+
                 PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
                     Row(
                         Modifier.fillMaxWidth(),
@@ -1071,12 +1082,16 @@ private fun BorrowedLentSection(vm: FinTrackViewModel) {
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(
-                                if (isBorrowed) "Borrowed from ${txn.borrowedFrom}" else "Lent to ${txn.borrowedFrom}",
+                                title,
                                 color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
                             )
+                            val returnDateText = if (txn.returnDate.isNotEmpty()) {
+                                " · Return due by ${prettyDate(txn.returnDate)}"
+                            } else ""
                             Muted(
                                 "${inr(txn.amount)} · ${prettyDate(txn.date)}" + 
-                                    if (txn.note.isNotEmpty()) " · ${txn.note}" else "",
+                                    (if (txn.note.isNotEmpty()) " · ${txn.note}" else "") +
+                                    returnDateText,
                                 Modifier.padding(top = 2.dp)
                             )
                         }

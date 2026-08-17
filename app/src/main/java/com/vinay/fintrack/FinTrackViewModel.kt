@@ -1834,10 +1834,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val loans: Double,
         val setAside: Double,
         val income: Double,
+        val borrowedRepayments: Double,
         /** A loan that makes its last payment this month, worth seeing coming. */
         val loanEnding: String
     ) {
-        val out: Double get() = Ledger.paise(recurring + loans + setAside)
+        val out: Double get() = Ledger.paise(recurring + loans + setAside + borrowedRepayments)
         val left: Double get() = Ledger.paise(income - out)
     }
 
@@ -1870,12 +1871,21 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val running = scopedLoans.filter { it.remainingMonths > ahead }
         val ending = scopedLoans.firstOrNull { it.remainingMonths == ahead }
 
+        // Find all borrowed transactions that are scheduled to be repaid in this projected month
+        val monthPrefix = on.substring(0, 7) // e.g. "2026-09"
+        val repayments = txns.filter { t ->
+            inBucket(t) && t.borrowedFrom.isNotEmpty() && !t.returned &&
+            (t.kind == "INCOME" || t.kind == "REFUND") &&
+            t.returnDate.startsWith(monthPrefix)
+        }.sumOf { it.amount }
+
         OutlookMonth(
             label = monthLabel(on),
             recurring = plannedRecurring,
             loans = Ledger.paise(running.sumOf { it.monthlyEmi }),
             setAside = Ledger.paise(setAside),
             income = plannedIncomeFor(bucketView, on),
+            borrowedRepayments = repayments,
             loanEnding = ending?.name.orEmpty()
         )
     }
@@ -2082,9 +2092,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
 
     val borrowedLentTxns: List<Txn>
-        get() = txns
-            .filter { inBucket(it) && it.borrowedFrom.isNotEmpty() && !it.returned }
-            .sortedByDescending { it.sortKey }
+        get() {
+            val myBorrowedLent = txns.filter { inBucket(it) && it.borrowedFrom.isNotEmpty() && !it.returned }
+            val otherBorrowedLent = txns.filter {
+                !inBucket(it) && it.borrowedFrom == activeProfile && !it.returned
+            }
+            return (myBorrowedLent + otherBorrowedLent).distinctBy { it.id }.sortedByDescending { it.sortKey }
+        }
 
     val txnChips: List<String>
         get() = txns.filter { inBucket(it) }.map { it.category }.distinct()
@@ -2159,6 +2173,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun setTxnReturned(txnId: String, returned: Boolean) {
         val t = txns.firstOrNull { it.id == txnId } ?: return
         replaceTxn(t.copy(returned = returned))
+    }
+
+    fun setTxnReturnDate(txnId: String, date: String) {
+        val t = txns.firstOrNull { it.id == txnId } ?: return
+        replaceTxn(t.copy(returnDate = date))
     }
 
     /**
