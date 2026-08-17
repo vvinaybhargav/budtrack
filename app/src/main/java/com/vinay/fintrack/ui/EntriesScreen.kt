@@ -21,6 +21,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -422,6 +424,54 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                     }
                 )
             }
+
+            Column {
+                Muted("Borrowed From / Lent To (Optional)")
+                PfField(
+                    value = txn.borrowedFrom,
+                    onValueChange = { vm.setTxnBorrowedFrom(txn.id, it) },
+                    placeholder = "e.g. Wife, Friend name"
+                )
+                val chips = vm.profileNames.filter { it != vm.activeProfile }
+                if (chips.isNotEmpty()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = Space.s1),
+                        horizontalArrangement = Arrangement.spacedBy(Space.s1)
+                    ) {
+                        chips.forEach { name ->
+                            val selected = txn.borrowedFrom == name
+                            Text(
+                                name,
+                                modifier = Modifier
+                                    .background(if (selected) Pf.Accent else Pf.Surface2, Radius.Pill)
+                                    .clickable {
+                                        vm.setTxnBorrowedFrom(txn.id, if (selected) "" else name)
+                                    }
+                                    .padding(horizontal = Space.s2, vertical = 4.dp),
+                                color = if (selected) Color.White else Pf.Text,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (txn.borrowedFrom.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = txn.returned,
+                        onCheckedChange = { vm.setTxnReturned(txn.id, it) },
+                        colors = CheckboxDefaults.colors(checkedColor = Pf.Accent)
+                    )
+                    Text("Returned / Settled", color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+
             Muted("An account owned by you puts this under Personal; a joint account puts it under Joint.")
 
             // What the bank actually said, for an imported one. Kept on this

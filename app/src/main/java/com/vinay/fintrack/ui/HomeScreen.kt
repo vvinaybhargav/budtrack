@@ -65,6 +65,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
         item { MonthStats(vm) }
         item { BudgetsSection(vm) }
         item { LoansSection(vm) }
+        item { BorrowedLentSection(vm) }
         item { CardsSection(vm) }
         item { CommitmentsSection(vm) }
         item { AnnualSetAsidesSection(vm) }
@@ -1045,6 +1046,44 @@ private fun LoansSection(vm: FinTrackViewModel) {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BorrowedLentSection(vm: FinTrackViewModel) {
+    val items = vm.borrowedLentTxns
+    if (items.isEmpty()) return
+
+    Column {
+        SectionTitle("Borrowed & Lent", Modifier.padding(bottom = Space.s3))
+        Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+            items.forEach { txn ->
+                val isBorrowed = txn.kind == "INCOME" || txn.kind == "REFUND"
+                PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (isBorrowed) "Borrowed from ${txn.borrowedFrom}" else "Lent to ${txn.borrowedFrom}",
+                                color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                            )
+                            Muted(
+                                "${inr(txn.amount)} · ${prettyDate(txn.date)}" + 
+                                    if (txn.note.isNotEmpty()) " · ${txn.note}" else "",
+                                Modifier.padding(top = 2.dp)
+                            )
+                        }
+                        SecondaryButton(
+                            text = "Settle",
+                            onClick = { vm.setTxnReturned(txn.id, true) }
+                        )
                     }
                 }
             }

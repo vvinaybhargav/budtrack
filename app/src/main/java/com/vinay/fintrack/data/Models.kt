@@ -139,6 +139,8 @@ data class Txn(
      *  left several payments on one day with no order between them. Zero for
      *  anything written before this field, which falls back to the date. */
     val at: Long = 0L,
+    val borrowedFrom: String = "",
+    val returned: Boolean = false,
     /**
      * The account digits the bank message quoted, when they matched no account.
      *

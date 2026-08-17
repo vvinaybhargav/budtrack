@@ -2081,6 +2081,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 .sortedByDescending { it.sortKey }
         }
 
+    val borrowedLentTxns: List<Txn>
+        get() = txns
+            .filter { inBucket(it) && it.borrowedFrom.isNotEmpty() && !it.returned }
+            .sortedByDescending { it.sortKey }
+
     val txnChips: List<String>
         get() = txns.filter { inBucket(it) }.map { it.category }.distinct()
 
@@ -2144,6 +2149,16 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     private fun replaceTxn(updated: Txn) {
         update { s -> s.copy(txns = s.txns.map { if (it.id == updated.id) updated else it }) }
         sync.upsertTxn(updated)
+    }
+
+    fun setTxnBorrowedFrom(txnId: String, borrowedFrom: String) {
+        val t = txns.firstOrNull { it.id == txnId } ?: return
+        replaceTxn(t.copy(borrowedFrom = borrowedFrom))
+    }
+
+    fun setTxnReturned(txnId: String, returned: Boolean) {
+        val t = txns.firstOrNull { it.id == txnId } ?: return
+        replaceTxn(t.copy(returned = returned))
     }
 
     /**
