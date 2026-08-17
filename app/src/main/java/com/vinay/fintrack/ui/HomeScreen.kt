@@ -759,7 +759,7 @@ private fun MonthStats(vm: FinTrackViewModel) {
                     Column(
                         Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = Space.s4, bottom = Space.s4),
+                            .padding(start = Space.s4, end = Space.s4, bottom = Space.s4),
                         verticalArrangement = Arrangement.spacedBy(Space.s3)
                     ) {
                         // 1. Savings Rate Calculation
@@ -778,7 +778,7 @@ private fun MonthStats(vm: FinTrackViewModel) {
                                 Text("Monthly Savings Rate", color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                 Text("${"%.1f".format(savingsRate)}%", color = if (savingsRate >= 20.0) Color(0xFF00BFA5) else Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
                             }
-                            ProgressBar(savingsRate / 100.0, if (savingsRate >= 20.0) Color(0xFF00BFA5) else Pf.Accent)
+                            ProgressBar((savingsRate / 100.0).toFloat(), if (savingsRate >= 20.0) Color(0xFF00BFA5) else Pf.Accent)
                             Muted(
                                 "Calculated as actual savings vs. income received.",
                                 size = 11
@@ -823,7 +823,7 @@ private fun MonthStats(vm: FinTrackViewModel) {
                                         }
                                         Text(inr(amt), color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
-                                    ProgressBar(pct, Pf.Accent)
+                                    ProgressBar(pct.toFloat(), Pf.Accent)
                                 }
                             }
                         }
