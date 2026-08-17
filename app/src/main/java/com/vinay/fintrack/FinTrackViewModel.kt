@@ -52,6 +52,9 @@ import com.vinay.fintrack.data.SixMonthOutlook
 // The String overload of put is an extension; without it the member overload
 // takes over and only accepts a JsonElement.
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 enum class Tab { HOME, ENTRIES, ADD, CHAT, SETTINGS }
 
