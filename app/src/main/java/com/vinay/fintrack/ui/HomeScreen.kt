@@ -58,6 +58,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
     ) {
         item { ScopeSwitch(vm) }
         item { CardStatementAlert(vm) }
+        item { UnmatchedAccountAlert(vm) }
         item { BalanceCard(vm) }
         item { AccountsSection(vm) }
         item { MonthPlan(vm) }
@@ -289,6 +290,47 @@ private fun CardStatementAlert(vm: FinTrackViewModel) {
                         )
                     }
                     Tag("Billed", Pf.Accent, Color.White)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UnmatchedAccountAlert(vm: FinTrackViewModel) {
+    val txnsNeedingAccount = vm.txnsNeedingAccount.filter { it.accountTail.isNotBlank() }
+    val uniqueTails = txnsNeedingAccount.map { it.accountTail }.distinct()
+
+    if (uniqueTails.isNotEmpty()) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(bottom = Space.s2),
+            verticalArrangement = Arrangement.spacedBy(Space.s2)
+        ) {
+            uniqueTails.forEach { tail ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Pf.Accent100, Radius.Md)
+                        .border(1.dp, Pf.Accent, Radius.Md)
+                        .clickable { vm.navigateToCreateAccountFromTail(tail) }
+                        .padding(Space.s3),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "New Account/Card detected: ••$tail",
+                            color = Pf.Accent800, fontSize = 13.sp, fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Muted(
+                            "An SMS transaction arrived for ••$tail but it isn't in your account list. Tap to add it!",
+                            size = 11
+                        )
+                    }
+                    Tag("Action Required", Pf.Accent, Color.White)
                 }
             }
         }

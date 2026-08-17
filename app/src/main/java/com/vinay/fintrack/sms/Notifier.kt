@@ -74,7 +74,8 @@ object Notifier {
             .setSmallIcon(R.drawable.ic_notify)
             .setContentTitle("$direction ${inr(txn.amount)} · $who")
             .setContentText(
-                if (needsAccount) "Tap to set the account — no balance has moved yet"
+                if (needsAccount && txn.accountTail.isNotEmpty()) "New account ••${txn.accountTail} detected! Tap to add it."
+                else if (needsAccount) "Tap to set the account — no balance has moved yet"
                 else "Tap to change the account, category or note"
             )
             .setStyle(NotificationCompat.BigTextStyle().bigText(detail(txn)))
