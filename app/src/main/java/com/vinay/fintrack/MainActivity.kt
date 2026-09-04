@@ -123,6 +123,7 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
         }
         BottomNav(vm)
     }
+    com.vinay.fintrack.ui.DetectedAccountDialog(vm)
 }
 
 @Composable

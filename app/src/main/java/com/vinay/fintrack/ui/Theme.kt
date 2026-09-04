@@ -12,27 +12,27 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 object Pf {
-    val Bg = Color(0xFF0D0D0B)
-    val Surface = Color(0xFF1B1A17)
-    val Surface2 = Color(0xFF282622)
-    val Text = Color(0xFFF7F4EB)
-    val Muted = Color(0xFF9E988A)
-    val Hairline = Color(0xFFEBE5D8).copy(alpha = 0.12f)
+    val Bg = Color(0xFF0C0817)
+    val Surface = Color(0xFF18112C)
+    val Surface2 = Color(0xFF261C42)
+    val Text = Color(0xFFF8F6FC)
+    val Muted = Color(0xFFA197B8)
+    val Hairline = Color(0xFFE2D9F3).copy(alpha = 0.12f)
 
-    val Accent = Color(0xFFEE5E4C) // Claude Coral
-    val Accent100 = Color(0xFF3B1E1A)
-    val Accent400 = Color(0xFFF79489)
-    val Accent600 = Color(0xFFD54C3A)
-    val Accent700 = Color(0xFFB33A29)
-    val Accent800 = Color(0xFFFBE4E1)
+    val Accent = Color(0xFF673AB7) // PhonePe Royal Violet
+    val Accent100 = Color(0xFF251442)
+    val Accent400 = Color(0xFFB388FF)
+    val Accent600 = Color(0xFF5E35B1)
+    val Accent700 = Color(0xFF4527A0)
+    val Accent800 = Color(0xFFEDE7F6)
 
-    val Accent2 = Color(0xFF4CAE7C) // Warm Green
-    val Accent2_100 = Color(0xFF1B3D2B)
-    val Accent2_800 = Color(0xFFCBEAD7)
+    val Accent2 = Color(0xFF10B981) // Emerald Green (UPI Success / Credits)
+    val Accent2_100 = Color(0xFF0F3323)
+    val Accent2_800 = Color(0xFFD1FAE5)
 
-    val Neutral100 = Color(0xFF262422)
-    val Neutral700 = Color(0xFF70685E)
-    val Neutral800 = Color(0xFFDED8CD)
+    val Neutral100 = Color(0xFF241C3B)
+    val Neutral700 = Color(0xFF7B7293)
+    val Neutral800 = Color(0xFFE6DFFA)
 }
 
 object Radius {

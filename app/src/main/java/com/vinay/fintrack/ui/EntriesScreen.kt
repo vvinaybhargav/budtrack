@@ -16,8 +16,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -289,65 +292,70 @@ fun EntriesScreen(vm: FinTrackViewModel) {
 @Composable
 private fun EditTxnSheet(vm: FinTrackViewModel) {
     val txn = vm.editingTxn ?: return
+    var note by remember(txn.id) { mutableStateOf(txn.note) }
+    var amountText by remember(txn.id) { mutableStateOf(if (txn.amount > 0) txn.amount.toLong().toString() else "") }
+    var selectedAccountId by remember(txn.id) { mutableStateOf(txn.fromAccountId.ifEmpty { txn.toAccountId }) }
+    var selectedCategory by remember(txn.id) { mutableStateOf(txn.category) }
+    var selectedLoanId by remember(txn.id) { mutableStateOf(txn.loanId) }
+    var selectedEntryId by remember(txn.id) { mutableStateOf(txn.entryId) }
+    var borrowedFrom by remember(txn.id) { mutableStateOf(txn.borrowedFrom) }
+    var returnDate by remember(txn.id) { mutableStateOf(txn.returnDate) }
+    var isReturned by remember(txn.id) { mutableStateOf(txn.returned) }
+    val scrollState = rememberScrollState()
+
     Dialog(onDismissRequest = vm::cancelEditTxn) {
         Column(
             Modifier
                 .fillMaxWidth()
+                .heightIn(max = 620.dp)
                 .background(Pf.Surface, Radius.Lg)
                 .border(1.dp, Pf.Hairline, Radius.Lg)
-                .padding(Space.s4),
+                .padding(Space.s4)
+                .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(Space.s3)
         ) {
-            Text(
-                txn.note.ifEmpty { txn.category },
-                color = Pf.Text, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold
-            )
-            Muted(txn.whenText)
-
-            DebouncedField(
-                value = txn.note,
-                onSettled = vm::setTxnNote,
-                label = "Description (optional)",
-                placeholder = txn.category,
-                allowBlank = true
-            )
-            // Writing one files the row by itself, so say so rather than
-            // leaving a second button to press.
-            Muted(
-                when {
-                    vm.categorisingTxnId == txn.id -> "Finding a category…"
-                    vm.categoriseNote.isNotEmpty() -> vm.categoriseNote
-                    txn.category == "Uncategorised" ->
-                        "Describe it and it will be filed for you."
-                    else -> "Leave it, or describe it in your own words."
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Edit Transaction",
+                        color = Pf.Text, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold
+                    )
+                    Muted(txn.whenText)
                 }
+                IconButton(onClick = vm::cancelEditTxn, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Close, "Close", tint = Pf.Muted, modifier = Modifier.size(18.dp))
+                }
+            }
+
+            PfField(
+                value = note,
+                onValueChange = { note = it },
+                label = "Description",
+                placeholder = txn.category
             )
-            DebouncedField(
-                value = if (txn.amount > 0) txn.amount.toLong().toString() else "",
-                onSettled = vm::setTxnAmount,
-                label = "Amount",
-                numeric = true
+
+            PfField(
+                value = amountText,
+                onValueChange = { amountText = it },
+                label = "Amount (₹)",
+                numeric = true,
+                placeholder = "Amount"
             )
 
             Column {
-                val account = vm.accounts.firstOrNull {
-                    it.id == txn.fromAccountId.ifEmpty { txn.toAccountId }
-                }
-                // An imported row with no account is unfinished, not merely
-                // untidy: nothing has moved off any balance until it is set.
+                val account = vm.accounts.firstOrNull { it.id == selectedAccountId }
                 if (account == null && txn.cardId.isEmpty()) {
                     Text(
                         if (txn.accountTail.isNotBlank())
-                            "Account not set — the bank said A/c ••${txn.accountTail}"
+                            "Account not set — bank said A/c ••${txn.accountTail}"
                         else "Account not set",
                         color = Pf.Accent400, fontSize = 13.sp, fontWeight = FontWeight.SemiBold
                     )
-                    Muted(
-                        if (txn.accountTail.isNotBlank())
-                            "Choose it once and those digits are saved against it, so " +
-                                "later messages match on their own."
-                        else "No balance moves until this is set."
-                    )
+                    Muted("Choose an account to record this transaction against.")
                     if (txn.accountTail.isNotBlank()) {
                         Spacer(Modifier.height(Space.s2))
                         Row(
@@ -355,7 +363,7 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             SecondaryButton(
-                                "Add Account (••${txn.accountTail})",
+                                "Add A/c (••${txn.accountTail})",
                                 { vm.navigateToCreateAccountFromTail(txn.accountTail) },
                                 Modifier.weight(1f)
                             )
@@ -370,33 +378,32 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                     Muted("Account")
                 }
                 PfSelect(
-                    value = account?.name.orEmpty(),
-                    // Only yours and the joint ones: listing every account named
-                    // the other profile's private accounts and let you move
-                    // money onto them.
+                    value = account?.name.orEmpty().ifEmpty { "Select Account" },
                     options = vm.visibleAccounts.map { it.name },
                     onSelect = { name ->
-                        vm.setTxnAccount(vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty())
+                        selectedAccountId = vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty()
                     }
                 )
             }
+
             Column {
                 Muted("Category")
                 PfSelect(
-                    value = txn.category,
+                    value = selectedCategory,
                     options = vm.categories,
-                    onSelect = vm::setTxnCategory
+                    onSelect = { selectedCategory = it }
                 )
             }
+
             Column {
                 Muted("Link to Commitment / Loan")
                 val currentLinkText = when {
-                    txn.loanId.isNotEmpty() -> {
-                        val l = vm.loans.firstOrNull { it.id == txn.loanId }
+                    selectedLoanId.isNotEmpty() -> {
+                        val l = vm.loans.firstOrNull { it.id == selectedLoanId }
                         if (l != null) {
                             "Loan: ${l.name} (₹${inr(l.monthlyEmi)})"
                         } else {
-                            val b = vm.borrowedLentTxns.firstOrNull { it.id == txn.loanId }
+                            val b = vm.borrowedLentTxns.firstOrNull { it.id == selectedLoanId }
                             if (b != null) {
                                 val role = if (b.kind == "INCOME" || b.kind == "REFUND") "Borrowed from ${b.borrowedFrom}" else "Lent to ${b.borrowedFrom}"
                                 val outstanding = b.amount - b.returnedAmount
@@ -404,8 +411,8 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                             } else "Linked Loan"
                         }
                     }
-                    txn.entryId.isNotEmpty() -> {
-                        val e = vm.entries.firstOrNull { it.id == txn.entryId }
+                    selectedEntryId.isNotEmpty() -> {
+                        val e = vm.entries.firstOrNull { it.id == selectedEntryId }
                         if (e != null) {
                             val labelPrefix = if (e.isSetAside) "Set aside" else "Recurring"
                             "$labelPrefix: ${e.category} (₹${inr(e.monthly)})"
@@ -438,7 +445,8 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                     options = linkOptionsMap.keys.toList(),
                     onSelect = { selectedLabel ->
                         val pair = linkOptionsMap[selectedLabel]
-                        vm.linkTxnToCommitment(txn.id, pair?.first, pair?.second)
+                        selectedLoanId = pair?.first.orEmpty()
+                        selectedEntryId = pair?.second.orEmpty()
                     }
                 )
             }
@@ -446,8 +454,8 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
             Column {
                 Muted("Borrowed From / Lent To (Optional)")
                 PfField(
-                    value = txn.borrowedFrom,
-                    onValueChange = { vm.setTxnBorrowedFrom(txn.id, it) },
+                    value = borrowedFrom,
+                    onValueChange = { borrowedFrom = it },
                     placeholder = "e.g. Wife, Friend name"
                 )
                 val chips = vm.profileNames.filter { it != vm.activeProfile }
@@ -457,13 +465,13 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(Space.s1)
                     ) {
                         chips.forEach { name ->
-                            val selected = txn.borrowedFrom == name
+                            val selected = borrowedFrom == name
                             Text(
                                 name,
                                 modifier = Modifier
                                     .background(if (selected) Pf.Accent else Pf.Surface2, Radius.Pill)
                                     .clickable {
-                                        vm.setTxnBorrowedFrom(txn.id, if (selected) "" else name)
+                                        borrowedFrom = if (selected) "" else name
                                     }
                                     .padding(horizontal = Space.s2, vertical = 4.dp),
                                 color = if (selected) Color.White else Pf.Text,
@@ -475,12 +483,12 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                 }
             }
 
-            if (txn.borrowedFrom.isNotEmpty()) {
+            if (borrowedFrom.isNotEmpty()) {
                 val context = LocalContext.current
                 val calendar = Calendar.getInstance()
                 
-                if (txn.returnDate.isNotEmpty()) {
-                    val parts = txn.returnDate.split("-")
+                if (returnDate.isNotEmpty()) {
+                    val parts = returnDate.split("-")
                     if (parts.size == 3) {
                         calendar.set(Calendar.YEAR, parts[0].toIntOrNull() ?: calendar.get(Calendar.YEAR))
                         calendar.set(Calendar.MONTH, (parts[1].toIntOrNull() ?: 1) - 1)
@@ -488,12 +496,11 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                     }
                 }
 
-                val datePickerDialog = remember(txn.id, txn.returnDate) {
+                val datePickerDialog = remember(txn.id, returnDate) {
                     android.app.DatePickerDialog(
                         context,
                         { _, year, month, dayOfMonth ->
-                            val formatted = "%04d-%02d-%02d".format(year, month + 1, dayOfMonth)
-                            vm.setTxnReturnDate(txn.id, formatted)
+                            returnDate = "%04d-%02d-%02d".format(year, month + 1, dayOfMonth)
                         },
                         calendar.get(Calendar.YEAR),
                         calendar.get(Calendar.MONTH),
@@ -508,7 +515,7 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                 ) {
                     PfField(
                         label = "Target Return Date (Optional)",
-                        value = if (txn.returnDate.isNotEmpty()) prettyDate(txn.returnDate) else "",
+                        value = if (returnDate.isNotEmpty()) prettyDate(returnDate) else "",
                         onValueChange = { /* read only */ },
                         placeholder = "Select date...",
                         trailingIcon = {
@@ -520,10 +527,10 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                         modifier = Modifier.weight(1f)
                     )
                     
-                    if (txn.returnDate.isNotEmpty()) {
+                    if (returnDate.isNotEmpty()) {
                         SecondaryButton(
                             text = "Clear",
-                            onClick = { vm.setTxnReturnDate(txn.id, "") }
+                            onClick = { returnDate = "" }
                         )
                     }
                 }
@@ -534,42 +541,64 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Checkbox(
-                        checked = txn.returned,
-                        onCheckedChange = { vm.setTxnReturned(txn.id, it) },
+                        checked = isReturned,
+                        onCheckedChange = { isReturned = it },
                         colors = CheckboxDefaults.colors(checkedColor = Pf.Accent)
                     )
                     Text("Returned / Settled", color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 }
             }
 
-            Muted("An account owned by you puts this under Personal; a joint account puts it under Joint.")
-
-            // What the bank actually said, for an imported one. Kept on this
-            // phone only — it is here so a misread can be checked against the
-            // original, not so it can travel.
+            // Message source
             val message = vm.smsBodyFor(txn.id)
             if (message.isNotEmpty()) {
-                Column(Modifier.padding(top = Space.s2)) {
-                    Muted("The message this came from")
+                Column(Modifier.padding(top = Space.s1)) {
+                    Muted("Original Bank SMS")
                     SelectionContainer {
                         Text(
                             message,
                             Modifier.padding(top = 4.dp),
                             color = Pf.Muted,
-                            fontSize = 12.sp
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
                         )
                     }
                 }
             }
 
             Row(
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().padding(top = Space.s2),
                 horizontalArrangement = Arrangement.spacedBy(Space.s2)
             ) {
-                SecondaryButton("Delete", {
-                    vm.deleteTxn(txn.id); vm.cancelEditTxn()
-                }, Modifier.weight(1f))
-                PrimaryButton("Done", vm::cancelEditTxn, Modifier.weight(1f))
+                SecondaryButton(
+                    "Delete",
+                    { vm.deleteTxn(txn.id); vm.cancelEditTxn() },
+                    Modifier.weight(0.9f)
+                )
+                SecondaryButton(
+                    "Cancel",
+                    vm::cancelEditTxn,
+                    Modifier.weight(0.9f)
+                )
+                PrimaryButton(
+                    "Save",
+                    {
+                        val amt = amountText.toDoubleOrNull() ?: txn.amount
+                        vm.saveTxnDetails(
+                            txnId = txn.id,
+                            note = note,
+                            amount = amt,
+                            accountId = selectedAccountId,
+                            category = selectedCategory,
+                            loanId = selectedLoanId,
+                            entryId = selectedEntryId,
+                            borrowedFrom = borrowedFrom,
+                            returnDate = returnDate,
+                            returned = isReturned
+                        )
+                    },
+                    Modifier.weight(1.2f)
+                )
             }
         }
     }

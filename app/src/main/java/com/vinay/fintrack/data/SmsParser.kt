@@ -156,7 +156,7 @@ fun parseBankSms(
         // Only a credit can be a refund; a debit that mentions "reversal" is
         // more likely a fee charged on one.
         isRefund = isCredit && REFUND_WORDS.any { lower.contains(it) },
-        body = body.take(300)
+        body = if (sender.isNotBlank() && !body.startsWith("[")) "[$sender] ${body.take(300)}" else body.take(300)
     ).takeIf { it.isUsable }
 }
 

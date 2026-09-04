@@ -37,7 +37,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.vinay.fintrack.FinTrackViewModel
@@ -59,6 +64,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
         item { ScopeSwitch(vm) }
         item { CardStatementAlert(vm) }
         item { UnmatchedAccountAlert(vm) }
+        item { RecurringSuggestionsSection(vm) }
         item { BalanceCard(vm) }
         item { AccountsSection(vm) }
         item { MonthPlan(vm) }
@@ -74,7 +80,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
     ConfirmSheet(vm)
     CardSettleSheet(vm)
     BorrowedSettleSheet(vm)
-    UnmatchedAccountPromptDialog(vm)
+    DetectedAccountDialog(vm)
 }
 
 /**
@@ -295,41 +301,201 @@ private fun BorrowedSettleSheet(vm: FinTrackViewModel) {
 }
 
 @Composable
-private fun UnmatchedAccountPromptDialog(vm: FinTrackViewModel) {
-    val tail = vm.unmatchedTailForDialog ?: return
-    val smsText = vm.unmatchedSmsTextForDialog
+fun DetectedAccountDialog(vm: FinTrackViewModel) {
+    val draft = vm.detectedAccountDraft ?: return
+    val scrollState = rememberScrollState()
 
     Dialog(onDismissRequest = vm::cancelUnmatchedAccountPrompt) {
         Column(
             Modifier
                 .fillMaxWidth()
+                .heightIn(max = 640.dp)
                 .background(Pf.Surface, Radius.Lg)
                 .border(1.dp, Pf.Hairline, Radius.Lg)
-                .padding(Space.s4),
+                .padding(Space.s4)
+                .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(Space.s3)
         ) {
-            Text(
-                "New Account/Card Detected",
-                color = Pf.Text, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold
-            )
-            
-            Text(
-                "A transaction for tail ••$tail was found. How would you like to add it?",
-                color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.Medium
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "New Entity Detected",
+                        color = Pf.Text, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold
+                    )
+                    Muted("Auto-extracted from SMS for tail ••${draft.tail}")
+                }
+                IconButton(onClick = vm::cancelUnmatchedAccountPrompt, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Close, "Close", tint = Pf.Muted, modifier = Modifier.size(18.dp))
+                }
+            }
+
+            // Entity Type Selector (Bank Account / Credit Card / Loan)
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Pf.Surface2, Radius.Pill)
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                val kinds = listOf(
+                    "BANK_ACCOUNT" to "Bank A/c",
+                    "CREDIT_CARD" to "Credit Card",
+                    "EMI_LOAN" to "EMI / Loan"
+                )
+                kinds.forEach { (k, label) ->
+                    val selected = draft.kind == k
+                    Text(
+                        label,
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(if (selected) Pf.Accent else Color.Transparent, Radius.Pill)
+                            .clickable {
+                                val updatedName = when (k) {
+                                    "CREDIT_CARD" -> if (draft.bankName.isNotEmpty()) "${draft.bankName} Card ••${draft.tail}" else "Card ••${draft.tail}"
+                                    "EMI_LOAN" -> if (draft.bankName.isNotEmpty()) "${draft.bankName} Loan ••${draft.tail}" else "Loan ••${draft.tail}"
+                                    else -> if (draft.bankName.isNotEmpty()) "${draft.bankName} A/c ••${draft.tail}" else "Bank A/c ••${draft.tail}"
+                                }
+                                vm.updateDetectedAccountDraft(draft.copy(kind = k, suggestedName = updatedName))
+                            }
+                            .padding(vertical = 7.dp),
+                        color = if (selected) Color.White else Pf.Text,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+
+            // Editable Name
+            PfField(
+                label = when (draft.kind) {
+                    "CREDIT_CARD" -> "Card Name"
+                    "EMI_LOAN" -> "Loan Name"
+                    else -> "Account Name"
+                },
+                value = draft.suggestedName,
+                onValueChange = { vm.updateDetectedAccountDraft(draft.copy(suggestedName = it)) },
+                placeholder = "Name"
             )
 
-            if (smsText.isNotEmpty()) {
+            // Belongs to
+            PfSelect(
+                label = "Belongs to",
+                value = draft.owner,
+                options = vm.ownerOptions,
+                onSelect = { vm.updateDetectedAccountDraft(draft.copy(owner = it)) }
+            )
+
+            // Account / Card / Loan specific fields
+            when (draft.kind) {
+                "BANK_ACCOUNT" -> {
+                    PfField(
+                        label = "Current Balance (₹)",
+                        value = draft.balanceText,
+                        onValueChange = { vm.updateDetectedAccountDraft(draft.copy(balanceText = it)) },
+                        placeholder = "e.g. 50000",
+                        numeric = true
+                    )
+                    PfField(
+                        label = "Last 3-4 Digits (for SMS Matching)",
+                        value = draft.tail,
+                        onValueChange = { vm.updateDetectedAccountDraft(draft.copy(tail = it)) },
+                        placeholder = "Last digits",
+                        numeric = true
+                    )
+                }
+                "CREDIT_CARD" -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                        PfField(
+                            label = "Credit Limit (₹)",
+                            value = draft.limitText,
+                            onValueChange = { vm.updateDetectedAccountDraft(draft.copy(limitText = it)) },
+                            placeholder = "50000",
+                            numeric = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        PfField(
+                            label = "Current Due / Bal (₹)",
+                            value = draft.balanceText,
+                            onValueChange = { vm.updateDetectedAccountDraft(draft.copy(balanceText = it)) },
+                            placeholder = "0",
+                            numeric = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                        PfField(
+                            label = "Min Due (₹)",
+                            value = draft.minDueText,
+                            onValueChange = { vm.updateDetectedAccountDraft(draft.copy(minDueText = it)) },
+                            placeholder = "0",
+                            numeric = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        PfField(
+                            label = "Due Day (1-31)",
+                            value = draft.dueDayText,
+                            onValueChange = { vm.updateDetectedAccountDraft(draft.copy(dueDayText = it)) },
+                            placeholder = "e.g. 15",
+                            numeric = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    PfField(
+                        label = "Card Last 3-4 Digits",
+                        value = draft.tail,
+                        onValueChange = { vm.updateDetectedAccountDraft(draft.copy(tail = it)) },
+                        placeholder = "Last digits",
+                        numeric = true
+                    )
+                }
+                "EMI_LOAN" -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                        PfField(
+                            label = "Monthly EMI (₹)",
+                            value = draft.emiText,
+                            onValueChange = { vm.updateDetectedAccountDraft(draft.copy(emiText = it)) },
+                            placeholder = "e.g. 15000",
+                            numeric = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        PfField(
+                            label = "Tenure (Months)",
+                            value = draft.tenureMonthsText,
+                            onValueChange = { vm.updateDetectedAccountDraft(draft.copy(tenureMonthsText = it)) },
+                            placeholder = "12",
+                            numeric = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    PfField(
+                        label = "Due Day (1-31)",
+                        value = draft.dueDayText,
+                        onValueChange = { vm.updateDetectedAccountDraft(draft.copy(dueDayText = it)) },
+                        placeholder = "e.g. 5",
+                        numeric = true
+                    )
+                }
+            }
+
+            // Original SMS snippet
+            if (draft.originalSms.isNotEmpty()) {
                 Column(
                     Modifier
                         .fillMaxWidth()
                         .background(Pf.Surface2, Radius.Md)
                         .padding(Space.s3)
                 ) {
-                    Muted("Original Message:", size = 11)
+                    Muted("Original SMS message:", size = 11)
                     Text(
-                        smsText,
+                        draft.originalSms,
                         color = Pf.Text,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
                         modifier = Modifier.padding(top = 4.dp)
                     )
                 }
@@ -339,16 +505,41 @@ private fun UnmatchedAccountPromptDialog(vm: FinTrackViewModel) {
                 Modifier.fillMaxWidth().padding(top = Space.s2),
                 horizontalArrangement = Arrangement.spacedBy(Space.s2)
             ) {
-                SecondaryButton("Cancel", vm::cancelUnmatchedAccountPrompt, Modifier.weight(1f))
-                SecondaryButton(
-                    "Bank Account",
-                    vm::confirmUnmatchedAsBank,
-                    Modifier.weight(1.2f)
-                )
+                SecondaryButton("Cancel", vm::cancelUnmatchedAccountPrompt, Modifier.weight(0.9f))
                 PrimaryButton(
-                    "Credit Card",
-                    vm::confirmUnmatchedAsCard,
-                    Modifier.weight(1.2f)
+                    "Add & Link Transactions",
+                    { vm.saveDetectedEntity(draft) },
+                    Modifier.weight(1.4f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecurringSuggestionsSection(vm: FinTrackViewModel) {
+    val suggestions = vm.recurringSuggestions
+    if (suggestions.isEmpty()) return
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+        SectionTitle("Recurring Bill Suggestions")
+        suggestions.take(3).forEach { s ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Pf.Surface, Radius.Md)
+                    .border(1.dp, Pf.Hairline, Radius.Md)
+                    .padding(Space.s3),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f).padding(end = Space.s2)) {
+                    Text(s.party, color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Muted("₹${inr(s.averageAmount)} / month around day ${s.suggestedDay} (${s.occurrences} payments)")
+                }
+                PrimaryButton(
+                    "Track Bill",
+                    onClick = { vm.addRecurringFromSuggestion(s) }
                 )
             }
         }
@@ -1639,5 +1830,17 @@ private fun SpendVelocityCard(vm: FinTrackViewModel) {
                 modifier = Modifier.padding(top = Space.s3)
             )
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun KpiCardPreview() {
+    FinTrackTheme {
+        KpiCard(
+            label = "Total Balance",
+            amountText = "₹1,25,000",
+            accentColor = Pf.Accent
+        )
     }
 }

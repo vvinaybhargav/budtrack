@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
@@ -79,7 +80,9 @@ fun Tag(text: String, background: Color, contentColor: Color, modifier: Modifier
             .background(background, Radius.Pill)
             .padding(horizontal = 10.dp, vertical = 3.dp),
         color = contentColor,
-        fontSize = 11.sp
+        fontSize = 11.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
     )
 }
 
@@ -91,7 +94,9 @@ fun OutlineTag(text: String, modifier: Modifier = Modifier) {
             .border(1.dp, Pf.Accent, Radius.Pill)
             .padding(horizontal = 10.dp, vertical = 3.dp),
         color = Pf.Accent,
-        fontSize = 10.sp
+        fontSize = 10.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
     )
 }
 
@@ -113,8 +118,16 @@ fun PrimaryButton(
             disabledContainerColor = Pf.Accent.copy(alpha = 0.35f),
             disabledContentColor = Color.White.copy(alpha = 0.6f)
         ),
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
-    ) { Text(text, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+    ) { 
+        Text(
+            text, 
+            fontSize = 13.sp, 
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        ) 
+    }
 }
 
 @Composable
@@ -136,14 +149,29 @@ fun SecondaryButton(
             disabledContainerColor = Color.Transparent,
             disabledContentColor = Pf.Muted
         ),
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
-    ) { Text(text, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+    ) { 
+        Text(
+            text, 
+            fontSize = 13.sp, 
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        ) 
+    }
 }
 
 @Composable
 fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     TextButton(onClick = onClick, modifier = modifier) {
-        Text(text, color = Pf.Accent400, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Text(
+            text, 
+            color = Pf.Accent400, 
+            fontSize = 13.sp, 
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -157,7 +185,9 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
             .padding(horizontal = 14.dp, vertical = 8.dp),
         color = if (selected) Color.White else Pf.Text,
         fontSize = 13.sp,
-        fontWeight = FontWeight.SemiBold
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
     )
 }
 

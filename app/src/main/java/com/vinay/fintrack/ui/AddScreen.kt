@@ -192,7 +192,7 @@ private fun CardForm(vm: FinTrackViewModel) {
             "Add card",
             vm::addNewCard,
             Modifier.fillMaxWidth(),
-            enabled = vm.newCardDraft.name.isNotBlank() && (vm.newCardDraft.limitText.toDoubleOrNull() ?: 0.0) > 0
+            enabled = vm.newCardDraft.name.isNotBlank()
         )
     }
 }

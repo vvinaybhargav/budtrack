@@ -49,6 +49,9 @@ import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.resolveNextDueDate
 import com.vinay.fintrack.data.calculateSixMonthOutlook
 import com.vinay.fintrack.data.SixMonthOutlook
+import com.vinay.fintrack.data.DetectedAccountParser
+import com.vinay.fintrack.data.DetectedFinancialEntity
+import com.vinay.fintrack.data.RecurringSuggestion
 // The String overload of put is an extension; without it the member overload
 // takes over and only accepts a JsonElement.
 import kotlinx.serialization.json.put
@@ -1289,10 +1292,40 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     var unmatchedTailForDialog by mutableStateOf<String?>(null)
     var unmatchedSmsTextForDialog by mutableStateOf("")
+    var detectedAccountDraft by mutableStateOf<DetectedFinancialEntity?>(null)
+
+    val recurringSuggestions: List<RecurringSuggestion>
+        get() = DetectedAccountParser.detectRecurringBills(txns, entries.map { it.category }.toSet())
+
+    fun addRecurringFromSuggestion(s: RecurringSuggestion) {
+        val nextPeriod = Ledger.cycleOf(today(), persisted.cycleResetDay)
+        val e = Entry(
+            id = newId("e"),
+            name = s.party,
+            person = activeProfile ?: "Me",
+            category = s.category,
+            amount = s.averageAmount,
+            frequency = "MONTHLY",
+            periodMonths = 1,
+            dueDay = s.suggestedDay,
+            dueDate = resolveNextDueDate(s.suggestedDay, today()),
+            type = "EXPENSE",
+            period = nextPeriod,
+            owner = ownerLabel(activeProfile ?: "Me")
+        )
+        update { it.copy(entries = it.entries + e) }
+        sync.upsertEntry(e)
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(appContext, "Recurring bill '${s.party}' added!", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
 
     fun startUnmatchedAccountPrompt(tail: String) {
-        val firstTxn = txns.firstOrNull { it.accountTail == tail && needsAccount(it) }
-        val smsText = firstTxn?.let { persisted.smsBodies[it.id] }.orEmpty()
+        val matchingTxns = txns.filter { it.accountTail == tail || DetectedAccountParser.tailsMatch(it.accountTail, tail) }
+        val smsText = matchingTxns.firstNotNullOfOrNull { persisted.smsBodies[it.id]?.takeIf { b -> b.isNotBlank() } }.orEmpty()
+        
+        val parsed = DetectedAccountParser.parse(tail, smsText, activeProfile)
+        detectedAccountDraft = parsed
         unmatchedTailForDialog = tail
         unmatchedSmsTextForDialog = smsText
     }
@@ -1300,92 +1333,161 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelUnmatchedAccountPrompt() {
         unmatchedTailForDialog = null
         unmatchedSmsTextForDialog = ""
+        detectedAccountDraft = null
     }
 
-    fun parseBankNameFromSms(smsText: String): String {
-        val banks = listOf(
-            "HDFC" to "HDFC",
-            "ICICI" to "ICICI",
-            "SBI" to "SBI",
-            "AXIS" to "Axis",
-            "KOTAK" to "Kotak",
-            "INDUSIND" to "IndusInd",
-            "PNB" to "PNB",
-            "BOB" to "BOB",
-            "YESBK" to "Yes Bank",
-            "YES BANK" to "Yes Bank",
-            "IDFC" to "IDFC",
-            "CITI" to "Citi",
-            "AMEX" to "Amex",
-            "RBL" to "RBL"
-        )
-        for ((key, value) in banks) {
-            if (smsText.contains(key, ignoreCase = true)) {
-                return value
-            }
-        }
-        return ""
+    fun updateDetectedAccountDraft(draft: DetectedFinancialEntity) {
+        detectedAccountDraft = draft
     }
 
-    fun parseAmountByKeywords(smsText: String, keywords: List<String>): Double {
-        val cleanText = smsText.lowercase()
-        for (kw in keywords) {
-            val idx = cleanText.indexOf(kw.lowercase())
-            if (idx != -1) {
-                val sub = cleanText.substring(idx + kw.length)
-                val match = Regex("""(?:rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)""").find(sub)
-                if (match != null) {
-                    val amtStr = match.groupValues[1].replace(",", "")
-                    val amt = amtStr.toDoubleOrNull()
-                    if (amt != null) return amt
+    fun saveDetectedEntity(entity: DetectedFinancialEntity) {
+        when (entity.kind) {
+            "BANK_ACCOUNT" -> {
+                if (entity.suggestedName.isBlank()) return
+                val accId = newId("a")
+                val bal = entity.balanceText.toDoubleOrNull() ?: 0.0
+                update { s ->
+                    val nextAccounts = s.accounts + Account(
+                        id = accId,
+                        name = entity.suggestedName,
+                        owner = ownerLabel(entity.owner),
+                        person = entity.owner,
+                        openingBalance = bal,
+                        numberTail = entity.tail
+                    )
+                    // Auto-assign any pending imports that match this numberTail!
+                    val updatedTxns = s.txns.map { t ->
+                        if (t.accountTail.isNotEmpty() && DetectedAccountParser.tailsMatch(t.accountTail, entity.tail) && t.fromAccountId.isEmpty() && t.toAccountId.isEmpty()) {
+                            if (t.kind == "INCOME") t.copy(toAccountId = accId, accountTail = "")
+                            else t.copy(fromAccountId = accId, accountTail = "")
+                        } else t
+                    }
+                    s.copy(accounts = nextAccounts, txns = updatedTxns)
                 }
             }
+            "CREDIT_CARD" -> {
+                if (entity.suggestedName.isBlank()) return
+                val limit = entity.limitText.toDoubleOrNull() ?: 50000.0
+                val dueDay = entity.dueDayText.toIntOrNull() ?: 0
+                val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
+                val statementDay = entity.statementDayText.toIntOrNull() ?: 20
+                val statementAmount = entity.statementAmountText.toDoubleOrNull() ?: 0.0
+                val ccId = newId("cc")
+                update { s ->
+                    val nextCards = s.cards + Card(
+                        id = ccId,
+                        name = entity.suggestedName,
+                        owner = entity.owner,
+                        person = entity.owner,
+                        limit = if (limit > 0) limit else 50000.0,
+                        balance = entity.balanceText.toDoubleOrNull() ?: 0.0,
+                        minDue = entity.minDueText.toDoubleOrNull() ?: 0.0,
+                        due = entity.dueDayText,
+                        numberTail = entity.tail,
+                        dueDate = resolvedDueDate,
+                        statementDay = statementDay,
+                        statementAmount = statementAmount
+                    )
+                    // Auto-assign any pending imports that match this numberTail!
+                    val updatedTxns = s.txns.map { t ->
+                        if (t.accountTail.isNotEmpty() && DetectedAccountParser.tailsMatch(t.accountTail, entity.tail) && t.cardId.isEmpty()) {
+                            t.copy(cardId = ccId, accountTail = "")
+                        } else t
+                    }
+                    s.copy(cards = nextCards, txns = updatedTxns)
+                }
+            }
+            "EMI_LOAN" -> {
+                if (entity.suggestedName.isBlank()) return
+                val emi = entity.emiText.toDoubleOrNull() ?: 0.0
+                val months = entity.tenureMonthsText.toIntOrNull() ?: 12
+                val dueDay = entity.dueDayText.toIntOrNull() ?: 15
+                val l = Loan(
+                    id = newId("l"),
+                    name = entity.suggestedName,
+                    person = entity.owner,
+                    monthlyEmi = emi,
+                    totalMonths = months,
+                    remainingMonths = months,
+                    dueDay = dueDay,
+                    dueDate = resolveNextDueDate(dueDay, today()),
+                    sourceAccountId = visibleAccounts.firstOrNull()?.id.orEmpty()
+                )
+                update { s -> s.copy(loans = s.loans + l) }
+                sync.upsertLoan(l)
+            }
         }
-        return 0.0
+        cancelUnmatchedAccountPrompt()
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(appContext, "${entity.suggestedName} added & transactions linked!", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
-    fun confirmUnmatchedAsCard() {
-        val tail = unmatchedTailForDialog ?: return
-        val smsText = unmatchedSmsTextForDialog
-        val bank = parseBankNameFromSms(smsText)
-        val cardName = if (bank.isNotEmpty()) "$bank Card ••$tail" else "Card ••$tail"
-        
-        val limit = parseAmountByKeywords(smsText, listOf("limit", "limit avail", "avail limit", "credit limit"))
-        val balance = parseAmountByKeywords(smsText, listOf("outstanding", "outstand", "bal", "due"))
+    fun parseBankNameFromSms(smsText: String): String = DetectedAccountParser.extractBankName(smsText)
 
+    fun confirmUnmatchedAsCard() {
+        val parsed = detectedAccountDraft ?: run {
+            val tail = unmatchedTailForDialog ?: return
+            DetectedAccountParser.parse(tail, unmatchedSmsTextForDialog, activeProfile)
+        }
+
+        cancelEdit()
+        cancelEditTxn()
         selectAddKind("CREDIT_CARD")
         newCardDraft = NewCardDraft(
-            name = cardName,
-            owner = activeProfile ?: "Me",
-            limitText = if (limit > 0.0) limit.toLong().toString() else "0",
-            balanceText = if (balance > 0.0) balance.toLong().toString() else "0",
-            numberTail = tail
+            name = parsed.suggestedName,
+            owner = parsed.owner,
+            limitText = parsed.limitText,
+            balanceText = parsed.balanceText,
+            minDueText = parsed.minDueText,
+            dueText = parsed.dueDayText,
+            statementDayText = parsed.statementDayText,
+            statementAmountText = parsed.statementAmountText,
+            numberTail = parsed.tail
         )
-        cancelEditTxn()
         tab = Tab.ADD
-        unmatchedTailForDialog = null
-        unmatchedSmsTextForDialog = ""
+        cancelUnmatchedAccountPrompt()
     }
 
     fun confirmUnmatchedAsBank() {
-        val tail = unmatchedTailForDialog ?: return
-        val smsText = unmatchedSmsTextForDialog
-        val bank = parseBankNameFromSms(smsText)
-        val accName = if (bank.isNotEmpty()) "$bank A/c ••$tail" else "Bank A/c ••$tail"
+        val parsed = detectedAccountDraft ?: run {
+            val tail = unmatchedTailForDialog ?: return
+            DetectedAccountParser.parse(tail, unmatchedSmsTextForDialog, activeProfile)
+        }
 
-        val balance = parseAmountByKeywords(smsText, listOf("bal", "balance", "clear bal", "avl bal"))
-
+        cancelEdit()
+        cancelEditTxn()
         selectAddKind("BANK_ACCOUNT")
         newAccountDraft = NewAccountDraft(
-            name = accName,
-            owner = activeProfile ?: "Me",
-            balanceText = if (balance > 0.0) balance.toLong().toString() else "0",
-            numberTail = tail
+            name = parsed.suggestedName,
+            owner = parsed.owner,
+            balanceText = parsed.balanceText,
+            numberTail = parsed.tail
         )
-        cancelEditTxn()
         tab = Tab.ADD
-        unmatchedTailForDialog = null
-        unmatchedSmsTextForDialog = ""
+        cancelUnmatchedAccountPrompt()
+    }
+
+    fun confirmUnmatchedAsLoan() {
+        val parsed = detectedAccountDraft ?: run {
+            val tail = unmatchedTailForDialog ?: return
+            DetectedAccountParser.parse(tail, unmatchedSmsTextForDialog, activeProfile)
+        }
+
+        cancelEdit()
+        cancelEditTxn()
+        selectAddKind("EMI_LOAN")
+        newLoanDraft = NewLoanDraft(
+            name = parsed.suggestedName,
+            person = parsed.owner,
+            emiText = parsed.emiText,
+            totalMonthsText = parsed.tenureMonthsText,
+            remainingMonthsText = parsed.tenureMonthsText,
+            dueText = parsed.dueDayText,
+            sourceId = visibleAccounts.firstOrNull()?.id.orEmpty()
+        )
+        tab = Tab.ADD
+        cancelUnmatchedAccountPrompt()
     }
 
     fun navigateToCreateAccountFromTail(tail: String) {
@@ -1405,9 +1507,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 newAccountDraft.owner, newAccountDraft.balanceText.toDoubleOrNull() ?: 0.0,
                 newAccountDraft.numberTail
             )
-            // Auto-assign any pending imports that had this numberTail!
+            // Auto-assign any pending imports that match this numberTail using tailsMatch!
             val updatedTxns = s.txns.map { t ->
-                if (t.accountTail.isNotEmpty() && t.accountTail == newAccountDraft.numberTail && t.fromAccountId.isEmpty() && t.toAccountId.isEmpty()) {
+                if (t.accountTail.isNotEmpty() && DetectedAccountParser.tailsMatch(t.accountTail, newAccountDraft.numberTail) && t.fromAccountId.isEmpty() && t.toAccountId.isEmpty()) {
                     if (t.kind == "INCOME") t.copy(toAccountId = accId, accountTail = "")
                     else t.copy(fromAccountId = accId, accountTail = "")
                 } else t
@@ -1419,8 +1521,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun addNewCard() {
-        val limit = newCardDraft.limitText.toDoubleOrNull() ?: return
-        if (newCardDraft.name.isBlank() || limit <= 0) return
+        val limit = newCardDraft.limitText.toDoubleOrNull() ?: 50000.0
+        if (newCardDraft.name.isBlank()) return
         val dueDay = newCardDraft.dueText.toIntOrNull() ?: 0
         val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
         val statementDay = newCardDraft.statementDayText.toIntOrNull() ?: 20
@@ -1431,7 +1533,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 id = ccId,
                 name = newCardDraft.name,
                 owner = newCardDraft.owner,
-                limit = limit,
+                person = newCardDraft.owner,
+                limit = if (limit > 0) limit else 50000.0,
                 balance = newCardDraft.balanceText.toDoubleOrNull() ?: 0.0,
                 minDue = newCardDraft.minDueText.toDoubleOrNull() ?: 0.0,
                 due = newCardDraft.due,
@@ -1440,9 +1543,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 statementDay = statementDay,
                 statementAmount = statementAmount
             )
-            // Auto-assign any pending imports that had this numberTail!
+            // Auto-assign any pending imports that match this numberTail using tailsMatch!
             val updatedTxns = s.txns.map { t ->
-                if (t.accountTail.isNotEmpty() && t.accountTail == newCardDraft.numberTail && t.cardId.isEmpty()) {
+                if (t.accountTail.isNotEmpty() && DetectedAccountParser.tailsMatch(t.accountTail, newCardDraft.numberTail) && t.cardId.isEmpty()) {
                     t.copy(cardId = ccId, accountTail = "")
                 } else t
             }
@@ -2250,6 +2353,46 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     private fun replaceTxn(updated: Txn) {
         update { s -> s.copy(txns = s.txns.map { if (it.id == updated.id) updated else it }) }
         sync.upsertTxn(updated)
+    }
+
+    fun saveTxnDetails(
+        txnId: String,
+        note: String,
+        amount: Double,
+        accountId: String,
+        category: String,
+        loanId: String?,
+        entryId: String?,
+        borrowedFrom: String,
+        returnDate: String,
+        returned: Boolean
+    ) {
+        val t = txns.firstOrNull { it.id == txnId } ?: return
+        val isIncome = t.kind == "INCOME"
+        val fromAcc = if (isIncome || t.cardId.isNotEmpty()) "" else accountId
+        val toAcc = if (isIncome && t.cardId.isEmpty()) accountId else ""
+
+        val updated = t.copy(
+            note = note.trim(),
+            amount = if (amount > 0) amount else t.amount,
+            fromAccountId = fromAcc,
+            toAccountId = toAcc,
+            category = category,
+            borrowedFrom = borrowedFrom,
+            returnDate = returnDate,
+            returned = returned,
+            accountTail = if (accountId.isNotEmpty() || t.cardId.isNotEmpty()) "" else t.accountTail
+        )
+        replaceTxn(updated)
+        linkTxnToCommitment(txnId, loanId, entryId)
+        if (category.isNotBlank() && category != UNCATEGORISED) {
+            val payee = payeeOf(updated)
+            learnPayeeCategory(payee, category)
+        }
+        cancelEditTxn()
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(appContext, "Transaction saved!", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun setTxnBorrowedFrom(txnId: String, borrowedFrom: String) {
