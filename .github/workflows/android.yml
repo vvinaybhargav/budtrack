@@ -37,14 +37,14 @@ jobs:
     # phone. The rules in Ledger and SmsParser are covered; nothing else can be
     # tested without a device.
     - name: Run Unit Tests
-      run: ./gradlew testReleaseUnitTest
+      run: ./gradlew testReleaseUnitTest --stacktrace --info
 
     # Release, not debug. A debug APK is marked debuggable, which Play Protect
     # treats as a far stronger warning sign — and an unknown app that asks to
     # read SMS is already the shape of thing it looks for. Same signing key
     # either way, so this still installs over an existing build.
     - name: Build Release APK
-      run: ./gradlew assembleRelease
+      run: ./gradlew assembleRelease --stacktrace --info
 
     - name: Upload Release APK Artifact
       uses: actions/upload-artifact@v4
