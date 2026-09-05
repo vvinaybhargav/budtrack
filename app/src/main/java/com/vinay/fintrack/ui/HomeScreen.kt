@@ -42,7 +42,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.vinay.fintrack.FinTrackViewModel
@@ -1830,17 +1829,5 @@ private fun SpendVelocityCard(vm: FinTrackViewModel) {
                 modifier = Modifier.padding(top = Space.s3)
             )
         }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun KpiCardPreview() {
-    FinTrackTheme {
-        KpiCard(
-            label = "Total Balance",
-            amountText = "₹1,25,000",
-            accentColor = Pf.Accent
-        )
     }
 }
