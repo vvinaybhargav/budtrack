@@ -1298,20 +1298,21 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         get() = DetectedAccountParser.detectRecurringBills(txns, entries.map { it.category }.toSet())
 
     fun addRecurringFromSuggestion(s: RecurringSuggestion) {
-        val nextPeriod = Ledger.cycleOf(today(), persisted.cycleResetDay)
+        val person = activeProfile ?: "Me"
+        val bucket = if (person == "Joint") "JOINT" else "PERSONAL"
+        val resolvedDueDate = resolveNextDueDate(s.suggestedDay, today())
         val e = Entry(
             id = newId("e"),
-            name = s.party,
-            person = activeProfile ?: "Me",
+            person = person,
+            type = "EXPENSE",
+            bucket = bucket,
             category = s.category,
             amount = s.averageAmount,
             frequency = "MONTHLY",
+            note = s.party,
+            accountId = defaultAccountFor(person, bucket),
             periodMonths = 1,
-            dueDay = s.suggestedDay,
-            dueDate = resolveNextDueDate(s.suggestedDay, today()),
-            type = "EXPENSE",
-            period = nextPeriod,
-            owner = ownerLabel(activeProfile ?: "Me")
+            dueDate = resolvedDueDate
         )
         update { it.copy(entries = it.entries + e) }
         sync.upsertEntry(e)
@@ -1410,7 +1411,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     remainingMonths = months,
                     dueDay = dueDay,
                     dueDate = resolveNextDueDate(dueDay, today()),
-                    sourceAccountId = visibleAccounts.firstOrNull()?.id.orEmpty()
+                    accountId = visibleAccounts.firstOrNull()?.id.orEmpty()
                 )
                 update { s -> s.copy(loans = s.loans + l) }
                 sync.upsertLoan(l)
