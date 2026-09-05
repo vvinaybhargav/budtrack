@@ -39,7 +39,7 @@ jobs:
     # read SMS is already the shape of thing it looks for. Same signing key
     # either way, so this still installs over an existing build.
     - name: Build Release APK
-      run: ./gradlew assembleRelease --stacktrace --info
+      run: ./gradlew assembleRelease --stacktrace --console=plain
 
     - name: Upload Release APK Artifact
       uses: actions/upload-artifact@v4
