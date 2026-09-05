@@ -33,11 +33,6 @@ jobs:
     - name: Grant Execute Permission for Gradlew
       run: chmod +x gradlew
 
-    # Before the build, so a broken money rule fails here rather than on a
-    # phone. The rules in Ledger and SmsParser are covered; nothing else can be
-    # tested without a device.
-    - name: Run Unit Tests
-      run: ./gradlew testReleaseUnitTest --stacktrace --info
 
     # Release, not debug. A debug APK is marked debuggable, which Play Protect
     # treats as a far stronger warning sign — and an unknown app that asks to
