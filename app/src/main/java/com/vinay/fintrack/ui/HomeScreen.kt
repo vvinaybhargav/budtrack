@@ -888,7 +888,7 @@ private fun BalanceCard(vm: FinTrackViewModel) {
                 Radius.Xl
             )
             .border(1.dp, Pf.Accent.copy(alpha = 0.35f), Radius.Xl)
-            .padding(horizontal = Space.s4, vertical = Space.s5)
+            .padding(horizontal = Space.s4, vertical = Space.s4)
     ) {
         Row(
             Modifier.fillMaxWidth(),
