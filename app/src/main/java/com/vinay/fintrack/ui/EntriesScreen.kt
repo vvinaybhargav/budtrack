@@ -54,6 +54,9 @@ import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Receipt
 import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.today
@@ -228,42 +231,88 @@ fun EntriesScreen(vm: FinTrackViewModel) {
         val rows = vm.filteredTxns
         if (rows.isEmpty()) {
             item {
-                Column(
+                val elsewhere = vm.otherBucketCount
+                val filtered = vm.entriesSearch.isNotEmpty() || vm.entriesCategoryFilter != null || vm.amountFilterMinText.isNotEmpty() || vm.amountFilterMaxText.isNotEmpty()
+                Box(
                     Modifier
                         .fillMaxWidth()
-                        .padding(vertical = Space.s6),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .padding(vertical = Space.s4)
+                        .background(Pf.Surface, Radius.Lg)
+                        .border(1.dp, Pf.Hairline, Radius.Lg)
+                        .padding(horizontal = Space.s4, vertical = Space.s6),
+                    contentAlignment = Alignment.Center
                 ) {
-                    val elsewhere = vm.otherBucketCount
-                    val filtered = vm.entriesSearch.isNotEmpty() || vm.entriesCategoryFilter != null
-                    Text(
-                        when {
-                            elsewhere > 0 -> "Nothing here."
-                            filtered -> "Nothing matches."
-                            else -> "Nothing recorded yet."
-                        },
-                        color = Pf.Muted,
-                        textAlign = TextAlign.Center
-                    )
-                    // A transaction on the other side used to look like one that
-                    // was never recorded at all.
-                    Muted(
-                        when {
-                            elsewhere > 0 ->
-                                "$elsewhere transaction(s) are under " +
-                                    if (vm.bucketView == "JOINT") "Personal." else "Joint."
-                            filtered -> "Clear the search or category filter to see everything."
-                            else -> "Confirm a commitment on Home, or turn on bank SMS in Settings."
-                        },
-                        Modifier.padding(top = Space.s2)
-                    )
-                    // Otherwise a payment on the other person's account looks lost.
-                    if (vm.otherProfileTxnCount > 0) {
-                        Muted(
-                            "${vm.otherProfileTxnCount} more are on another profile's own " +
-                                "account and show on their phone.",
-                            Modifier.padding(top = Space.s1)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        Box(
+                            Modifier
+                                .size(56.dp)
+                                .background(Pf.Accent.copy(alpha = 0.15f), CircleShape)
+                                .border(1.dp, Pf.Accent.copy(alpha = 0.35f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                if (filtered) Icons.Default.SearchOff else Icons.Default.ReceiptLong,
+                                contentDescription = null,
+                                Modifier.size(28.dp),
+                                tint = Pf.Accent400
+                            )
+                        }
+
+                        Spacer(Modifier.height(4.dp))
+
+                        Text(
+                            when {
+                                elsewhere > 0 -> "Nothing in ${if (vm.bucketView == "JOINT") "Joint" else "Personal"}"
+                                filtered -> "No Matching Transactions"
+                                else -> "No Transactions Yet"
+                            },
+                            color = Pf.Text,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
                         )
+
+                        Text(
+                            when {
+                                elsewhere > 0 ->
+                                    "$elsewhere transaction(s) were found under " +
+                                        if (vm.bucketView == "JOINT") "Personal." else "Joint."
+                                filtered -> "Try adjusting your search terms or clearing the category filters."
+                                else -> "Record your first expense or turn on bank SMS sync in Settings."
+                            },
+                            color = Pf.Muted,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = Space.s2)
+                        )
+
+                        if (vm.otherProfileTxnCount > 0) {
+                            Muted(
+                                "${vm.otherProfileTxnCount} more are on another profile's account.",
+                                size = 11
+                            )
+                        }
+
+                        Spacer(Modifier.height(Space.s2))
+
+                        if (filtered) {
+                            SecondaryButton("Clear Filters", {
+                                vm.entriesSearch = ""
+                                vm.setCategoryFilter(null)
+                                vm.amountFilterMinText = ""
+                                vm.amountFilterMaxText = ""
+                            })
+                        } else if (elsewhere > 0) {
+                            PrimaryButton(
+                                "Switch to " + if (vm.bucketView == "JOINT") "Personal" else "Joint",
+                                { vm.toggleBucket() }
+                            )
+                        } else {
+                            PrimaryButton("Add Transaction", { vm.tab = com.vinay.fintrack.Tab.ADD })
+                        }
                     }
                 }
             }

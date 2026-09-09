@@ -1,35 +1,44 @@
 package com.vinay.fintrack.ui
 
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import android.content.Intent
-import android.speech.RecognizerIntent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,30 +91,56 @@ fun ChatScreen(vm: FinTrackViewModel) {
                 .weight(1f)
                 .fillMaxWidth(),
             contentPadding = PaddingValues(Space.s4),
-            verticalArrangement = Arrangement.spacedBy(Space.s2)
+            verticalArrangement = Arrangement.spacedBy(Space.s3)
         ) {
             if (vm.chat.isEmpty()) item { Intro(vm) }
 
             items(vm.chat) { m ->
                 val fromUser = m.role == "user"
-                Box(
+                Row(
                     Modifier.fillMaxWidth(),
-                    contentAlignment = if (fromUser) Alignment.CenterEnd else Alignment.CenterStart
+                    horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start,
+                    verticalAlignment = Alignment.Top
                 ) {
-                    Text(
-                        m.text,
+                    if (!fromUser) {
+                        Box(
+                            Modifier
+                                .size(28.dp)
+                                .background(Pf.Accent.copy(alpha = 0.2f), CircleShape)
+                                .border(1.dp, Pf.Accent.copy(alpha = 0.4f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                Modifier.size(15.dp),
+                                tint = Pf.Accent400
+                            )
+                        }
+                        Spacer(Modifier.width(Space.s2))
+                    }
+                    Box(
                         Modifier
-                            .fillMaxWidth(0.88f)
-                            .background(if (fromUser) Pf.Accent else Pf.Surface, Radius.Md)
+                            .fillMaxWidth(0.84f)
+                            .background(
+                                if (fromUser) Brush.linearGradient(listOf(Color(0xFF673AB7), Color(0xFF7E57C2)))
+                                else Brush.linearGradient(listOf(Pf.Surface, Pf.Surface2)),
+                                Radius.Lg
+                            )
                             .border(
                                 1.dp,
                                 if (fromUser) Color.Transparent else Pf.Hairline,
-                                Radius.Md
+                                Radius.Lg
                             )
-                            .padding(horizontal = Space.s3, vertical = Space.s3),
-                        color = if (fromUser) Color.White else Pf.Text,
-                        fontSize = 14.sp
-                    )
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            m.text,
+                            color = if (fromUser) Color.White else Pf.Text,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp
+                        )
+                    }
                 }
             }
 
@@ -114,10 +149,21 @@ fun ChatScreen(vm: FinTrackViewModel) {
             // otherwise looks like nothing is happening.
             if (vm.chatBusy) {
                 item {
-                    Muted(
-                        vm.chatStatus.ifEmpty { "Thinking…" },
-                        Modifier.padding(top = Space.s1)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                        modifier = Modifier.padding(start = 36.dp, top = Space.s1)
+                    ) {
+                        Box(
+                            Modifier
+                                .size(6.dp)
+                                .background(Pf.Accent400, CircleShape)
+                        )
+                        Muted(
+                            vm.chatStatus.ifEmpty { "Thinking…" },
+                            size = 12
+                        )
+                    }
                 }
             }
 
@@ -130,7 +176,8 @@ fun ChatScreen(vm: FinTrackViewModel) {
                             .padding(top = Space.s2)
                             .fillMaxWidth()
                             .background(Pf.Surface2, Radius.Lg)
-                            .padding(Space.s3)
+                            .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f), Radius.Lg)
+                            .padding(Space.s4)
                     ) {
                         Text(
                             "Delete ${p.what}?",
@@ -173,6 +220,39 @@ fun ChatScreen(vm: FinTrackViewModel) {
             }
         }
 
+        // Quick prompt recommendation pills
+        if (vm.chatReady && !vm.chatBusy) {
+            val suggestions = listOf(
+                "💰 Spent this month",
+                "💳 Credit card dues",
+                "📊 Joint balance",
+                "🚗 Active loan EMIs",
+                "💡 Subscriptions"
+            )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = Space.s3, vertical = Space.s1),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                suggestions.forEach { prompt ->
+                    Box(
+                        Modifier
+                            .background(Pf.Surface2, Radius.Pill)
+                            .border(1.dp, Pf.Hairline, Radius.Pill)
+                            .clickable {
+                                vm.chatInput = prompt.substringAfter(" ")
+                                vm.sendChat()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(prompt, color = Pf.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+
         Hairline()
         Row(
             Modifier
@@ -195,12 +275,13 @@ fun ChatScreen(vm: FinTrackViewModel) {
                     modifier = Modifier
                         .size(44.dp)
                         .background(Pf.Surface2, Radius.Pill)
+                        .border(1.dp, Pf.Accent.copy(alpha = 0.4f), Radius.Pill)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Mic,
                         contentDescription = "Voice Input",
-                        Modifier.size(18.dp),
-                        tint = Pf.Accent
+                        Modifier.size(20.dp),
+                        tint = Pf.Accent400
                     )
                 }
             }
@@ -222,24 +303,88 @@ fun ChatScreen(vm: FinTrackViewModel) {
 
 @Composable
 private fun Intro(vm: FinTrackViewModel) {
-    Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = Space.s4),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Space.s3)
+    ) {
+        Box(
+            Modifier
+                .size(52.dp)
+                .background(
+                    Brush.linearGradient(listOf(Pf.Accent, Color(0xFF7E57C2))),
+                    CircleShape
+                )
+                .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.AutoAwesome, null, Modifier.size(26.dp), tint = Color.White)
+        }
+
         Text(
-            "Ask me anything",
-            color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold
+            "FinTrack Assistant",
+            color = Pf.Text,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.ExtraBold
         )
+
         if (!vm.chatReady) {
-            Muted("Add an OpenAI key in Settings first.")
+            Box(
+                Modifier
+                    .background(Pf.Surface, Radius.Md)
+                    .border(1.dp, Pf.Hairline, Radius.Md)
+                    .padding(Space.s4)
+            ) {
+                Text(
+                    "Add your OpenAI API key in Settings to unlock AI answers and voice commands.",
+                    color = Pf.Muted,
+                    fontSize = 13.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
             return@Column
         }
-        // Four examples, not six paragraphs: they say what it can do faster
-        // than a description of what it can do.
-        listOf(
-            "What's left in the joint account?",
-            "Add 450 for Swiggy from ICICI Joint",
-            "Make the last Swiggy one 540",
-            "Confirm this month's car EMI"
-        ).forEach { Muted("· $it") }
-        Muted("Your figures go to OpenAI to answer. Not your PINs or keys.")
-        Hairline()
+
+        Muted(
+            "Ask about balances, record new expenses, or verify dues in natural language.",
+            size = 13
+        )
+
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .background(Pf.Surface, Radius.Lg)
+                .border(1.dp, Pf.Hairline, Radius.Lg)
+                .padding(Space.s4)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+                Text("EXAMPLES", color = Pf.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                listOf(
+                    "What's left in the joint account?",
+                    "Add 450 for Swiggy from ICICI Joint",
+                    "Make the last Swiggy one 540",
+                    "Confirm this month's car EMI"
+                ).forEach { example ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                vm.chatInput = example
+                                vm.sendChat()
+                            }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        Text("•", color = Pf.Accent400, fontWeight = FontWeight.Bold)
+                        Text(example, color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+        }
+
+        Muted("Figures are processed directly via your OpenAI API key. PINs and credentials are never touched.", size = 11)
     }
 }

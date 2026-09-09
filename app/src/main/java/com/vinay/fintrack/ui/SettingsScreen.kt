@@ -8,6 +8,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -22,11 +23,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Rule
+import androidx.compose.material.icons.filled.Sms
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -47,6 +60,7 @@ import android.content.pm.PackageManager
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
@@ -59,22 +73,20 @@ fun SettingsScreen(vm: FinTrackViewModel) {
     LazyColumn(
         Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(Space.s4),
-        verticalArrangement = Arrangement.spacedBy(Space.s6)
+        verticalArrangement = Arrangement.spacedBy(Space.s4)
     ) {
+        // 1. Profiles Card
         item {
-            Column {
-                // One Profiles section, not a "Profile" and a "Profiles".
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = Space.s2),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Heading("Profiles")
-                    SecondaryButton("Switch profile", vm::switchProfile)
-                }
-                Muted("Each profile sees only its own. Joint is the switch on Home.")
+            PfCard(padding = PaddingValues(Space.s4)) {
+                SettingHeader(
+                    icon = Icons.Default.Person,
+                    title = "Profiles",
+                    subtitle = "Manage & switch user accounts",
+                    action = {
+                        SecondaryButton("Switch", vm::switchProfile)
+                    }
+                )
+                Muted("Each profile tracks independent transactions. Joint overview is toggleable on Home.")
                 Column(
                     Modifier.padding(top = Space.s3),
                     verticalArrangement = Arrangement.spacedBy(Space.s2)
@@ -114,24 +126,19 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        item { Hairline() }
-
+        // 2. Lock Card
         item {
-            Column {
-                // No PIN toggle: the app opens where it left off, and the
-                // choice to remember is made once on the lock screen.
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = Space.s2),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Heading("Lock")
-                    GhostButton("Lock now", vm::lockNow)
-                }
+            PfCard(padding = PaddingValues(Space.s4)) {
+                SettingHeader(
+                    icon = Icons.Default.Lock,
+                    title = "App Lock",
+                    subtitle = "PIN protection for ${vm.activeProfile.orEmpty()}",
+                    action = {
+                        GhostButton("Lock now", vm::lockNow)
+                    }
+                )
                 Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                    Muted("Change PIN for ${vm.activeProfile.orEmpty()}")
+                    Muted("Set or change 4-digit security PIN")
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                         PfField(
                             value = vm.pinNew,
@@ -160,11 +167,14 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        item { Hairline() }
-
+        // 3. Categories Card
         item {
-            Column {
-                Heading("Categories")
+            PfCard(padding = PaddingValues(Space.s4)) {
+                SettingHeader(
+                    icon = Icons.Default.Category,
+                    title = "Categories",
+                    subtitle = "Organize transaction categories"
+                )
                 Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
                     vm.categories.forEachIndexed { i, cat ->
                         Row(
@@ -207,32 +217,33 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        item { Hairline() }
-
+        // 4. Budgets Card
         item {
-            Column {
-                Heading("Budgets")
-                Muted("A monthly limit per category.")
+            PfCard(padding = PaddingValues(Space.s4)) {
+                SettingHeader(
+                    icon = Icons.Default.PieChart,
+                    title = "Budgets",
+                    subtitle = "Monthly spending caps per category"
+                )
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .padding(top = Space.s3),
+                        .padding(bottom = Space.s2),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Muted("Carry last month's leftover")
+                    Column(Modifier.weight(1f)) {
+                        Text("Rollover leftover", color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Muted("Underspend carries over to next month")
+                    }
                     if (vm.budgetRollover) {
                         SecondaryButton("On", { vm.setBudgetRollover(false) })
                     } else {
                         SecondaryButton("Off", { vm.setBudgetRollover(true) })
                     }
                 }
-                Muted(
-                    "Underspend adds to next month; overspend takes from it. Off " +
-                        "means every month starts at the same figure."
-                )
                 Column(
-                    Modifier.padding(top = Space.s3),
+                    Modifier.padding(top = Space.s2),
                     verticalArrangement = Arrangement.spacedBy(Space.s2)
                 ) {
                     vm.budgets.forEach { (cat, limit) ->
@@ -242,9 +253,6 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                             horizontalArrangement = Arrangement.spacedBy(Space.s2)
                         ) {
                             Text(cat, Modifier.weight(1f), color = Pf.Text, fontSize = 14.sp)
-                            // Debounced, and blank is ignored: saving on every
-                            // keystroke stored 0 the moment you cleared it,
-                            // which then crashed Home on a zero denominator.
                             DebouncedField(
                                 value = limit.toLong().toString(),
                                 onSettled = { v ->
@@ -289,126 +297,134 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        item { Hairline() }
-
+        // 5. Salary Settings Card
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(Space.s4)) {
-                vm.profileNames.forEach { profile ->
-                    val salAmount = vm.salaryAmountFor(profile)
-                    val salResetDay = vm.salaryResetDayFor(profile)
-                    
-                    Column {
-                        Heading("Salary settings · $profile")
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(Space.s3)
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Muted("Salary reset day")
-                                PfSelect(
-                                    value = salResetDay.toString(),
-                                    options = (1..28).map { it.toString() },
-                                    onSelect = { vm.setSalaryDate(profile, it.toIntOrNull() ?: 1) }
-                                )
-                            }
-                            Column(Modifier.weight(1f)) {
-                                Muted("Monthly Salary Amount")
-                                PfField(
-                                    value = if (salAmount > 0.0) salAmount.toLong().toString() else "",
-                                    onValueChange = {
-                                        val amt = it.toDoubleOrNull() ?: 0.0
-                                        vm.setSalaryAmountFor(profile, amt)
-                                    },
-                                    numeric = true,
-                                    placeholder = "e.g. 120000"
-                                )
-                            }
-                        }
-                        Muted(
-                            "Month turns over on this day. Salary amount is used to project outlook savings for $profile."
-                        )
-
-                        Column(Modifier.padding(top = Space.s4)) {
-                            Text(
-                                "Salary Overrides (Next 3 Months) · $profile",
-                                color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(bottom = Space.s2)
-                            )
-                            val nextMonths = (1..3).map { ahead ->
-                                val d = Ledger.addMonths(today(), ahead)
-                                val yr = d.substring(0, 4)
-                                val monthInt = d.substring(5, 7).toInt()
-                                val monthLabel = when (monthInt) {
-                                    1 -> "Jan"
-                                    2 -> "Feb"
-                                    3 -> "Mar"
-                                    4 -> "Apr"
-                                    5 -> "May"
-                                    6 -> "Jun"
-                                    7 -> "Jul"
-                                    8 -> "Aug"
-                                    9 -> "Sep"
-                                    10 -> "Oct"
-                                    11 -> "Nov"
-                                    12 -> "Dec"
-                                    else -> ""
-                                }
-                                val yearMonth = "%s-%02d".format(yr, monthInt)
-                                val displayLabel = "$monthLabel $yr"
-                                Triple(yearMonth, displayLabel, monthLabel)
-                            }
-
-                            nextMonths.forEach { (yearMonth, displayLabel, _) ->
-                                val override = vm.getSalaryOverride(profile, yearMonth)
-                                val amountVal = override?.amount ?: salAmount
-                                val resetDayVal = override?.resetDay ?: salResetDay
-                                
-                                Row(
-                                    Modifier.fillMaxWidth().padding(bottom = Space.s3),
-                                    horizontalArrangement = Arrangement.spacedBy(Space.s3),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        displayLabel,
-                                        color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.width(90.dp)
+            PfCard(padding = PaddingValues(Space.s4)) {
+                SettingHeader(
+                    icon = Icons.Default.Payments,
+                    title = "Salary & Payday",
+                    subtitle = "Monthly income & turnover cycle"
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(Space.s4)) {
+                    vm.profileNames.forEach { profile ->
+                        val salAmount = vm.salaryAmountFor(profile)
+                        val salResetDay = vm.salaryResetDayFor(profile)
+                        
+                        Column {
+                            Text("Profile: $profile", color = Pf.Accent200, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = Space.s2))
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(Space.s3)
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Muted("Pay Day (Reset)")
+                                    PfSelect(
+                                        value = salResetDay.toString(),
+                                        options = (1..28).map { it.toString() },
+                                        onSelect = { vm.setSalaryDate(profile, it.toIntOrNull() ?: 1) }
                                     )
-                                    Column(Modifier.weight(1f)) {
-                                        Muted("Pay Day")
-                                        PfSelect(
-                                            value = resetDayVal.toString(),
-                                            options = (1..28).map { it.toString() },
-                                            onSelect = { day ->
-                                                vm.setSalaryOverride(profile, yearMonth, amountVal, day.toIntOrNull() ?: 1)
-                                            }
-                                        )
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    Muted("Monthly Salary")
+                                    PfField(
+                                        value = if (salAmount > 0.0) salAmount.toLong().toString() else "",
+                                        onValueChange = {
+                                            val amt = it.toDoubleOrNull() ?: 0.0
+                                            vm.setSalaryAmountFor(profile, amt)
+                                        },
+                                        numeric = true,
+                                        placeholder = "e.g. 120000"
+                                    )
+                                }
+                            }
+                            Muted(
+                                "Month turns over on this day. Used to project outlook savings for $profile."
+                            )
+
+                            Column(Modifier.padding(top = Space.s3)) {
+                                Text(
+                                    "Salary Overrides (Next 3 Months)",
+                                    color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(bottom = Space.s2)
+                                )
+                                val nextMonths = (1..3).map { ahead ->
+                                    val d = Ledger.addMonths(today(), ahead)
+                                    val yr = d.substring(0, 4)
+                                    val monthInt = d.substring(5, 7).toInt()
+                                    val monthLabel = when (monthInt) {
+                                        1 -> "Jan"
+                                        2 -> "Feb"
+                                        3 -> "Mar"
+                                        4 -> "Apr"
+                                        5 -> "May"
+                                        6 -> "Jun"
+                                        7 -> "Jul"
+                                        8 -> "Aug"
+                                        9 -> "Sep"
+                                        10 -> "Oct"
+                                        11 -> "Nov"
+                                        12 -> "Dec"
+                                        else -> ""
                                     }
-                                    Column(Modifier.weight(1.5f)) {
-                                        Muted("Amount (₹)")
-                                        PfField(
-                                            value = if (amountVal > 0.0) amountVal.toLong().toString() else "",
-                                            onValueChange = { amtText ->
-                                                val amt = amtText.toDoubleOrNull()
-                                                vm.setSalaryOverride(profile, yearMonth, amt, resetDayVal)
-                                            },
-                                            numeric = true,
-                                            placeholder = "Amount"
+                                    val yearMonth = "%s-%02d".format(yr, monthInt)
+                                    val displayLabel = "$monthLabel $yr"
+                                    Triple(yearMonth, displayLabel, monthLabel)
+                                }
+
+                                nextMonths.forEach { (yearMonth, displayLabel, _) ->
+                                    val override = vm.getSalaryOverride(profile, yearMonth)
+                                    val amountVal = override?.amount ?: salAmount
+                                    val resetDayVal = override?.resetDay ?: salResetDay
+                                    
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(bottom = Space.s2),
+                                        horizontalArrangement = Arrangement.spacedBy(Space.s3),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            displayLabel,
+                                            color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.width(90.dp)
                                         )
+                                        Column(Modifier.weight(1f)) {
+                                            Muted("Pay Day")
+                                            PfSelect(
+                                                value = resetDayVal.toString(),
+                                                options = (1..28).map { it.toString() },
+                                                onSelect = { day ->
+                                                    vm.setSalaryOverride(profile, yearMonth, amountVal, day.toIntOrNull() ?: 1)
+                                                }
+                                            )
+                                        }
+                                        Column(Modifier.weight(1.5f)) {
+                                            Muted("Amount (₹)")
+                                            PfField(
+                                                value = if (amountVal > 0.0) amountVal.toLong().toString() else "",
+                                                onValueChange = { amtText ->
+                                                    val amt = amtText.toDoubleOrNull()
+                                                    vm.setSalaryOverride(profile, yearMonth, amt, resetDayVal)
+                                                },
+                                                numeric = true,
+                                                placeholder = "Amount"
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                    Spacer(Modifier.height(Space.s4))
                 }
             }
         }
 
-        item { Hairline() }
-
+        // 6. Default Account Card
         item {
-            Column {
-                Heading("Default account")
+            PfCard(padding = PaddingValues(Space.s4)) {
+                SettingHeader(
+                    icon = Icons.Default.AccountBalance,
+                    title = "Default Account",
+                    subtitle = "Pre-selected account for new records"
+                )
                 PfSelect(
                     value = vm.defaultAccount,
                     options = vm.visibleAccounts.map { it.name },
@@ -417,73 +433,79 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        item { Hairline() }
-
+        // 7. SMS Import Section Card
         item { SmsImportSection(vm) }
 
-        item { Hairline() }
-
+        // 8. SMS Rules Section Card
         item { SmsRulesSection(vm) }
 
-        item { Hairline() }
-
+        // 9. Sync & AI Card
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-                Heading("Sync")
-                DebouncedField(
-                    label = "Firebase config — apiKey, projectId, storageBucket, messagingSenderId, appId",
-                    value = vm.firebaseConfigText,
-                    onSettled = vm::setFirebaseConfig,
-                    placeholder = "paste the values, separated by commas",
-                    singleLine = false,
-                    allowBlank = true
+            PfCard(padding = PaddingValues(Space.s4)) {
+                SettingHeader(
+                    icon = Icons.Default.Sync,
+                    title = "Sync & Integrations",
+                    subtitle = "Cloud ledger & AI API configuration"
                 )
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Muted("Firestore")
-                    when (vm.syncStatus) {
-                        SyncStatus.LIVE -> Tag("Live", Pf.Accent2_100, Pf.Accent2_800)
-                        SyncStatus.CONNECTING -> Tag("Connecting…", Pf.Neutral100, Pf.Neutral800)
-                        SyncStatus.ERROR -> Tag("Error", Pf.Accent100, Pf.Accent800)
-                        SyncStatus.OFF -> OutlineTag("Not connected")
+                Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+                    DebouncedField(
+                        label = "Firebase config — apiKey, projectId, storageBucket, messagingSenderId, appId",
+                        value = vm.firebaseConfigText,
+                        onSettled = vm::setFirebaseConfig,
+                        placeholder = "paste the values, separated by commas",
+                        singleLine = false,
+                        allowBlank = true
+                    )
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Muted("Firestore")
+                        when (vm.syncStatus) {
+                            SyncStatus.LIVE -> Tag("Live", Pf.Accent2_100, Pf.Accent2_800)
+                            SyncStatus.CONNECTING -> Tag("Connecting…", Pf.Neutral100, Pf.Neutral800)
+                            SyncStatus.ERROR -> Tag("Error", Pf.Accent100, Pf.Accent800)
+                            SyncStatus.OFF -> OutlineTag("Not connected")
+                        }
                     }
-                }
-                if (vm.syncError.isNotEmpty()) {
-                    Text(vm.syncError, color = Pf.Accent400, fontSize = 12.sp)
-                }
-                PrimaryButton("Connect", vm::applyFirebaseConfig)
-                Muted(
-                    if (vm.syncConfigLooksValid) "Reads OK — ${vm.syncConfigSummary}"
-                    else "Need at least apiKey, projectId and appId."
-                )
-                DebouncedField(
-                    label = "OpenAI API key — for Smart Add",
-                    value = vm.openaiKeyText,
-                    onSettled = vm::setOpenaiKey,
-                    placeholder = "sk-…",
-                    allowBlank = true
-                )
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Muted("OpenAI")
-                    if (vm.openaiKeyText.isNotBlank()) Tag("Configured", Pf.Accent100, Pf.Accent800)
-                    else OutlineTag("Not set")
+                    if (vm.syncError.isNotEmpty()) {
+                        Text(vm.syncError, color = Pf.Accent400, fontSize = 12.sp)
+                    }
+                    PrimaryButton("Connect", vm::applyFirebaseConfig)
+                    Muted(
+                        if (vm.syncConfigLooksValid) "Reads OK — ${vm.syncConfigSummary}"
+                        else "Need at least apiKey, projectId and appId."
+                    )
+                    DebouncedField(
+                        label = "OpenAI API key — for Smart Add",
+                        value = vm.openaiKeyText,
+                        onSettled = vm::setOpenaiKey,
+                        placeholder = "sk-…",
+                        allowBlank = true
+                    )
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Muted("OpenAI")
+                        if (vm.openaiKeyText.isNotBlank()) Tag("Configured", Pf.Accent100, Pf.Accent800)
+                        else OutlineTag("Not set")
+                    }
                 }
             }
         }
 
-        // Last, and only while any is left: a one-off cleanup, not a setting.
+        // 10. Sample Data Card (if any)
         if (vm.sampleDataCount > 0) {
-            item { Hairline() }
             item {
-                Column {
-                    Heading("Sample data")
+                PfCard(padding = PaddingValues(Space.s4)) {
+                    SettingHeader(
+                        icon = Icons.Default.CleaningServices,
+                        title = "Sample Data",
+                        subtitle = "Clear starter demonstration data"
+                    )
                     Muted(
                         "${vm.sampleDataCount} made-up record(s) from first launch. " +
                             "They inflate every figure once your own numbers are in."
@@ -496,6 +518,62 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SettingHeader(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String? = null,
+    action: (@Composable () -> Unit)? = null
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = Space.s3),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.s3),
+            modifier = Modifier.weight(1f, fill = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(Pf.Accent700.copy(alpha = 0.25f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = Pf.Accent200,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Column {
+                Text(
+                    title,
+                    color = Pf.Text,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                if (subtitle != null) {
+                    Text(
+                        subtitle,
+                        color = Pf.Muted,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+        if (action != null) {
+            action()
         }
     }
 }
@@ -575,8 +653,12 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
         if (hasPermission) vm.setSmsImport(true)
     }
 
-    Column {
-        Heading("Bank SMS")
+    PfCard(padding = PaddingValues(Space.s4)) {
+        SettingHeader(
+            icon = Icons.Default.Sms,
+            title = "Bank SMS Import",
+            subtitle = "Automatic tracking from SMS alerts"
+        )
         Muted("Records payments from your bank's alerts — UPI, card, ATM and EMI.")
 
         Row(
@@ -729,8 +811,12 @@ private fun SmsRulesSection(vm: FinTrackViewModel) {
     val rules = vm.smsRules
     if (rules.isEmpty()) return
 
-    Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-        Heading("Saved Categorisation Rules")
+    PfCard(padding = PaddingValues(Space.s4)) {
+        SettingHeader(
+            icon = Icons.Default.Rule,
+            title = "Saved Categorisation Rules",
+            subtitle = "Merchant keyword mapping rules"
+        )
         Muted("SMS patterns mapped to categories. Tap the trash icon to delete a rule.")
 
         Column(

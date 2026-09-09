@@ -3,6 +3,7 @@ package com.vinay.fintrack.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1282,6 +1283,17 @@ private fun PlanRow(label: String, amount: Double, minus: Boolean = false, bold:
     }
 }
 
+private fun categoryColor(category: String): Color = when {
+    category.contains("Food", ignoreCase = true) || category.contains("Dining", ignoreCase = true) || category.contains("Groceries", ignoreCase = true) || category.contains("Snack", ignoreCase = true) -> Color(0xFFFFA726)
+    category.contains("Shopping", ignoreCase = true) || category.contains("Clothes", ignoreCase = true) || category.contains("Electronic", ignoreCase = true) -> Color(0xFF29B6F6)
+    category.contains("Bill", ignoreCase = true) || category.contains("Electricity", ignoreCase = true) || category.contains("Recharge", ignoreCase = true) || category.contains("Wifi", ignoreCase = true) || category.contains("Utility", ignoreCase = true) -> Color(0xFFAB47BC)
+    category.contains("Travel", ignoreCase = true) || category.contains("Fuel", ignoreCase = true) || category.contains("Cab", ignoreCase = true) || category.contains("Transport", ignoreCase = true) -> Color(0xFF5C6BC0)
+    category.contains("Health", ignoreCase = true) || category.contains("Med", ignoreCase = true) || category.contains("Doctor", ignoreCase = true) -> Color(0xFF26A69A)
+    category.contains("Invest", ignoreCase = true) || category.contains("SIP", ignoreCase = true) || category.contains("Mutual", ignoreCase = true) -> Color(0xFF66BB6A)
+    category.contains("Entertainment", ignoreCase = true) || category.contains("Movie", ignoreCase = true) || category.contains("Netflix", ignoreCase = true) -> Color(0xFFEC407A)
+    else -> Color(0xFF7E57C2)
+}
+
 @Composable
 private fun MonthStats(vm: FinTrackViewModel) {
     // Money that actually moved. These were the planned figures, so they showed
@@ -1324,6 +1336,97 @@ private fun MonthStats(vm: FinTrackViewModel) {
                         }
                     }
                 }
+
+                // Visual Category Spending Distribution Bar
+                val cycle = vm.cycle()
+                val currentTxns = vm.filteredTxns.filter { it.kind == "EXPENSE" && it.period == cycle }
+                val totalExpense = currentTxns.sumOf { it.amount }
+
+                if (totalExpense > 0.0) {
+                    val catSpends = currentTxns
+                        .groupBy { it.category }
+                        .mapValues { (_, txs) -> txs.sumOf { it.amount } }
+                        .toList()
+                        .sortedByDescending { it.second }
+
+                    Hairline()
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Space.s4, vertical = Space.s3)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "MONTHLY SPEND DISTRIBUTION",
+                                color = Pf.Muted,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.8.sp
+                            )
+                            Text(
+                                inr(totalExpense),
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+
+                        Spacer(Modifier.height(Space.s2))
+
+                        // Multi-segment horizontal bar
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(12.dp)
+                                .clip(Radius.Pill)
+                                .background(Pf.Surface2)
+                        ) {
+                            catSpends.forEach { (cat, amt) ->
+                                val weight = (amt / totalExpense).toFloat().coerceIn(0.001f, 1f)
+                                Box(
+                                    Modifier
+                                        .weight(weight)
+                                        .fillMaxHeight()
+                                        .background(categoryColor(cat))
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(Space.s3))
+
+                        // Category chips with colored indicators
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                        ) {
+                            catSpends.forEach { (cat, amt) ->
+                                val pct = ((amt / totalExpense) * 100).toInt()
+                                Row(
+                                    Modifier
+                                        .background(Pf.Surface2, Radius.Pill)
+                                        .border(1.dp, Pf.Hairline, Radius.Pill)
+                                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .size(8.dp)
+                                            .background(categoryColor(cat), CircleShape)
+                                    )
+                                    Text(cat, color = Pf.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("$pct%", color = Pf.Muted, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
                 
                 Hairline()
                 
@@ -1336,7 +1439,7 @@ private fun MonthStats(vm: FinTrackViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        if (expanded) "Hide Spend Analytics" else "View Spend Analytics & Savings Rate",
+                        if (expanded) "Hide Detailed Analytics" else "View Savings Rate & Category Breakdown",
                         color = Pf.Accent, fontSize = 13.sp, fontWeight = FontWeight.Bold
                     )
                     Text(
@@ -1377,17 +1480,12 @@ private fun MonthStats(vm: FinTrackViewModel) {
 
                         Hairline()
 
-                        // 2. Category Breakdown Chart
+                        // 2. Category Breakdown List
                         Text(
-                            "Expense Breakdown by Category",
+                            "Category Details",
                             color = Pf.Text, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(top = Space.s1)
                         )
-
-                        // Compute category spends from transactions of this cycle
-                        val cycle = vm.cycle()
-                        val currentTxns = vm.filteredTxns.filter { it.kind == "EXPENSE" && it.period == cycle }
-                        val totalExpense = currentTxns.sumOf { it.amount }
                         
                         if (totalExpense <= 0.0) {
                             Muted("No expenses recorded this month yet.")
@@ -1406,14 +1504,21 @@ private fun MonthStats(vm: FinTrackViewModel) {
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Box(
+                                                Modifier
+                                                    .size(8.dp)
+                                                    .background(categoryColor(cat), CircleShape)
+                                            )
                                             Text(cat, color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                            Spacer(Modifier.width(6.dp))
                                             Text("${(pct * 100).toInt()}%", color = Pf.Muted, fontSize = 11.sp)
                                         }
                                         Text(inr(amt), color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
-                                    ProgressBar(pct.toFloat(), Pf.Accent)
+                                    ProgressBar(pct.toFloat(), categoryColor(cat))
                                 }
                             }
                         }
