@@ -54,6 +54,9 @@ import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.People
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.SearchOff
@@ -91,137 +94,191 @@ private fun CategoryAvatar(category: String, kind: String, modifier: Modifier = 
 
 @Composable
 fun EntriesScreen(vm: FinTrackViewModel) {
+    var filtersExpanded by remember { mutableStateOf(false) }
+    val needAccount = vm.txnsNeedingAccount.size
+    val unsorted = vm.uncategorisedTxns.size
+    val hasFilters = vm.entriesCategoryFilter != null || vm.amountFilterMinText.isNotEmpty() || vm.amountFilterMaxText.isNotEmpty()
+
     LazyColumn(
         Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(Space.s4),
         verticalArrangement = Arrangement.spacedBy(Space.s3)
     ) {
-        item { Text("Transactions", color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold) }
-
-        // The same switch as Home — one piece of state, so flipping it either
-        // place keeps both screens on the same side.
+        // 1. Sleek Header with Inline Scope Pill
         item {
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .background(Pf.Surface2, Radius.Pill)
-                    .padding(3.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                BucketTab(vm.activeProfile ?: "Personal", vm.bucketView == "PERSONAL", Modifier.weight(1f)) {
-                    vm.setScope(false)
-                }
-                BucketTab("Joint", vm.bucketView == "JOINT", Modifier.weight(1f)) {
-                    vm.setScope(true)
+                Text(
+                    "Transactions",
+                    color = Pf.Text,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                // Compact scope pill
+                Row(
+                    Modifier
+                        .background(Pf.Surface2, Radius.Pill)
+                        .border(1.dp, Pf.Hairline, Radius.Pill)
+                        .clickable { vm.toggleBucket() }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        if (vm.bucketView == "JOINT") Icons.Default.People else Icons.Default.Person,
+                        null,
+                        Modifier.size(13.dp),
+                        tint = Pf.Accent400
+                    )
+                    Text(
+                        if (vm.bucketView == "JOINT") "Joint" else (vm.activeProfile ?: "Personal"),
+                        color = Pf.Text,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
 
-        // Unfinished work, above the list rather than buried in it: a row with
-        // no account has moved no balance, so the figures are wrong until it is
-        // set.
-        val needAccount = vm.txnsNeedingAccount.size
-        val unsorted = vm.uncategorisedTxns.size
-        if (needAccount > 0 || unsorted > 0 || vm.sortMessage.isNotEmpty()) {
+        // 2. Compact Action Alert (Only when needed, no paragraphs)
+        if (needAccount > 0 || unsorted > 0) {
+            item {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFFFA726).copy(alpha = 0.12f), Radius.Md)
+                        .border(1.dp, Color(0xFFFFA726).copy(alpha = 0.3f), Radius.Md)
+                        .clickable {
+                            if (needAccount > 0) vm.entriesCategoryFilter = "Needs Account"
+                            else vm.entriesCategoryFilter = "Uncategorised"
+                        }
+                        .padding(horizontal = Space.s3, vertical = Space.s2),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        if (needAccount > 0) "⚠️ $needAccount need an account" else "💡 $unsorted uncategorised",
+                        color = Color(0xFFFFA726),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text("Fix →", color = Color(0xFFFFA726), fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                }
+            }
+        }
+
+        // 3. Clean Search + Filter Toggle Button
+        item {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PfField(
+                    value = vm.entriesSearch,
+                    onValueChange = { vm.entriesSearch = it },
+                    placeholder = "Search payee, category, note…",
+                    modifier = Modifier.weight(1f)
+                )
+                Box(
+                    Modifier
+                        .size(46.dp)
+                        .background(
+                            if (hasFilters || filtersExpanded) Pf.Accent else Pf.Surface,
+                            Radius.Md
+                        )
+                        .border(
+                            1.dp,
+                            if (hasFilters || filtersExpanded) Pf.Accent400 else Pf.Hairline,
+                            Radius.Md
+                        )
+                        .clickable { filtersExpanded = !filtersExpanded },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Tune,
+                        contentDescription = "Filters",
+                        tint = if (hasFilters || filtersExpanded) Color.White else Pf.Muted,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        // 4. Expandable Filter Section (Hidden by default to give 90% space to transactions!)
+        if (filtersExpanded || hasFilters) {
             item {
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .background(Pf.Surface2, Radius.Lg)
-                        .padding(Space.s3)
+                        .background(Pf.Surface, Radius.Lg)
+                        .border(1.dp, Pf.Hairline, Radius.Lg)
+                        .padding(Space.s3),
+                    verticalArrangement = Arrangement.spacedBy(Space.s3)
                 ) {
-                    if (needAccount > 0) {
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    vm.entriesCategoryFilter = "Needs Account"
-                                }
-                                .padding(vertical = Space.s1)
-                        ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("FILTERS", color = Pf.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                        if (hasFilters) {
                             Text(
-                                "$needAccount need an account",
-                                color = Pf.Accent400, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
-                            )
-                            Muted("Their balances haven't moved. Tap one to set it.")
-                        }
-                    }
-                    if (unsorted > 0) {
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    vm.entriesCategoryFilter = "Uncategorised"
+                                "Reset all",
+                                color = Pf.Accent400,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable {
+                                    vm.entriesSearch = ""
+                                    vm.setCategoryFilter(null)
+                                    vm.amountFilterMinText = ""
+                                    vm.amountFilterMaxText = ""
                                 }
-                                .padding(vertical = Space.s1)
-                        ) {
-                            Text(
-                                "$unsorted not categorised",
-                                Modifier.padding(top = if (needAccount > 0) Space.s2 else 0.dp),
-                                color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
-                            )
-                            Muted("File one and that payee stays filed.")
-                        }
-                        Row(Modifier.padding(top = Space.s2)) {
-                            SecondaryButton(
-                                if (vm.sortingCategories) "Sorting…" else "Sort with AI",
-                                vm::sortCategoriesWithAi,
-                                enabled = !vm.sortingCategories
                             )
                         }
                     }
-                    if (vm.sortMessage.isNotEmpty()) {
-                        Muted(vm.sortMessage, Modifier.padding(top = Space.s2))
+
+                    // Category chips
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        Chip("All", vm.entriesCategoryFilter == null, onClick = { vm.setCategoryFilter(null) })
+                        if (needAccount > 0) {
+                            Chip("Needs Account", vm.entriesCategoryFilter == "Needs Account", onClick = { vm.setCategoryFilter("Needs Account") })
+                        }
+                        vm.txnChips.forEach { c ->
+                            Chip(c, vm.entriesCategoryFilter == c, onClick = { vm.setCategoryFilter(c) })
+                        }
                     }
-                }
-            }
-        }
 
-        item {
-            PfField(
-                value = vm.entriesSearch,
-                onValueChange = { vm.entriesSearch = it },
-                placeholder = "Search payee, category or reference…"
-            )
-        }
-
-        item {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Space.s3)
-            ) {
-                PfField(
-                    label = "Min Amount (₹)",
-                    value = vm.amountFilterMinText,
-                    onValueChange = { vm.amountFilterMinText = it },
-                    placeholder = "Min ₹",
-                    numeric = true,
-                    modifier = Modifier.weight(1f)
-                )
-                PfField(
-                    label = "Max Amount (₹)",
-                    value = vm.amountFilterMaxText,
-                    onValueChange = { vm.amountFilterMaxText = it },
-                    placeholder = "Max ₹",
-                    numeric = true,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        item {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(Space.s2)
-            ) {
-                Chip("All", vm.entriesCategoryFilter == null, onClick = { vm.setCategoryFilter(null) })
-                if (needAccount > 0) {
-                    Chip("Needs Account", vm.entriesCategoryFilter == "Needs Account", onClick = { vm.setCategoryFilter("Needs Account") })
-                }
-                vm.txnChips.forEach { c ->
-                    Chip(c, vm.entriesCategoryFilter == c, onClick = { vm.setCategoryFilter(c) })
+                    // Min & Max amount row
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        PfField(
+                            label = "Min (₹)",
+                            value = vm.amountFilterMinText,
+                            onValueChange = { vm.amountFilterMinText = it },
+                            placeholder = "Min",
+                            numeric = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        PfField(
+                            label = "Max (₹)",
+                            value = vm.amountFilterMaxText,
+                            onValueChange = { vm.amountFilterMaxText = it },
+                            placeholder = "Max",
+                            numeric = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         }

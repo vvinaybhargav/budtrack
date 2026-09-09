@@ -49,6 +49,8 @@ import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.People
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -577,14 +579,39 @@ private fun ScopeSwitch(vm: FinTrackViewModel) {
     Row(
         Modifier
             .fillMaxWidth()
-            .background(Pf.Surface2, Radius.Pill)
-            .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
+            .padding(horizontal = Space.s1),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        ScopeTab(vm.activeProfile ?: "Personal", vm.bucketView == "PERSONAL", Modifier.weight(1f)) {
-            vm.setScope(false)
+        Row(
+            Modifier
+                .background(Pf.Surface2, Radius.Pill)
+                .clickable { vm.toggleBucket() }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                if (vm.bucketView == "JOINT") Icons.Default.People else Icons.Default.Person,
+                null,
+                Modifier.size(13.dp),
+                tint = Pf.Accent400
+            )
+            Text(
+                if (vm.bucketView == "JOINT") "Joint Ledger" else (vm.activeProfile ?: "Personal"),
+                color = Pf.Text,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text("▾", color = Pf.Muted, fontSize = 11.sp)
         }
-        ScopeTab("Joint", vm.bucketView == "JOINT", Modifier.weight(1f)) { vm.setScope(true) }
+
+        Text(
+            vm.cycle(),
+            color = Pf.Muted,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
@@ -601,7 +628,6 @@ private fun HomeSubTabBar(vm: FinTrackViewModel) {
             val isSelected = vm.homeTab == tab
             val bg = if (isSelected) Pf.Accent else Pf.Surface
             val textColor = if (isSelected) Color.White else Pf.Muted
-            val borderColor = if (isSelected) Pf.Accent400 else Pf.Hairline
             val icon = when (tab) {
                 HomeTab.OVERVIEW -> Icons.Default.Dashboard
                 HomeTab.ACCOUNTS -> Icons.Default.CreditCard
@@ -612,22 +638,21 @@ private fun HomeSubTabBar(vm: FinTrackViewModel) {
             Row(
                 Modifier
                     .background(bg, Radius.Pill)
-                    .border(1.dp, borderColor, Radius.Pill)
                     .clickable { vm.homeTab = tab }
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Icon(
                     icon,
                     contentDescription = null,
-                    Modifier.size(15.dp),
+                    Modifier.size(14.dp),
                     tint = textColor
                 )
                 Text(
                     tab.label,
                     color = textColor,
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                     maxLines = 1
                 )
@@ -643,29 +668,28 @@ private fun OverviewSnapshotGrid(vm: FinTrackViewModel) {
     val savingsRate = if (income > 0.0) {
         (((income - spent) / income) * 100.0).coerceAtLeast(0.0)
     } else 0.0
-    val totalLiquid = vm.scopedAccounts.sumOf { vm.balanceOf(it) }
     val totalCardOwed = vm.scopedCards.sumOf { it.balance }
 
     Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-        SectionTitle("Quick Highlights · ${vm.bucketLabel}")
+        SectionTitle("Monthly Overview · ${vm.bucketLabel}")
 
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Space.s3)
         ) {
             OverviewMetricTile(
-                title = "SPENT THIS MONTH",
-                value = inr(spent),
-                subtitle = "Budget: ${inr(vm.plannedExpense)}",
-                accent = Pf.Text,
+                title = "INCOME",
+                value = inr(income),
+                subtitle = "Earned this cycle",
+                accent = Color(0xFF10B981),
                 modifier = Modifier.weight(1f),
                 onClick = { vm.homeTab = HomeTab.BUDGETS }
             )
             OverviewMetricTile(
-                title = "SAVINGS RATE",
-                value = "${"%.1f".format(savingsRate)}%",
-                subtitle = if (savingsRate >= 20.0) "Healthy savings" else "Below 20% target",
-                accent = if (savingsRate >= 20.0) Color(0xFF10B981) else Pf.Text,
+                title = "EXPENSES",
+                value = inr(spent),
+                subtitle = "Budget: ${inr(vm.plannedExpense)}",
+                accent = Pf.Text,
                 modifier = Modifier.weight(1f),
                 onClick = { vm.homeTab = HomeTab.BUDGETS }
             )
@@ -676,17 +700,17 @@ private fun OverviewSnapshotGrid(vm: FinTrackViewModel) {
             horizontalArrangement = Arrangement.spacedBy(Space.s3)
         ) {
             OverviewMetricTile(
-                title = "BANK ACCOUNTS",
-                value = inr(totalLiquid),
-                subtitle = "${vm.scopedAccounts.size} accounts",
-                accent = Color(0xFF10B981),
+                title = "SAVINGS RATE",
+                value = "${"%.1f".format(savingsRate)}%",
+                subtitle = if (savingsRate >= 20.0) "Healthy savings" else "Target: 20%+",
+                accent = if (savingsRate >= 20.0) Color(0xFF10B981) else Pf.Text,
                 modifier = Modifier.weight(1f),
-                onClick = { vm.homeTab = HomeTab.ACCOUNTS }
+                onClick = { vm.homeTab = HomeTab.BUDGETS }
             )
             OverviewMetricTile(
-                title = "CARDS OUTSTANDING",
+                title = "CARD DUES",
                 value = inr(totalCardOwed),
-                subtitle = "${vm.scopedCards.size} cards",
+                subtitle = if (totalCardOwed > 0.0) "Outstanding balance" else "All bills clear",
                 accent = if (totalCardOwed > 0.0) Color(0xFFEF4444) else Color(0xFF10B981),
                 modifier = Modifier.weight(1f),
                 onClick = { vm.homeTab = HomeTab.ACCOUNTS }
@@ -707,7 +731,6 @@ private fun OverviewMetricTile(
     Column(
         modifier = modifier
             .background(Pf.Surface, Radius.Lg)
-            .border(1.dp, Pf.Hairline, Radius.Lg)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(Space.s3)
     ) {
@@ -1238,7 +1261,6 @@ private fun KpiCard(
     Column(
         modifier = modifier
             .background(Pf.Surface, Radius.Md)
-            .border(1.dp, Pf.Hairline, Radius.Md)
             .padding(Space.s3)
     ) {
         Text(

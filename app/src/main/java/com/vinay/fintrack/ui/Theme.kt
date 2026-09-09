@@ -21,6 +21,7 @@ object Pf {
 
     val Accent = Color(0xFF673AB7) // PhonePe Royal Violet
     val Accent100 = Color(0xFF251442)
+    val Accent200 = Color(0xFFD1C4E9)
     val Accent400 = Color(0xFFB388FF)
     val Accent600 = Color(0xFF5E35B1)
     val Accent700 = Color(0xFF4527A0)

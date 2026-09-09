@@ -311,7 +311,7 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                         val salResetDay = vm.salaryResetDayFor(profile)
                         
                         Column {
-                            Text("Profile: $profile", color = Pf.Accent200, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = Space.s2))
+                            Text("Profile: $profile", color = Pf.Accent400, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = Space.s2))
                             Row(
                                 Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(Space.s3)
@@ -550,7 +550,7 @@ private fun SettingHeader(
                 Icon(
                     icon,
                     contentDescription = null,
-                    tint = Pf.Accent200,
+                    tint = Pf.Accent400,
                     modifier = Modifier.size(18.dp)
                 )
             }
