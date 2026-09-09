@@ -40,11 +40,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.vinay.fintrack.FinTrackViewModel
+import com.vinay.fintrack.FinTrackViewModel.HomeTab
 import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.monthsToDate
@@ -58,23 +66,36 @@ fun HomeScreen(vm: FinTrackViewModel) {
     LazyColumn(
         Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(Space.s4),
-        verticalArrangement = Arrangement.spacedBy(Space.s6)
+        verticalArrangement = Arrangement.spacedBy(Space.s4)
     ) {
         item { ScopeSwitch(vm) }
-        item { CardStatementAlert(vm) }
-        item { UnmatchedAccountAlert(vm) }
-        item { RecurringSuggestionsSection(vm) }
-        item { BalanceCard(vm) }
-        item { AccountsSection(vm) }
-        item { MonthPlan(vm) }
-        item { MonthStats(vm) }
-        item { BudgetsSection(vm) }
-        item { LoansSection(vm) }
-        item { BorrowedLentSection(vm) }
-        item { CardsSection(vm) }
-        item { CommitmentsSection(vm) }
-        item { AnnualSetAsidesSection(vm) }
-        item { OutlookSection(vm) }
+        item { HomeSubTabBar(vm) }
+
+        when (vm.homeTab) {
+            HomeTab.OVERVIEW -> {
+                item { UnmatchedAccountAlert(vm) }
+                item { RecurringSuggestionsSection(vm) }
+                item { BalanceCard(vm) }
+                item { OverviewSnapshotGrid(vm) }
+                item { OverviewUpcomingDues(vm) }
+            }
+            HomeTab.ACCOUNTS -> {
+                item { AccountsSection(vm) }
+                item { CardsSection(vm) }
+            }
+            HomeTab.BUDGETS -> {
+                item { MonthPlan(vm) }
+                item { MonthStats(vm) }
+                item { BudgetsSection(vm) }
+            }
+            HomeTab.DEBTS_FUTURE -> {
+                item { LoansSection(vm) }
+                item { BorrowedLentSection(vm) }
+                item { CommitmentsSection(vm) }
+                item { AnnualSetAsidesSection(vm) }
+                item { OutlookSection(vm) }
+            }
+        }
     }
     ConfirmSheet(vm)
     CardSettleSheet(vm)
@@ -567,46 +588,231 @@ private fun ScopeSwitch(vm: FinTrackViewModel) {
 }
 
 @Composable
-private fun CardStatementAlert(vm: FinTrackViewModel) {
-    val todayStr = today()
-    val cardsNeedingInput = vm.cards.filter { c ->
-        c.balance > 0.0 && c.statementAmount == 0.0 && !c.paid && 
-        (todayStr.substring(8, 10).toIntOrNull() ?: 1).let { day ->
-            val dueDayNum = c.dueDate.substringAfterLast("-").toIntOrNull() ?: 11
-            day >= c.statementDay || day < dueDayNum
+private fun HomeSubTabBar(vm: FinTrackViewModel) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = Space.s1),
+        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+    ) {
+        HomeTab.values().forEach { tab ->
+            val isSelected = vm.homeTab == tab
+            val bg = if (isSelected) Pf.Accent else Pf.Surface
+            val textColor = if (isSelected) Color.White else Pf.Muted
+            val borderColor = if (isSelected) Pf.Accent400 else Pf.Hairline
+            val icon = when (tab) {
+                HomeTab.OVERVIEW -> Icons.Default.Dashboard
+                HomeTab.ACCOUNTS -> Icons.Default.CreditCard
+                HomeTab.BUDGETS -> Icons.Default.PieChart
+                HomeTab.DEBTS_FUTURE -> Icons.Default.TrendingUp
+            }
+
+            Row(
+                Modifier
+                    .background(bg, Radius.Pill)
+                    .border(1.dp, borderColor, Radius.Pill)
+                    .clickable { vm.homeTab = tab }
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    Modifier.size(15.dp),
+                    tint = textColor
+                )
+                Text(
+                    tab.label,
+                    color = textColor,
+                    fontSize = 13.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
         }
     }
+}
 
-    if (cardsNeedingInput.isNotEmpty()) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(bottom = Space.s2),
-            verticalArrangement = Arrangement.spacedBy(Space.s2)
+@Composable
+private fun OverviewSnapshotGrid(vm: FinTrackViewModel) {
+    val income = vm.actualIncome
+    val spent = vm.actualSpent
+    val savingsRate = if (income > 0.0) {
+        (((income - spent) / income) * 100.0).coerceAtLeast(0.0)
+    } else 0.0
+    val totalLiquid = vm.scopedAccounts.sumOf { vm.balanceOf(it) }
+    val totalCardOwed = vm.scopedCards.sumOf { it.balance }
+
+    Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+        SectionTitle("Quick Highlights · ${vm.bucketLabel}")
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Space.s3)
         ) {
-            cardsNeedingInput.forEach { c ->
-                Row(
+            OverviewMetricTile(
+                title = "SPENT THIS MONTH",
+                value = inr(spent),
+                subtitle = "Budget: ${inr(vm.plannedExpense)}",
+                accent = Pf.Text,
+                modifier = Modifier.weight(1f),
+                onClick = { vm.homeTab = HomeTab.BUDGETS }
+            )
+            OverviewMetricTile(
+                title = "SAVINGS RATE",
+                value = "${"%.1f".format(savingsRate)}%",
+                subtitle = if (savingsRate >= 20.0) "Healthy savings" else "Below 20% target",
+                accent = if (savingsRate >= 20.0) Color(0xFF10B981) else Pf.Text,
+                modifier = Modifier.weight(1f),
+                onClick = { vm.homeTab = HomeTab.BUDGETS }
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Space.s3)
+        ) {
+            OverviewMetricTile(
+                title = "BANK ACCOUNTS",
+                value = inr(totalLiquid),
+                subtitle = "${vm.scopedAccounts.size} accounts",
+                accent = Color(0xFF10B981),
+                modifier = Modifier.weight(1f),
+                onClick = { vm.homeTab = HomeTab.ACCOUNTS }
+            )
+            OverviewMetricTile(
+                title = "CARDS OUTSTANDING",
+                value = inr(totalCardOwed),
+                subtitle = "${vm.scopedCards.size} cards",
+                accent = if (totalCardOwed > 0.0) Color(0xFFEF4444) else Color(0xFF10B981),
+                modifier = Modifier.weight(1f),
+                onClick = { vm.homeTab = HomeTab.ACCOUNTS }
+            )
+        }
+    }
+}
+
+@Composable
+private fun OverviewMetricTile(
+    title: String,
+    value: String,
+    subtitle: String,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    Column(
+        modifier = modifier
+            .background(Pf.Surface, Radius.Lg)
+            .border(1.dp, Pf.Hairline, Radius.Lg)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(Space.s3)
+    ) {
+        Text(
+            title,
+            color = Pf.Muted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.6.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            value,
+            color = accent,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.height(2.dp))
+        Muted(subtitle, size = 11)
+    }
+}
+
+@Composable
+private fun OverviewUpcomingDues(vm: FinTrackViewModel) {
+    val pendingLoans = vm.scopedLoans.filter { !vm.isLoanCleared(it) && !vm.isLoanConfirmed(it.id) }
+    val pendingCards = vm.scopedCards.filter { !it.paid && it.balance > 0.0 }
+
+    if (pendingLoans.isEmpty() && pendingCards.isEmpty()) {
+        PfCard(padding = PaddingValues(Space.s4)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.s3)
+            ) {
+                Box(
                     Modifier
-                        .fillMaxWidth()
-                        .background(Pf.Accent100, Radius.Md)
-                        .border(1.dp, Pf.Accent, Radius.Md)
-                        .clickable { vm.startEditCard(c) }
-                        .padding(Space.s3),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .size(36.dp)
+                        .background(Color(0xFF10B981).copy(alpha = 0.15f), Radius.Sm),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "Statement generated for ${c.name}",
-                            color = Pf.Accent800, fontSize = 13.sp, fontWeight = FontWeight.Bold
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Muted(
-                            "Outstanding balance is ${inr(c.balance)}. Tap to enter statement amount actually due.",
-                            size = 11
-                        )
+                    Icon(Icons.Default.CheckCircle, null, Modifier.size(20.dp), tint = Color(0xFF10B981))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("All dues are clear", color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Muted("No pending loan EMIs or credit card bills due right now.", size = 11)
+                }
+            }
+        }
+        return
+    }
+
+    Column {
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = Space.s2),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SectionTitle("Upcoming Dues & Bills")
+            Text(
+                "View All",
+                color = Pf.Accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable { vm.homeTab = if (pendingCards.isNotEmpty()) HomeTab.ACCOUNTS else HomeTab.DEBTS_FUTURE }
+            )
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+            pendingCards.take(2).forEach { c ->
+                PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(c.name, color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            val dueInfo = if (c.statementAmount > 0.0) "Statement due: ${inr(c.statementAmount)}" else "Balance: ${inr(c.balance)}"
+                            Muted("$dueInfo · due ${c.dueText}", size = 11)
+                        }
+                        SecondaryButton("Pay / Settle", {
+                            vm.homeTab = HomeTab.ACCOUNTS
+                        })
                     }
-                    Tag("Billed", Pf.Accent, Color.White)
+                }
+            }
+
+            pendingLoans.take(2).forEach { l ->
+                PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(l.name, color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Muted("${inr(l.monthlyEmi)}/mo · ${l.remainingMonths} months left", size = 11)
+                        }
+                        PrimaryButton("Pay EMI", {
+                            vm.homeTab = HomeTab.DEBTS_FUTURE
+                        })
+                    }
                 }
             }
         }
@@ -678,11 +884,11 @@ private fun BalanceCard(vm: FinTrackViewModel) {
         Modifier
             .fillMaxWidth()
             .background(
-                Brush.linearGradient(listOf(Pf.Surface2, Pf.Bg)),
+                Brush.linearGradient(listOf(Color(0xFF23163D), Color(0xFF120C22))),
                 Radius.Xl
             )
-            .border(1.dp, Pf.Hairline, Radius.Xl)
-            .padding(horizontal = Space.s4, vertical = Space.s6)
+            .border(1.dp, Pf.Accent.copy(alpha = 0.35f), Radius.Xl)
+            .padding(horizontal = Space.s4, vertical = Space.s5)
     ) {
         Row(
             Modifier.fillMaxWidth(),
@@ -692,7 +898,8 @@ private fun BalanceCard(vm: FinTrackViewModel) {
             Text(
                 "TOTAL ACROSS ACCOUNTS",
                 color = Pf.Muted,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
                 letterSpacing = 1.2.sp
             )
             IconButton(onClick = vm::toggleBalanceVisible, modifier = Modifier.size(28.dp)) {
@@ -708,26 +915,32 @@ private fun BalanceCard(vm: FinTrackViewModel) {
             if (vm.balanceHidden) "••••••" else inr(vm.totalBalance),
             Modifier.padding(top = 6.dp),
             color = Pf.Text,
-            fontSize = 38.sp,
-            fontWeight = FontWeight.ExtraBold
+            fontSize = 36.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
-        Muted("Across ${vm.scopedAccounts.size} accounts", Modifier.padding(top = 4.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Muted("Across ${vm.scopedAccounts.size} active accounts", size = 12)
+            Tag(vm.bucketLabel, Pf.Accent100, Pf.Accent800)
+        }
     }
 }
 
 @Composable
 private fun AccountsSection(vm: FinTrackViewModel) {
     Column {
-        SectionTitle("Accounts", Modifier.padding(bottom = Space.s3))
+        SectionTitle("Accounts · ${vm.bucketLabel}", Modifier.padding(bottom = Space.s3))
         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
             vm.scopedAccounts.forEach { a ->
                 PfCard {
                     if (vm.editingAccountId == a.id) {
                         Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
                             PfField(label = "Account name", value = vm.accountDraft.name, onValueChange = { vm.accountDraft = vm.accountDraft.copy(name = it) }, placeholder = "Account name")
-                            // A picker, not free text: this is the profile the
-                            // account belongs to, so it decides which side the
-                            // account shows under and where its bank messages go.
                             PfSelect(
                                 label = "Belongs to",
                                 value = vm.accountDraft.owner,
@@ -735,7 +948,6 @@ private fun AccountsSection(vm: FinTrackViewModel) {
                                 onSelect = { vm.accountDraft = vm.accountDraft.copy(owner = it) }
                             )
                             PfField(label = "Balance (₹)", value = vm.accountDraft.balanceText, onValueChange = { vm.accountDraft = vm.accountDraft.copy(balanceText = it) }, placeholder = "Balance", numeric = true)
-                            // Lets a bank SMS land on this account instead of the default.
                             PfField(label = "Last 3-4 digits (for SMS matching)", value = vm.accountDraft.numberTail, onValueChange = { vm.accountDraft = vm.accountDraft.copy(numberTail = it) }, placeholder = "Last 3-4 digits, as the bank SMS shows", numeric = true)
                             EditorActions({ vm.deleteAccount(a.id) }, vm::cancelEditAccount, vm::saveAccount)
                         }
@@ -758,17 +970,30 @@ private fun AccountsSection(vm: FinTrackViewModel) {
                                 ) {
                                     Icon(Icons.Default.AccountBalance, null, Modifier.size(18.dp), tint = Pf.Accent400)
                                 }
-                                Column {
-                                    Text(a.name, color = Pf.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                    // Shown so it's obvious at a glance which
-                                    // account a bank alert will land on.
+                                Column(Modifier.weight(1f, fill = false)) {
+                                    Text(
+                                        a.name,
+                                        color = Pf.Text,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                     Muted(
                                         if (a.numberTail.isNotBlank()) "${a.owner} · ••${a.numberTail}"
-                                        else "${a.owner} · no digits set"
+                                        else "${a.owner} · no digits set",
+                                        size = 12
                                     )
                                 }
                             }
-                            Text(inr(vm.balanceOf(a)), color = Pf.Text, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                            Spacer(Modifier.width(Space.s2))
+                            Text(
+                                inr(vm.balanceOf(a)),
+                                color = Pf.Text,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1
+                            )
                             IconButton(onClick = { vm.startEditAccount(a) }, modifier = Modifier.size(32.dp)) {
                                 Icon(Icons.Default.Edit, "Edit account", Modifier.size(16.dp), tint = Pf.Accent400)
                             }
@@ -853,7 +1078,9 @@ private fun OutlookSection(vm: FinTrackViewModel) {
                                         m.label,
                                         color = Pf.Text,
                                         fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     if (m.loanEnding.isNotEmpty()) {
                                         Spacer(Modifier.width(8.dp))
@@ -869,11 +1096,13 @@ private fun OutlookSection(vm: FinTrackViewModel) {
                                     size = 11
                                 )
                             }
+                            Spacer(Modifier.width(Space.s2))
                             Text(
                                 inr(m.left),
                                 color = if (m.left >= 0) Color(0xFF00BFA5) else Color(0xFFFF5252),
                                 fontSize = 16.sp,
-                                fontWeight = FontWeight.ExtraBold
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1
                             )
                         }
                     }
@@ -1023,7 +1252,9 @@ private fun KpiCard(
             amountText,
             color = accentColor,
             fontSize = 16.sp,
-            fontWeight = FontWeight.ExtraBold
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -1220,8 +1451,18 @@ private fun BudgetsSection(vm: FinTrackViewModel) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(cat, color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f, fill = false)
+                            ) {
+                                Text(
+                                    cat,
+                                    color = Pf.Text,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                                 Spacer(Modifier.width(8.dp))
                                 if (pct >= 1.0) {
                                     val over = spend - allowed
@@ -1230,6 +1471,7 @@ private fun BudgetsSection(vm: FinTrackViewModel) {
                                     Tag("80%+ Used", Color(0xFFFFA726), Color.Black)
                                 }
                             }
+                            Spacer(Modifier.width(Space.s2))
                             Muted("${inr(spend)} / ${inr(allowed)}", size = 13)
                         }
                         ProgressBar(pct, when {
@@ -1306,7 +1548,11 @@ private fun LoansSection(vm: FinTrackViewModel) {
                                 Column(Modifier.weight(1f)) {
                                     Text(
                                         l.name,
-                                        color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     val dueDayText = if (l.dueDay > 0) " · Due day ${l.dueDay}" else ""
                                     Muted(
@@ -1399,7 +1645,11 @@ private fun BorrowedLentSection(vm: FinTrackViewModel) {
                         Column(Modifier.weight(1f)) {
                             Text(
                                 title,
-                                color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                                color = Pf.Text,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             val returnDateText = if (txn.returnDate.isNotEmpty()) {
                                 " · Return due by ${prettyDate(txn.returnDate)}"
@@ -1411,6 +1661,7 @@ private fun BorrowedLentSection(vm: FinTrackViewModel) {
                                 Modifier.padding(top = 2.dp)
                             )
                         }
+                        Spacer(Modifier.width(Space.s2))
                         SecondaryButton(
                             text = "Settle",
                             onClick = { vm.startSettleBorrowed(txn.id) }
@@ -1458,7 +1709,11 @@ private fun CardsSection(vm: FinTrackViewModel) {
                                 Column(Modifier.weight(1f)) {
                                     Text(
                                         c.name,
-                                        color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     Muted(
                                         (if (c.statementAmount > 0.0) "Actually Due: ${inr(c.statementAmount)} (Total Owed: ${inr(c.balance)} of ${inr(c.limit)})"
@@ -1482,7 +1737,8 @@ private fun CardsSection(vm: FinTrackViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Muted("Min due ${inr(c.minDue)} · Billed ${c.statementDay}th")
+                                Muted("Min due ${inr(c.minDue)} · Billed ${c.statementDay}th", Modifier.weight(1f, fill = false), size = 12)
+                                Spacer(Modifier.width(Space.s2))
                                 Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                                     if (!c.paid && c.balance > 0.0) {
                                         PrimaryButton("Settle Bill", { vm.startSettleCard(c.id) })
@@ -1527,7 +1783,14 @@ private fun CommitmentsSection(vm: FinTrackViewModel) {
                             .weight(1f)
                             .clickable { vm.openEditEntry(e) }
                     ) {
-                        Text(e.category, color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            e.category,
+                            color = Pf.Text,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                         // When it is next payable, so a bill isn't sitting there
                         // asking to be confirmed weeks before it goes out.
                         val when_ = if (e.nextDue.isEmpty()) ""
@@ -1542,6 +1805,7 @@ private fun CommitmentsSection(vm: FinTrackViewModel) {
                             else -> Tag(kind, Pf.Neutral100, Pf.Neutral800)
                         }
                     }
+                    Spacer(Modifier.width(Space.s2))
                     if (done) {
                         SecondaryButton("Confirmed", { vm.requestConfirm(e) })
                     } else {
@@ -1632,8 +1896,14 @@ private fun AnnualSetAsidesSection(vm: FinTrackViewModel) {
                             ) {
                                 Text(
                                     e.note.ifEmpty { e.category },
-                                    color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold
+                                    color = Pf.Text,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
                                 )
+                                Spacer(Modifier.width(Space.s2))
                                 Text(
                                     "$pct%",
                                     color = if (pct >= 100) Color(0xFF00BFA5) else Pf.Text,

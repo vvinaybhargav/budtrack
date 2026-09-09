@@ -61,6 +61,13 @@ import kotlinx.serialization.json.jsonPrimitive
 
 enum class Tab { HOME, ENTRIES, ADD, CHAT, SETTINGS }
 
+enum class HomeTab(val label: String) {
+    OVERVIEW("Overview"),
+    ACCOUNTS("Accounts & Cards"),
+    BUDGETS("Budgets & Spends"),
+    DEBTS_FUTURE("Debts & Future")
+}
+
 /** Marks the transaction that settles a card bill, as opposed to the spends
  *  imported onto that same card. */
 const val CARD_PAYMENT = Ledger.CARD_PAYMENT
@@ -446,6 +453,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     var pinError by mutableStateOf(false); private set
 
     var tab by mutableStateOf(Tab.HOME)
+    var homeTab by mutableStateOf(HomeTab.OVERVIEW)
     var bucketView by mutableStateOf("PERSONAL")
     var balanceHidden by mutableStateOf(false); private set
     var expandedLoan by mutableStateOf<String?>(null); private set
