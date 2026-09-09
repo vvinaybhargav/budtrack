@@ -1698,46 +1698,132 @@ private fun CardsSection(vm: FinTrackViewModel) {
                         }
                     } else {
                         val pct = safeFraction(c.balance, c.limit)
-                        Column {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(Color(0xFF2A1747), Color(0xFF160D28))
+                                    ),
+                                    Radius.Lg
+                                )
+                                .border(1.dp, Pf.Accent.copy(alpha = 0.45f), Radius.Lg)
+                                .padding(Space.s4)
+                        ) {
+                            // Top row: Chip Emblem + Card Name + Network Tag + Edit Icon
                             Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = Space.s2),
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .size(28.dp, 20.dp)
+                                            .background(Color(0xFFD4AF37).copy(alpha = 0.25f), Radius.Sm)
+                                            .border(1.dp, Color(0xFFD4AF37), Radius.Sm)
+                                    )
+                                    Text(
+                                        c.name,
+                                        color = Color.White,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Tag("CREDIT", Pf.Accent.copy(alpha = 0.25f), Pf.Accent400)
+                                    IconButton(onClick = { vm.startEditCard(c) }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Default.Edit, "Edit card", Modifier.size(16.dp), tint = Pf.Accent400)
+                                    }
+                                }
+                            }
+
+                            // Card Number & Owner & Due Date
+                            Spacer(Modifier.height(Space.s3))
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.Bottom
+                            ) {
+                                Column {
+                                    Text(
+                                        "•••• •••• •••• ${c.numberTail.ifBlank { "••••" }}",
+                                        color = Color.White.copy(alpha = 0.85f),
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        letterSpacing = 1.5.sp
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Muted(c.owner.uppercase(), size = 10)
+                                }
+                                if (c.dueText.isNotBlank()) {
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Muted("DUE DATE", size = 9)
+                                        Text(c.dueText, color = Pf.Text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            Spacer(Modifier.height(Space.s3))
+                            Hairline()
+                            Spacer(Modifier.height(Space.s3))
+
+                            // Current Balance & Available Limit
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Muted("CURRENT BALANCE", size = 10)
+                                    Text(
+                                        inr(c.balance),
+                                        color = if (c.balance > 0.0) Color.White else Color(0xFF10B981),
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Muted("AVAILABLE / LIMIT", size = 10)
+                                    Text(
+                                        "${inr((c.limit - c.balance).coerceAtLeast(0.0))} / ${inr(c.limit)}",
+                                        color = Pf.Muted,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+
+                            Spacer(Modifier.height(6.dp))
+                            ProgressBar(pct, if (pct >= ALERT_PCT) Color(0xFFEF4444) else Pf.Accent, height = 6)
+
+                            // Statement amount info & action buttons
+                            Spacer(Modifier.height(Space.s3))
+                            Row(
+                                Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(
-                                        c.name,
-                                        color = Pf.Text,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Muted(
-                                        (if (c.statementAmount > 0.0) "Actually Due: ${inr(c.statementAmount)} (Total Owed: ${inr(c.balance)} of ${inr(c.limit)})"
-                                        else "${inr(c.balance)} of ${inr(c.limit)}") +
-                                            " · due ${c.dueText}" +
-                                            (if (c.nextDue.isEmpty() || c.paid) ""
-                                            else " · in ${Ledger.untilText(today(), c.nextDue)}"),
-                                        Modifier.padding(top = 2.dp, bottom = 6.dp)
-                                    )
-                                    OutlineTag("Card")
+                                    if (c.statementAmount > 0.0) {
+                                        Text(
+                                            "Actually Due: ${inr(c.statementAmount)}",
+                                            color = Color(0xFFFFA726),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Muted("Min due ${inr(c.minDue)} · Cycle ${c.statementDay}th", size = 11)
                                 }
-                                IconButton(onClick = { vm.startEditCard(c) }, modifier = Modifier.size(32.dp)) {
-                                    Icon(Icons.Default.Edit, "Edit card", Modifier.size(16.dp), tint = Pf.Accent400)
-                                }
-                            }
-                            ProgressBar(pct, if (pct >= ALERT_PCT) Pf.Accent else Pf.Text, height = 6)
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = Space.s3),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Muted("Min due ${inr(c.minDue)} · Billed ${c.statementDay}th", Modifier.weight(1f, fill = false), size = 12)
                                 Spacer(Modifier.width(Space.s2))
                                 Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                                     if (!c.paid && c.balance > 0.0) {

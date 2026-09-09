@@ -43,9 +43,48 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.platform.LocalContext
 import java.util.Calendar
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.LocalHospital
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Receipt
 import com.vinay.fintrack.data.prettyDate
+import com.vinay.fintrack.data.today
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.inr
+
+@Composable
+private fun CategoryAvatar(category: String, kind: String, modifier: Modifier = Modifier) {
+    val (icon, bgColor, tint) = when {
+        kind == "INCOME" -> Triple(Icons.Default.ArrowDownward, Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+        kind == "TRANSFER" -> Triple(Icons.Default.SwapHoriz, Color(0xFF9C27B0).copy(alpha = 0.15f), Color(0xFFCE93D8))
+        category.contains("Food", ignoreCase = true) || category.contains("Dining", ignoreCase = true) || category.contains("Snack", ignoreCase = true) || category.contains("Groceries", ignoreCase = true) -> Triple(Icons.Default.Restaurant, Color(0xFFFFA726).copy(alpha = 0.15f), Color(0xFFFFA726))
+        category.contains("Shopping", ignoreCase = true) || category.contains("Clothes", ignoreCase = true) || category.contains("Electronic", ignoreCase = true) -> Triple(Icons.Default.ShoppingCart, Color(0xFF29B6F6).copy(alpha = 0.15f), Color(0xFF29B6F6))
+        category.contains("Bill", ignoreCase = true) || category.contains("Electricity", ignoreCase = true) || category.contains("Recharge", ignoreCase = true) || category.contains("Wifi", ignoreCase = true) || category.contains("Utility", ignoreCase = true) -> Triple(Icons.Default.Bolt, Color(0xFFAB47BC).copy(alpha = 0.15f), Color(0xFFAB47BC))
+        category.contains("Travel", ignoreCase = true) || category.contains("Fuel", ignoreCase = true) || category.contains("Cab", ignoreCase = true) || category.contains("Uber", ignoreCase = true) || category.contains("Transport", ignoreCase = true) -> Triple(Icons.Default.DirectionsCar, Color(0xFF5C6BC0).copy(alpha = 0.15f), Color(0xFF5C6BC0))
+        category.contains("Health", ignoreCase = true) || category.contains("Med", ignoreCase = true) || category.contains("Doctor", ignoreCase = true) -> Triple(Icons.Default.LocalHospital, Color(0xFF26A69A).copy(alpha = 0.15f), Color(0xFF26A69A))
+        category.contains("Invest", ignoreCase = true) || category.contains("SIP", ignoreCase = true) || category.contains("Mutual", ignoreCase = true) -> Triple(Icons.Default.TrendingUp, Color(0xFF66BB6A).copy(alpha = 0.15f), Color(0xFF66BB6A))
+        category.contains("Entertainment", ignoreCase = true) || category.contains("Movie", ignoreCase = true) || category.contains("Netflix", ignoreCase = true) -> Triple(Icons.Default.PlayCircle, Color(0xFFEC407A).copy(alpha = 0.15f), Color(0xFFEC407A))
+        category == "Needs Account" || category == "Uncategorised" -> Triple(Icons.Default.HelpOutline, Color(0xFFEF4444).copy(alpha = 0.15f), Color(0xFFEF4444))
+        else -> Triple(Icons.Default.Receipt, Color(0xFF7E57C2).copy(alpha = 0.15f), Color(0xFF7E57C2))
+    }
+
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .background(bgColor, Radius.Md),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = null, Modifier.size(20.dp), tint = tint)
+    }
+}
 
 @Composable
 fun EntriesScreen(vm: FinTrackViewModel) {
@@ -229,52 +268,96 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                 }
             }
         } else {
-            items(rows, key = { it.id }) { t ->
-                PfCard {
+            val groupedRows = rows.groupBy { it.date }
+            groupedRows.forEach { (dateStr, dateTxns) ->
+                val headerTitle = when (dateStr) {
+                    today() -> "Today"
+                    else -> prettyDate(dateStr)
+                }
+                val daySpent = dateTxns.filter { it.kind == "EXPENSE" }.sumOf { it.amount }
+                val dayIncome = dateTxns.filter { it.kind == "INCOME" }.sumOf { it.amount }
+
+                item(key = "header_$dateStr") {
                     Row(
-                        Modifier.fillMaxWidth(),
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = Space.s2, bottom = Space.s1),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .clickable { vm.startEditTxn(t.id) }
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                            ) {
-                                Text(
-                                    t.note.ifEmpty { t.category },
-                                    color = Pf.Text,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                if (t.source == "sms") OutlineTag("SMS")
-                            }
-                            Muted(
-                                "${t.whenText} · ${t.category}",
-                                Modifier.padding(top = 2.dp)
-                            )
-                            Muted(vm.txnAccountLabel(t))
-                            if (t.ref.isNotEmpty()) Muted("Ref ${t.ref}")
-                        }
                         Text(
-                            when (t.kind) {
-                                "INCOME" -> "+${inr(t.amount)}"
-                                "TRANSFER" -> "↔ ${inr(t.amount)}"
-                                else -> "−${inr(t.amount)}"
-                            },
-                            color = when (t.kind) {
-                                "INCOME" -> Pf.Accent2
-                                "TRANSFER" -> Pf.Muted
-                                else -> Pf.Text
-                            },
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.ExtraBold
+                            headerTitle,
+                            color = Pf.Muted,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
                         )
-                        IconButton(onClick = { vm.deleteTxn(t.id) }, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.Delete, "Delete", Modifier.size(18.dp), tint = Pf.Accent400)
+                        val subText = buildString {
+                            if (daySpent > 0.0) append("Spent ₹${inr(daySpent)}")
+                            if (dayIncome > 0.0) {
+                                if (isNotEmpty()) append(" · ")
+                                append("+₹${inr(dayIncome)}")
+                            }
+                        }
+                        if (subText.isNotEmpty()) {
+                            Text(subText, color = Pf.Muted, fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                items(dateTxns, key = { it.id }) { t ->
+                    PfCard(
+                        modifier = Modifier.clickable { vm.startEditTxn(t.id) },
+                        padding = PaddingValues(horizontal = Space.s4, vertical = 10.dp)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Space.s3)
+                        ) {
+                            CategoryAvatar(t.category, t.kind)
+
+                            Column(Modifier.weight(1f)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        t.note.ifEmpty { t.category },
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (t.source == "sms") OutlineTag("SMS")
+                                }
+                                Spacer(Modifier.height(2.dp))
+                                Muted(
+                                    "${t.category} · ${vm.txnAccountLabel(t)}",
+                                    size = 11
+                                )
+                            }
+
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    when (t.kind) {
+                                        "INCOME" -> "+${inr(t.amount)}"
+                                        "TRANSFER" -> "↔ ${inr(t.amount)}"
+                                        else -> "−${inr(t.amount)}"
+                                    },
+                                    color = when (t.kind) {
+                                        "INCOME" -> Color(0xFF10B981)
+                                        "TRANSFER" -> Pf.Muted
+                                        else -> Color.White
+                                    },
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    maxLines = 1
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Muted(t.whenText, size = 11)
+                            }
                         }
                     }
                 }

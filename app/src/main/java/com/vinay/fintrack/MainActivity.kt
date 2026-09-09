@@ -6,16 +6,20 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -128,6 +132,13 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
 
 @Composable
 private fun Header(vm: FinTrackViewModel) {
+    val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+    val greeting = when {
+        hour < 12 -> "Good morning"
+        hour < 17 -> "Good afternoon"
+        else -> "Good evening"
+    }
+
     Column {
         Row(
             Modifier
@@ -142,46 +153,126 @@ private fun Header(vm: FinTrackViewModel) {
             ) {
                 Box(
                     Modifier
-                        .size(38.dp)
-                        .background(Pf.Accent, CircleShape),
+                        .size(40.dp)
+                        .background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                listOf(Pf.Accent, Color(0xFF7E57C2))
+                            ),
+                            CircleShape
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         vm.activeProfile?.take(1).orEmpty(),
                         color = Color.White,
-                        fontSize = 15.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
                 }
                 Column {
-                    Muted("Good to see you")
+                    Muted(greeting, size = 11)
                     Text(
                         vm.activeProfile.orEmpty(),
                         color = Pf.Text,
-                        fontSize = 15.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
-            Tag(vm.bucketLabel, Pf.Accent100, Pf.Accent800)
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                val isSynced = vm.syncedAt > 0L
+                Row(
+                    Modifier
+                        .background(Pf.Surface2, com.vinay.fintrack.ui.Radius.Pill)
+                        .border(1.dp, Pf.Hairline, com.vinay.fintrack.ui.Radius.Pill)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        Modifier
+                            .size(7.dp)
+                            .background(if (isSynced) Color(0xFF10B981) else Color(0xFFFFA726), CircleShape)
+                    )
+                    Text(
+                        if (isSynced) "Synced" else "Local",
+                        color = Pf.Muted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Tag(vm.bucketLabel, Pf.Accent100, Pf.Accent800)
+            }
         }
-        Hairline()
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(
+                    androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        listOf(Color.Transparent, Pf.Accent.copy(alpha = 0.4f), Color.Transparent)
+                    )
+                )
+        )
     }
 }
 
 @Composable
 private fun BottomNav(vm: FinTrackViewModel) {
     Column {
-        Hairline()
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(
+                    androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        listOf(Color.Transparent, Pf.Accent.copy(alpha = 0.35f), Color.Transparent)
+                    )
+                )
+        )
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(Pf.Surface)
-                .padding(horizontal = Space.s3, vertical = 6.dp)
+                .background(Pf.Surface.copy(alpha = 0.98f))
+                .padding(horizontal = Space.s2, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             NavItem(Icons.Default.Home, "Home", vm.tab == Tab.HOME, Modifier.weight(1f)) { vm.tab = Tab.HOME }
             NavItem(Icons.AutoMirrored.Filled.List, "Transactions", vm.tab == Tab.ENTRIES, Modifier.weight(1f)) { vm.tab = Tab.ENTRIES }
-            NavItem(Icons.Default.Add, "Add", vm.tab == Tab.ADD, Modifier.weight(1f)) { vm.tab = Tab.ADD }
+            
+            // Center Floating Elevated Add Button
+            Box(
+                Modifier
+                    .weight(1.1f)
+                    .padding(vertical = 2.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier
+                        .size(46.dp)
+                        .background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                listOf(Pf.Accent, Color(0xFF7E57C2))
+                            ),
+                            CircleShape
+                        )
+                        .border(1.5.dp, Color.White.copy(alpha = 0.35f), CircleShape)
+                        .clickable { vm.tab = Tab.ADD },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        "Add",
+                        Modifier.size(26.dp),
+                        tint = Color.White
+                    )
+                }
+            }
+
             NavItem(Icons.AutoMirrored.Filled.Chat, "Chat", vm.tab == Tab.CHAT, Modifier.weight(1f)) { vm.tab = Tab.CHAT }
             NavItem(Icons.Default.Settings, "Settings", vm.tab == Tab.SETTINGS, Modifier.weight(1f)) { vm.tab = Tab.SETTINGS }
         }
@@ -200,16 +291,23 @@ private fun NavItem(
     Column(
         modifier
             .clickable(onClick = onClick)
-            .padding(top = Space.s2, bottom = Space.s1),
+            .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(icon, label, Modifier.size(22.dp), tint = tint)
+        Box(
+            Modifier
+                .background(if (selected) Pf.Accent100 else Color.Transparent, com.vinay.fintrack.ui.Radius.Pill)
+                .padding(horizontal = 12.dp, vertical = 3.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, label, Modifier.size(20.dp), tint = tint)
+        }
         Text(
             label,
-            Modifier.padding(top = 4.dp),
+            Modifier.padding(top = 2.dp),
             color = tint,
             fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
             textAlign = TextAlign.Center
         )
     }

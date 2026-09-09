@@ -1,43 +1,67 @@
 package com.vinay.fintrack.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.INVEST_PICKABLE
 import com.vinay.fintrack.data.inr
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Icon
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
 import java.util.Calendar
-import androidx.compose.runtime.remember
+
+private data class AddKindItem(val key: String, val label: String, val icon: ImageVector)
 
 // Recurring and Set aside are separate kinds: one is paid every month, the
 // other every few months and put by in between. They behave differently enough
 // on Home that choosing between them belongs here, not in a period dropdown.
 private val ADD_KINDS = listOf(
-    "ONE_TIME" to "One-time",
-    "RECURRING" to "Recurring",
-    "SET_ASIDE" to "Set aside",
-    "EMI_LOAN" to "EMI / Loan",
-    "INVESTMENT" to "Investment",
-    "BANK_ACCOUNT" to "Bank Account",
-    "CREDIT_CARD" to "Credit Card"
+    AddKindItem("ONE_TIME", "One-time", Icons.Default.Receipt),
+    AddKindItem("RECURRING", "Recurring", Icons.Default.Repeat),
+    AddKindItem("SET_ASIDE", "Set aside", Icons.Default.Bookmark),
+    AddKindItem("EMI_LOAN", "EMI / Loan", Icons.Default.AccountBalance),
+    AddKindItem("INVESTMENT", "Investment", Icons.Default.TrendingUp),
+    AddKindItem("BANK_ACCOUNT", "Account", Icons.Default.AccountBalanceWallet),
+    AddKindItem("CREDIT_CARD", "Credit Card", Icons.Default.CreditCard)
 )
 
 /** A set-aside is paid every 2 to 12 months; every month would just be a
@@ -49,7 +73,6 @@ private fun periodLabel(months: Int) = "Every ${months.coerceIn(2, 12)} months"
 private fun periodFromLabel(label: String) =
     label.filter { it.isDigit() }.toIntOrNull()?.coerceIn(2, 12) ?: 12
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AddScreen(vm: FinTrackViewModel) {
     val isEditing = vm.editingEntryId != null
@@ -73,22 +96,59 @@ fun AddScreen(vm: FinTrackViewModel) {
         } else {
             item {
                 Column {
-                    Muted("What are you adding?", Modifier.padding(bottom = Space.s2))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ADD_KINDS.forEach { (key, label) ->
-                            Chip(label, vm.addKind == key, { vm.selectAddKind(key) }, Modifier.padding(bottom = 6.dp))
+                    Muted("WHAT ARE YOU ADDING?", Modifier.padding(bottom = Space.s2), size = 11)
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        ADD_KINDS.forEach { item ->
+                            val isSelected = vm.addKind == item.key
+                            Row(
+                                Modifier
+                                    .background(
+                                        if (isSelected) Pf.Accent else Pf.Surface,
+                                        Radius.Pill
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isSelected) Pf.Accent400 else Pf.Hairline,
+                                        Radius.Pill
+                                    )
+                                    .clickable { vm.selectAddKind(item.key) }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    item.icon,
+                                    contentDescription = null,
+                                    Modifier.size(16.dp),
+                                    tint = if (isSelected) Color.White else Pf.Muted
+                                )
+                                Text(
+                                    item.label,
+                                    color = if (isSelected) Color.White else Pf.Text,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
-                    // One line, because the distinction is the whole point.
-                    Muted(
-                        when (vm.addKind) {
-                            "ONE_TIME" -> "Already paid. Goes to Transactions now."
-                            "SET_ASIDE" -> "Paid every few months. Put by a share each month."
-                            "RECURRING" -> "Paid every month. Confirm it on Home."
-                            else -> ""
-                        },
-                        Modifier.padding(top = Space.s2)
-                    )
+                    val hint = when (vm.addKind) {
+                        "ONE_TIME" -> "Already paid or received. Goes straight into Transactions."
+                        "SET_ASIDE" -> "Paid every few months. Set aside a share each month."
+                        "RECURRING" -> "Monthly fixed commitment. Confirm it each month on Home."
+                        "EMI_LOAN" -> "Track loan tenure, EMI schedule, and interest payments."
+                        "INVESTMENT" -> "Track mutual funds, SIPs, gold, or recurring market assets."
+                        "BANK_ACCOUNT" -> "Add a bank account to track balances and auto-sync SMS."
+                        "CREDIT_CARD" -> "Add a credit card with cycle, limit, and statement tracking."
+                        else -> ""
+                    }
+                    if (hint.isNotEmpty()) {
+                        Muted(hint, Modifier.padding(top = Space.s2))
+                    }
                 }
             }
         }
@@ -102,6 +162,104 @@ fun AddScreen(vm: FinTrackViewModel) {
         if (showAccount) item { AccountForm(vm) }
         if (showCard) item { CardForm(vm) }
         if (showGeneric) item { GenericForm(vm, isEditing) }
+    }
+}
+
+@Composable
+private fun HeroAmountInput(
+    amountText: String,
+    onAmountChange: (String) -> Unit,
+    onQuickAdd: (Long) -> Unit
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.linearGradient(listOf(Color(0xFF23163D), Color(0xFF130C23))),
+                Radius.Lg
+            )
+            .border(1.dp, Pf.Accent.copy(alpha = 0.45f), Radius.Lg)
+            .padding(Space.s4)
+    ) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "AMOUNT",
+                    color = Pf.Muted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+                if (amountText.isNotEmpty()) {
+                    GhostButton("Clear", { onAmountChange("") })
+                }
+            }
+            Spacer(Modifier.height(Space.s2))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "₹",
+                    color = Pf.Accent400,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { onAmountChange(it.filter { c -> c.isDigit() || c == '.' }) },
+                    placeholder = { Text("0", color = Pf.Muted, fontSize = 28.sp, fontWeight = FontWeight.Bold) },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        color = Color.White,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    shape = Radius.Sm,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        cursorColor = Pf.Accent400,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(Modifier.height(Space.s3))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+            ) {
+                listOf(100L, 500L, 1000L, 2000L, 5000L).forEach { delta ->
+                    Box(
+                        Modifier
+                            .background(Pf.Surface2, Radius.Pill)
+                            .border(1.dp, Pf.Hairline, Radius.Pill)
+                            .clickable { onQuickAdd(delta) }
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            "+₹${inr(delta.toDouble())}",
+                            color = Pf.Accent400,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -213,6 +371,15 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+        HeroAmountInput(
+            amountText = vm.draft.amountText,
+            onAmountChange = { vm.draft = vm.draft.copy(amountText = it) },
+            onQuickAdd = { delta ->
+                val cur = vm.draft.amountText.toLongOrNull() ?: 0L
+                vm.draft = vm.draft.copy(amountText = (cur + delta).toString())
+            }
+        )
+
         // One choice, not two: "Joint" and your own name said everything the
         // separate Person and Bucket selects said between them, and the pair
         // could be set to combinations that meant nothing.
@@ -224,7 +391,6 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             )
         }
         PfSelect("Category", vm.draft.category, categoryOptions, { vm.draft = vm.draft.copy(category = it) })
-        PfField("Amount (₹)", vm.draft.amountText, { vm.draft = vm.draft.copy(amountText = it) }, placeholder = "e.g. 5000", numeric = true)
         val oneOff = !isEditing && vm.addKind == "ONE_TIME"
         if (!oneOff) {
             // A due date suits both: a set-aside needs it to work out the
