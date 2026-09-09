@@ -1315,7 +1315,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             dueDate = resolvedDueDate
         )
         update { it.copy(entries = it.entries + e) }
-        sync.upsertEntry(e)
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             android.widget.Toast.makeText(appContext, "Recurring bill '${s.party}' added!", android.widget.Toast.LENGTH_SHORT).show()
         }
@@ -1414,7 +1413,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     accountId = visibleAccounts.firstOrNull()?.id.orEmpty()
                 )
                 update { s -> s.copy(loans = s.loans + l) }
-                sync.upsertLoan(l)
             }
         }
         cancelUnmatchedAccountPrompt()
@@ -1484,7 +1482,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             totalMonthsText = parsed.tenureMonthsText,
             remainingMonthsText = parsed.tenureMonthsText,
             dueText = parsed.dueDayText,
-            sourceId = visibleAccounts.firstOrNull()?.id.orEmpty()
+            accountId = visibleAccounts.firstOrNull()?.id.orEmpty()
         )
         tab = Tab.ADD
         cancelUnmatchedAccountPrompt()
