@@ -52,7 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.vinay.fintrack.FinTrackViewModel
-import com.vinay.fintrack.FinTrackViewModel.HomeTab
+import com.vinay.fintrack.HomeTab
 import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.monthsToDate
@@ -596,7 +596,7 @@ private fun HomeSubTabBar(vm: FinTrackViewModel) {
             .padding(vertical = Space.s1),
         horizontalArrangement = Arrangement.spacedBy(Space.s2)
     ) {
-        HomeTab.values().forEach { tab ->
+        for (tab in HomeTab.values()) {
             val isSelected = vm.homeTab == tab
             val bg = if (isSelected) Pf.Accent else Pf.Surface
             val textColor = if (isSelected) Color.White else Pf.Muted
