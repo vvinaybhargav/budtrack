@@ -125,11 +125,11 @@ fun AddScreen(vm: FinTrackViewModel) {
                                     item.icon,
                                     contentDescription = null,
                                     Modifier.size(16.dp),
-                                    tint = if (isSelected) Color.White else Pf.Muted
+                                    tint = if (isSelected) Pf.OnAccent else Pf.Muted
                                 )
                                 Text(
                                     item.label,
-                                    color = if (isSelected) Color.White else Pf.Text,
+                                    color = if (isSelected) Pf.OnAccent else Pf.Text,
                                     fontSize = 13.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold
                                 )
@@ -216,7 +216,7 @@ private fun HeroAmountInput(
                     placeholder = { Text("0", color = Pf.Muted, fontSize = 28.sp, fontWeight = FontWeight.Bold) },
                     singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(
-                        color = Color.White,
+                        color = Pf.Text,
                         fontSize = 28.sp,
                         fontWeight = FontWeight.Bold
                     ),
@@ -228,8 +228,8 @@ private fun HeroAmountInput(
                         focusedBorderColor = Color.Transparent,
                         unfocusedBorderColor = Color.Transparent,
                         cursorColor = Pf.Accent400,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
+                        focusedTextColor = Pf.Text,
+                        unfocusedTextColor = Pf.Text
                     ),
                     modifier = Modifier.weight(1f)
                 )

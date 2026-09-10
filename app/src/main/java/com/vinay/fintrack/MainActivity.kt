@@ -54,6 +54,10 @@ import com.vinay.fintrack.ui.SettingsScreen
 import com.vinay.fintrack.ui.Space
 import com.vinay.fintrack.ui.Tag
 
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material3.IconButton
+import com.vinay.fintrack.ui.AccountsScreen
+
 class MainActivity : ComponentActivity() {
 
     private val vm: FinTrackViewModel by viewModels()
@@ -119,6 +123,7 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
         Box(Modifier.weight(1f)) {
             when (vm.tab) {
                 Tab.HOME -> HomeScreen(vm)
+                Tab.ACCOUNTS -> AccountsScreen(vm)
                 Tab.ENTRIES -> EntriesScreen(vm)
                 Tab.ADD -> AddScreen(vm)
                 Tab.CHAT -> ChatScreen(vm)
@@ -202,6 +207,18 @@ private fun Header(vm: FinTrackViewModel) {
                     )
                 }
                 Tag(vm.bucketLabel, Pf.Accent100, Pf.Accent800)
+
+                IconButton(
+                    onClick = { vm.tab = if (vm.tab == Tab.CHAT) Tab.HOME else Tab.CHAT },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Chat,
+                        "Assistant",
+                        Modifier.size(18.dp),
+                        tint = if (vm.tab == Tab.CHAT) Pf.Text else Pf.Muted
+                    )
+                }
             }
         }
         Box(
@@ -230,7 +247,7 @@ private fun BottomNav(vm: FinTrackViewModel) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             NavItem(Icons.Default.Home, "Home", vm.tab == Tab.HOME, Modifier.weight(1f)) { vm.tab = Tab.HOME }
-            NavItem(Icons.AutoMirrored.Filled.List, "Transactions", vm.tab == Tab.ENTRIES, Modifier.weight(1f)) { vm.tab = Tab.ENTRIES }
+            NavItem(Icons.Default.AccountBalanceWallet, "Accounts", vm.tab == Tab.ACCOUNTS, Modifier.weight(1f)) { vm.tab = Tab.ACCOUNTS }
             
             // Center Floating Elevated Add Button
             Box(
@@ -251,12 +268,12 @@ private fun BottomNav(vm: FinTrackViewModel) {
                         Icons.Default.Add,
                         "Add",
                         Modifier.size(24.dp),
-                        tint = if (Pf.isDark) Color(0xFF111827) else Color.White
+                        tint = Pf.OnAccent
                     )
                 }
             }
 
-            NavItem(Icons.AutoMirrored.Filled.Chat, "Chat", vm.tab == Tab.CHAT, Modifier.weight(1f)) { vm.tab = Tab.CHAT }
+            NavItem(Icons.AutoMirrored.Filled.List, "Transactions", vm.tab == Tab.ENTRIES, Modifier.weight(1f)) { vm.tab = Tab.ENTRIES }
             NavItem(Icons.Default.Settings, "Settings", vm.tab == Tab.SETTINGS, Modifier.weight(1f)) { vm.tab = Tab.SETTINGS }
         }
     }

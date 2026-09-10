@@ -114,9 +114,9 @@ fun PrimaryButton(
         shape = Radius.Pill,
         colors = ButtonDefaults.buttonColors(
             containerColor = Pf.Accent,
-            contentColor = Color.White,
+            contentColor = Pf.OnAccent,
             disabledContainerColor = Pf.Accent.copy(alpha = 0.35f),
-            disabledContentColor = Color.White.copy(alpha = 0.6f)
+            disabledContentColor = Pf.OnAccent.copy(alpha = 0.6f)
         ),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
     ) { 
@@ -171,7 +171,7 @@ fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
-        )
+        ) 
     }
 }
 
@@ -183,7 +183,7 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
             .background(if (selected) Pf.Accent else Pf.Surface2, Radius.Pill)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
-        color = if (selected) Color.White else Pf.Text,
+        color = if (selected) Pf.OnAccent else Pf.Text,
         fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
         maxLines = 1,

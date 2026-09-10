@@ -59,7 +59,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-enum class Tab { HOME, ENTRIES, ADD, CHAT, SETTINGS }
+enum class Tab { HOME, ACCOUNTS, ENTRIES, ADD, CHAT, SETTINGS }
 
 enum class HomeTab(val label: String) {
     OVERVIEW("Overview"),

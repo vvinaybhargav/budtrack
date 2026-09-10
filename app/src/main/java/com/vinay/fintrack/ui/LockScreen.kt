@@ -40,7 +40,7 @@ fun LockScreen(vm: FinTrackViewModel) {
                     .background(Pf.Accent, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text("F", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                Text("F", color = Pf.OnAccent, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
             }
             Text(
                 "FINTRACK",

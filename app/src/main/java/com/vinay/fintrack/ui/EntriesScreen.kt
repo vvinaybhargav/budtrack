@@ -203,7 +203,7 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                     Icon(
                         Icons.Default.Tune,
                         contentDescription = "Filters",
-                        tint = if (hasFilters || filtersExpanded) Color.White else Pf.Muted,
+                        tint = if (hasFilters || filtersExpanded) Pf.OnAccent else Pf.Muted,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -664,7 +664,7 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                                         borrowedFrom = if (selected) "" else name
                                     }
                                     .padding(horizontal = Space.s2, vertical = 4.dp),
-                                color = if (selected) Color.White else Pf.Text,
+                                color = if (selected) Pf.OnAccent else Pf.Text,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -802,7 +802,7 @@ private fun BucketTab(label: String, selected: Boolean, modifier: Modifier, onCl
             .background(if (selected) Pf.Accent else androidx.compose.ui.graphics.Color.Transparent, Radius.Pill)
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp),
-        color = if (selected) androidx.compose.ui.graphics.Color.White else Pf.Text,
+        color = if (selected) Pf.OnAccent else Pf.Text,
         fontSize = 14.sp,
         fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Center

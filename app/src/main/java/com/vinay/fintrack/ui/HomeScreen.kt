@@ -122,6 +122,20 @@ fun HomeScreen(vm: FinTrackViewModel) {
                 totalAmount = totalSetAsideAmount
             )
         }
+
+        item {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = Space.s2),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                SecondaryButton(
+                    text = "Edit Balances, Cards & Loans ›",
+                    onClick = { vm.tab = com.vinay.fintrack.Tab.ACCOUNTS }
+                )
+            }
+        }
     }
 
     ConfirmSheet(vm)
@@ -202,64 +216,38 @@ private fun DuesCleanSection(vm: FinTrackViewModel) {
                 Column {
                     cards.forEachIndexed { idx, c ->
                         if (idx > 0) Hairline()
-                        if (vm.editingCardId == c.id) {
-                            Box(Modifier.padding(Space.s3)) {
-                                Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                                    PfField(label = "Card name", value = vm.cardDraft.name, onValueChange = { vm.cardDraft = vm.cardDraft.copy(name = it) }, placeholder = "Card name")
-                                    PfSelect(label = "Belongs to", value = vm.cardDraft.owner, options = vm.ownerOptions, onSelect = { vm.cardDraft = vm.cardDraft.copy(owner = it) })
-                                    PfField(label = "Credit limit (₹)", value = vm.cardDraft.limitText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(limitText = it) }, placeholder = "Credit limit", numeric = true)
-                                    PfField(label = "Current balance (₹)", value = vm.cardDraft.balanceText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(balanceText = it) }, placeholder = "Current balance", numeric = true)
-                                    PfField(label = "Minimum due (₹)", value = vm.cardDraft.minDueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(minDueText = it) }, placeholder = "Minimum due", numeric = true)
-                                    PfField(label = "Due day of month (1-31)", value = vm.cardDraft.dueText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(dueText = it) }, placeholder = "Due day of month (1-31)", numeric = true)
-                                    PfField(label = "Statement day of month (1-31)", value = vm.cardDraft.statementDayText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(statementDayText = it) }, placeholder = "Statement day (1-31)", numeric = true)
-                                    PfField(label = "Statement amount / Actually Due (₹)", value = vm.cardDraft.statementAmountText, onValueChange = { vm.cardDraft = vm.cardDraft.copy(statementAmountText = it) }, placeholder = "Statement amount", numeric = true)
-                                    PfField(label = "Last 3-4 digits (for SMS matching)", value = vm.cardDraft.numberTail, onValueChange = { vm.cardDraft = vm.cardDraft.copy(numberTail = it) }, placeholder = "Last 3-4 digits of the card", numeric = true)
-                                    EditorActions({ vm.deleteCard(c.id) }, vm::cancelEditCard, vm::saveCard)
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (c.balance > 0) vm.startSettleCard(c.id)
                                 }
+                                .padding(horizontal = Space.s4, vertical = Space.s3),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    c.name,
+                                    color = Pf.Text,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                val subtitle = when {
+                                    c.dueText.isNotBlank() -> "Due: ${c.dueText}"
+                                    c.numberTail.isNotBlank() -> "•••• ${c.numberTail}"
+                                    else -> c.owner
+                                }
+                                Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
                             }
-                        } else {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        if (c.balance > 0) vm.startSettleCard(c.id)
-                                        else vm.startEditCard(c)
-                                    }
-                                    .padding(horizontal = Space.s4, vertical = Space.s3),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        c.name,
-                                        color = Pf.Text,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    val subtitle = when {
-                                        c.dueText.isNotBlank() -> "Due: ${c.dueText}"
-                                        c.numberTail.isNotBlank() -> "•••• ${c.numberTail}"
-                                        else -> c.owner
-                                    }
-                                    Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
-                                }
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                                ) {
-                                    Text(
-                                        inr(c.balance),
-                                        color = Pf.Text,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    IconButton(onClick = { vm.startEditCard(c) }, modifier = Modifier.size(24.dp)) {
-                                        Icon(Icons.Default.Edit, "Edit", Modifier.size(14.dp), tint = Pf.Muted)
-                                    }
-                                }
-                            }
+                            Text(
+                                inr(c.balance),
+                                color = Pf.Text,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
                 }
@@ -287,55 +275,34 @@ private fun BanksCleanSection(vm: FinTrackViewModel) {
                 Column {
                     accounts.forEachIndexed { idx, a ->
                         if (idx > 0) Hairline()
-                        if (vm.editingAccountId == a.id) {
-                            Box(Modifier.padding(Space.s3)) {
-                                Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                                    PfField(label = "Account name", value = vm.accountDraft.name, onValueChange = { vm.accountDraft = vm.accountDraft.copy(name = it) }, placeholder = "Account name")
-                                    PfSelect(label = "Belongs to", value = vm.accountDraft.owner, options = vm.ownerOptions, onSelect = { vm.accountDraft = vm.accountDraft.copy(owner = it) })
-                                    PfField(label = "Balance (₹)", value = vm.accountDraft.balanceText, onValueChange = { vm.accountDraft = vm.accountDraft.copy(balanceText = it) }, placeholder = "Balance", numeric = true)
-                                    PfField(label = "Last 3-4 digits (for SMS matching)", value = vm.accountDraft.numberTail, onValueChange = { vm.accountDraft = vm.accountDraft.copy(numberTail = it) }, placeholder = "Last 3-4 digits, as the bank SMS shows", numeric = true)
-                                    EditorActions({ vm.deleteAccount(a.id) }, vm::cancelEditAccount, vm::saveAccount)
-                                }
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = Space.s4, vertical = Space.s3),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    a.name,
+                                    color = Pf.Text,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    if (a.numberTail.isNotBlank()) "••${a.numberTail} · ${a.owner}" else a.owner,
+                                    color = Pf.Muted,
+                                    fontSize = 12.sp
+                                )
                             }
-                        } else {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable { vm.startEditAccount(a) }
-                                    .padding(horizontal = Space.s4, vertical = Space.s3),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        a.name,
-                                        color = Pf.Text,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        if (a.numberTail.isNotBlank()) "••${a.numberTail} · ${a.owner}" else a.owner,
-                                        color = Pf.Muted,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                                ) {
-                                    Text(
-                                        inr(vm.balanceOf(a)),
-                                        color = Pf.Text,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    IconButton(onClick = { vm.startEditAccount(a) }, modifier = Modifier.size(24.dp)) {
-                                        Icon(Icons.Default.Edit, "Edit", Modifier.size(14.dp), tint = Pf.Muted)
-                                    }
-                                }
-                            }
+                            Text(
+                                inr(vm.balanceOf(a)),
+                                color = Pf.Text,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
                 }
@@ -363,64 +330,41 @@ private fun LoansCleanSection(vm: FinTrackViewModel) {
                 Column {
                     loans.forEachIndexed { idx, l ->
                         if (idx > 0) Hairline()
-                        if (vm.editingLoanId == l.id) {
-                            Box(Modifier.padding(Space.s3)) {
-                                Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                                    PfField(label = "Loan name", value = vm.loanDraft.name, onValueChange = { vm.loanDraft = vm.loanDraft.copy(name = it) }, placeholder = "Loan name")
-                                    PfSelect(label = "Belongs to", value = vm.loanDraft.person, options = vm.draftPersonOptions, onSelect = { vm.loanDraft = vm.loanDraft.copy(person = it) })
-                                    PfField(label = "Monthly EMI (₹)", value = vm.loanDraft.emiText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(emiText = it) }, placeholder = "Monthly EMI", numeric = true)
-                                    PfField(label = "Total months (tenure)", value = vm.loanDraft.totalMonthsText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(totalMonthsText = it) }, placeholder = "Total months (tenure)", numeric = true)
-                                    PfField(label = "Months remaining", value = vm.loanDraft.remainingMonthsText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(remainingMonthsText = it) }, placeholder = "Months remaining", numeric = true)
-                                    PfSelect(label = "Paid from", value = vm.editLoanSourceName, options = vm.emiSourceOptions, onSelect = vm::setEditLoanSource)
-                                    PfField(label = "Due day of month (1-31)", value = vm.loanDraft.dueText, onValueChange = { vm.loanDraft = vm.loanDraft.copy(dueText = it) }, placeholder = "Due day of month (1-31)", numeric = true)
-                                    EditorActions({ vm.deleteLoan(l.id) }, vm::cancelEditLoan, vm::saveLoan)
-                                }
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = Space.s4, vertical = Space.s3),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    l.name,
+                                    color = Pf.Text,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    "${l.remainingMonths} mo left · EMI ${inr(l.monthlyEmi)}",
+                                    color = Pf.Muted,
+                                    fontSize = 12.sp
+                                )
                             }
-                        } else {
-                            Row(
+                            val isPaid = vm.isLoanConfirmed(l.id)
+                            Box(
                                 Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = Space.s4, vertical = Space.s3),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .background(Pf.Surface2, Radius.Pill)
+                                    .clickable { vm.confirmLoan(l) }
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
                             ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        l.name,
-                                        color = Pf.Text,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        "${l.remainingMonths} mo left · EMI ${inr(l.monthlyEmi)}",
-                                        color = Pf.Muted,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                                ) {
-                                    val isPaid = vm.isLoanConfirmed(l.id)
-                                    Box(
-                                        Modifier
-                                            .background(Pf.Surface2, Radius.Pill)
-                                            .clickable { vm.confirmLoan(l) }
-                                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                                    ) {
-                                        Text(
-                                            if (isPaid) "Paid" else "Pay EMI",
-                                            color = if (isPaid) Pf.Muted else Pf.Text,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    }
-                                    IconButton(onClick = { vm.startEditLoan(l) }, modifier = Modifier.size(24.dp)) {
-                                        Icon(Icons.Default.Edit, "Edit", Modifier.size(14.dp), tint = Pf.Muted)
-                                    }
-                                }
+                                Text(
+                                    if (isPaid) "Paid" else "Pay EMI",
+                                    color = if (isPaid) Pf.Muted else Pf.Text,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
                             }
                         }
                     }

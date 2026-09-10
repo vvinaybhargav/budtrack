@@ -295,7 +295,7 @@ fun ChatScreen(vm: FinTrackViewModel) {
                         Radius.Pill
                     )
             ) {
-                Icon(Icons.AutoMirrored.Filled.Send, "Send", Modifier.size(18.dp), tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.Send, "Send", Modifier.size(18.dp), tint = Pf.OnAccent)
             }
         }
     }
