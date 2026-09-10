@@ -68,19 +68,21 @@ import com.vinay.fintrack.data.inr
 
 @Composable
 private fun CategoryAvatar(category: String, kind: String, modifier: Modifier = Modifier) {
-    val (icon, bgColor, tint) = when {
-        kind == "INCOME" -> Triple(Icons.Default.ArrowDownward, Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
-        kind == "TRANSFER" -> Triple(Icons.Default.SwapHoriz, Color(0xFF9C27B0).copy(alpha = 0.15f), Color(0xFFCE93D8))
-        category.contains("Food", ignoreCase = true) || category.contains("Dining", ignoreCase = true) || category.contains("Snack", ignoreCase = true) || category.contains("Groceries", ignoreCase = true) -> Triple(Icons.Default.Restaurant, Color(0xFFFFA726).copy(alpha = 0.15f), Color(0xFFFFA726))
-        category.contains("Shopping", ignoreCase = true) || category.contains("Clothes", ignoreCase = true) || category.contains("Electronic", ignoreCase = true) -> Triple(Icons.Default.ShoppingCart, Color(0xFF29B6F6).copy(alpha = 0.15f), Color(0xFF29B6F6))
-        category.contains("Bill", ignoreCase = true) || category.contains("Electricity", ignoreCase = true) || category.contains("Recharge", ignoreCase = true) || category.contains("Wifi", ignoreCase = true) || category.contains("Utility", ignoreCase = true) -> Triple(Icons.Default.Bolt, Color(0xFFAB47BC).copy(alpha = 0.15f), Color(0xFFAB47BC))
-        category.contains("Travel", ignoreCase = true) || category.contains("Fuel", ignoreCase = true) || category.contains("Cab", ignoreCase = true) || category.contains("Uber", ignoreCase = true) || category.contains("Transport", ignoreCase = true) -> Triple(Icons.Default.DirectionsCar, Color(0xFF5C6BC0).copy(alpha = 0.15f), Color(0xFF5C6BC0))
-        category.contains("Health", ignoreCase = true) || category.contains("Med", ignoreCase = true) || category.contains("Doctor", ignoreCase = true) -> Triple(Icons.Default.LocalHospital, Color(0xFF26A69A).copy(alpha = 0.15f), Color(0xFF26A69A))
-        category.contains("Invest", ignoreCase = true) || category.contains("SIP", ignoreCase = true) || category.contains("Mutual", ignoreCase = true) -> Triple(Icons.Default.TrendingUp, Color(0xFF66BB6A).copy(alpha = 0.15f), Color(0xFF66BB6A))
-        category.contains("Entertainment", ignoreCase = true) || category.contains("Movie", ignoreCase = true) || category.contains("Netflix", ignoreCase = true) -> Triple(Icons.Default.PlayCircle, Color(0xFFEC407A).copy(alpha = 0.15f), Color(0xFFEC407A))
-        category == "Needs Account" || category == "Uncategorised" -> Triple(Icons.Default.HelpOutline, Color(0xFFEF4444).copy(alpha = 0.15f), Color(0xFFEF4444))
-        else -> Triple(Icons.Default.Receipt, Color(0xFF7E57C2).copy(alpha = 0.15f), Color(0xFF7E57C2))
+    val icon = when {
+        kind == "INCOME" -> Icons.Default.ArrowDownward
+        kind == "TRANSFER" -> Icons.Default.SwapHoriz
+        category.contains("Food", ignoreCase = true) || category.contains("Dining", ignoreCase = true) || category.contains("Snack", ignoreCase = true) || category.contains("Groceries", ignoreCase = true) -> Icons.Default.Restaurant
+        category.contains("Shopping", ignoreCase = true) || category.contains("Clothes", ignoreCase = true) || category.contains("Electronic", ignoreCase = true) -> Icons.Default.ShoppingCart
+        category.contains("Bill", ignoreCase = true) || category.contains("Electricity", ignoreCase = true) || category.contains("Recharge", ignoreCase = true) || category.contains("Wifi", ignoreCase = true) || category.contains("Utility", ignoreCase = true) -> Icons.Default.Bolt
+        category.contains("Travel", ignoreCase = true) || category.contains("Fuel", ignoreCase = true) || category.contains("Cab", ignoreCase = true) || category.contains("Uber", ignoreCase = true) || category.contains("Transport", ignoreCase = true) -> Icons.Default.DirectionsCar
+        category.contains("Health", ignoreCase = true) || category.contains("Med", ignoreCase = true) || category.contains("Doctor", ignoreCase = true) -> Icons.Default.LocalHospital
+        category.contains("Invest", ignoreCase = true) || category.contains("SIP", ignoreCase = true) || category.contains("Mutual", ignoreCase = true) -> Icons.Default.TrendingUp
+        category.contains("Entertainment", ignoreCase = true) || category.contains("Movie", ignoreCase = true) || category.contains("Netflix", ignoreCase = true) -> Icons.Default.PlayCircle
+        category == "Needs Account" || category == "Uncategorised" -> Icons.Default.HelpOutline
+        else -> Icons.Default.Receipt
     }
+    val bgColor = Pf.Surface2
+    val tint = Pf.Muted
 
     Box(
         modifier = modifier
@@ -149,8 +151,8 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFFFFA726).copy(alpha = 0.12f), Radius.Md)
-                        .border(1.dp, Color(0xFFFFA726).copy(alpha = 0.3f), Radius.Md)
+                        .background(Pf.Surface2, Radius.Md)
+                        .border(1.dp, Pf.Hairline, Radius.Md)
                         .clickable {
                             if (needAccount > 0) vm.entriesCategoryFilter = "Needs Account"
                             else vm.entriesCategoryFilter = "Uncategorised"
@@ -160,12 +162,12 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        if (needAccount > 0) "⚠️ $needAccount need an account" else "💡 $unsorted uncategorised",
-                        color = Color(0xFFFFA726),
+                        if (needAccount > 0) "$needAccount need an account" else "$unsorted uncategorised",
+                        color = Pf.Text,
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Medium
                     )
-                    Text("Fix →", color = Color(0xFFFFA726), fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("Fix →", color = Pf.Muted, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -453,12 +455,11 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                                         else -> "−${inr(t.amount)}"
                                     },
                                     color = when (t.kind) {
-                                        "INCOME" -> Color(0xFF10B981)
                                         "TRANSFER" -> Pf.Muted
-                                        else -> Color.White
+                                        else -> Pf.Text
                                     },
                                     fontSize = 15.sp,
-                                    fontWeight = FontWeight.ExtraBold,
+                                    fontWeight = FontWeight.Medium,
                                     maxLines = 1
                                 )
                                 Spacer(Modifier.height(2.dp))

@@ -126,7 +126,6 @@ fun HomeScreen(vm: FinTrackViewModel) {
     ConfirmSheet(vm)
     CardSettleSheet(vm)
     BorrowedSettleSheet(vm)
-    DetectedAccountDialog(vm)
 }
 
 @Composable
@@ -251,7 +250,7 @@ private fun DuesCleanSection(vm: FinTrackViewModel) {
                                 ) {
                                     Text(
                                         inr(c.balance),
-                                        color = if (c.balance > 0) Color(0xFFFFA726) else Pf.Text,
+                                        color = Pf.Text,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Medium
                                     )
@@ -327,7 +326,7 @@ private fun BanksCleanSection(vm: FinTrackViewModel) {
                                 ) {
                                     Text(
                                         inr(vm.balanceOf(a)),
-                                        color = Color(0xFF10B981),
+                                        color = Pf.Text,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Medium
                                     )
@@ -406,16 +405,13 @@ private fun LoansCleanSection(vm: FinTrackViewModel) {
                                     val isPaid = vm.isLoanConfirmed(l.id)
                                     Box(
                                         Modifier
-                                            .background(
-                                                if (isPaid) Color(0xFF10B981).copy(alpha = 0.15f) else Pf.Surface2,
-                                                Radius.Pill
-                                            )
+                                            .background(Pf.Surface2, Radius.Pill)
                                             .clickable { vm.confirmLoan(l) }
                                             .padding(horizontal = 10.dp, vertical = 4.dp)
                                     ) {
                                         Text(
                                             if (isPaid) "Paid" else "Pay EMI",
-                                            color = if (isPaid) Color(0xFF10B981) else Pf.Text,
+                                            color = if (isPaid) Pf.Muted else Pf.Text,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Medium
                                         )
@@ -765,7 +761,7 @@ fun DetectedAccountDialog(vm: FinTrackViewModel) {
                                 vm.updateDetectedAccountDraft(draft.copy(kind = k, suggestedName = updatedName))
                             }
                             .padding(vertical = 7.dp),
-                        color = if (selected) Color.White else Pf.Text,
+                        color = if (selected) (if (Pf.isDark) Color(0xFF111827) else Color.White) else Pf.Text,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center

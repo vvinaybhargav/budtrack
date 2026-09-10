@@ -1573,8 +1573,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveAccount() {
         val id = editingAccountId ?: return
+        val tail = accountDraft.numberTail.trim()
         update { s ->
-            s.copy(accounts = s.accounts.map {
+            val updatedAccounts = s.accounts.map {
                 if (it.id == id) it.copy(
                     name = accountDraft.name,
                     // person is what decides the bucket and where a bank
@@ -1583,9 +1584,18 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     person = accountDraft.owner,
                     owner = ownerLabel(accountDraft.owner),
                     openingBalance = accountDraft.balanceText.toDoubleOrNull() ?: 0.0,
-                    numberTail = accountDraft.numberTail
+                    numberTail = tail
                 ) else it
-            })
+            }
+            val updatedTxns = if (tail.isNotEmpty()) {
+                s.txns.map { t ->
+                    if (t.accountTail.isNotEmpty() && DetectedAccountParser.tailsMatch(t.accountTail, tail) && t.fromAccountId.isEmpty() && t.toAccountId.isEmpty()) {
+                        if (t.kind == "INCOME") t.copy(toAccountId = id, accountTail = "")
+                        else t.copy(fromAccountId = id, accountTail = "")
+                    } else t
+                }
+            } else s.txns
+            s.copy(accounts = updatedAccounts, txns = updatedTxns)
         }
         editingAccountId = null
     }
@@ -1684,20 +1694,29 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
         val statementDay = cardDraft.statementDayText.toIntOrNull() ?: 20
         val statementAmount = cardDraft.statementAmountText.toDoubleOrNull() ?: 0.0
+        val tail = cardDraft.numberTail.trim()
         update { s ->
-            s.copy(cards = s.cards.map {
+            val updatedCards = s.cards.map {
                 if (it.id == id) it.copy(
                     name = cardDraft.name, owner = cardDraft.owner,
                     limit = cardDraft.limitText.toDoubleOrNull() ?: 0.0,
                     balance = cardDraft.balanceText.toDoubleOrNull() ?: 0.0,
                     minDue = cardDraft.minDueText.toDoubleOrNull() ?: 0.0,
                     due = cardDraft.due,
-                    numberTail = cardDraft.numberTail,
+                    numberTail = tail,
                     dueDate = resolvedDueDate,
                     statementDay = statementDay,
                     statementAmount = statementAmount
                 ) else it
-            })
+            }
+            val updatedTxns = if (tail.isNotEmpty()) {
+                s.txns.map { t ->
+                    if (t.accountTail.isNotEmpty() && DetectedAccountParser.tailsMatch(t.accountTail, tail) && t.cardId.isEmpty()) {
+                        t.copy(cardId = id, accountTail = "")
+                    } else t
+                }
+            } else s.txns
+            s.copy(cards = updatedCards, txns = updatedTxns)
         }
         editingCardId = null
     }

@@ -153,20 +153,16 @@ private fun Header(vm: FinTrackViewModel) {
             ) {
                 Box(
                     Modifier
-                        .size(40.dp)
-                        .background(
-                            androidx.compose.ui.graphics.Brush.linearGradient(
-                                listOf(Pf.Accent, Color(0xFF7E57C2))
-                            ),
-                            CircleShape
-                        ),
+                        .size(38.dp)
+                        .background(Pf.Surface2, CircleShape)
+                        .border(1.dp, Pf.Hairline, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         vm.activeProfile?.take(1).orEmpty(),
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.ExtraBold
+                        color = Pf.Text,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
                 Column {
@@ -212,11 +208,7 @@ private fun Header(vm: FinTrackViewModel) {
             Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(
-                    androidx.compose.ui.graphics.Brush.horizontalGradient(
-                        listOf(Color.Transparent, Pf.Accent.copy(alpha = 0.4f), Color.Transparent)
-                    )
-                )
+                .background(Pf.Hairline)
         )
     }
 }
@@ -228,11 +220,7 @@ private fun BottomNav(vm: FinTrackViewModel) {
             Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(
-                    androidx.compose.ui.graphics.Brush.horizontalGradient(
-                        listOf(Color.Transparent, Pf.Accent.copy(alpha = 0.35f), Color.Transparent)
-                    )
-                )
+                .background(Pf.Hairline)
         )
         Row(
             Modifier
@@ -254,21 +242,16 @@ private fun BottomNav(vm: FinTrackViewModel) {
                 Box(
                     Modifier
                         .size(46.dp)
-                        .background(
-                            androidx.compose.ui.graphics.Brush.linearGradient(
-                                listOf(Pf.Accent, Color(0xFF7E57C2))
-                            ),
-                            CircleShape
-                        )
-                        .border(1.5.dp, Color.White.copy(alpha = 0.35f), CircleShape)
+                        .background(Pf.Accent, CircleShape)
+                        .border(1.dp, Pf.Hairline, CircleShape)
                         .clickable { vm.tab = Tab.ADD },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.Add,
                         "Add",
-                        Modifier.size(26.dp),
-                        tint = Color.White
+                        Modifier.size(24.dp),
+                        tint = if (Pf.isDark) Color(0xFF111827) else Color.White
                     )
                 }
             }
@@ -287,7 +270,7 @@ private fun NavItem(
     modifier: Modifier,
     onClick: () -> Unit
 ) {
-    val tint = if (selected) Pf.Accent400 else Pf.Muted
+    val tint = if (selected) Pf.Text else Pf.Muted
     Column(
         modifier
             .clickable(onClick = onClick)
@@ -296,7 +279,7 @@ private fun NavItem(
     ) {
         Box(
             Modifier
-                .background(if (selected) Pf.Accent100 else Color.Transparent, com.vinay.fintrack.ui.Radius.Pill)
+                .background(if (selected) Pf.Surface2 else Color.Transparent, com.vinay.fintrack.ui.Radius.Pill)
                 .padding(horizontal = 12.dp, vertical = 3.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -307,7 +290,7 @@ private fun NavItem(
             Modifier.padding(top = 2.dp),
             color = tint,
             fontSize = 10.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
             textAlign = TextAlign.Center
         )
     }
