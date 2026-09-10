@@ -1587,9 +1587,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     // ── inline editors ─────────────────────────────────────────────────
     fun startEditAccount(a: Account) {
         editingAccountId = a.id
-        // a.person, not a.owner: owner is the display label ("Me · personal").
+        val curBal = balanceOf(a)
         accountDraft = NewAccountDraft(
-            a.name, a.person, a.openingBalance.toLong().toString(), a.numberTail
+            a.name, a.person, curBal.toLong().toString(), a.numberTail
         )
     }
 
@@ -1598,16 +1598,18 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun saveAccount() {
         val id = editingAccountId ?: return
         val tail = accountDraft.numberTail.trim()
+        val a = accounts.firstOrNull { it.id == id }
+        val targetBal = accountDraft.balanceText.toDoubleOrNull() ?: 0.0
+        val curBal = if (a != null) balanceOf(a) else 0.0
+        val netTxns = if (a != null) curBal - a.openingBalance else 0.0
+        val newOpeningBal = targetBal - netTxns
         update { s ->
             val updatedAccounts = s.accounts.map {
                 if (it.id == id) it.copy(
                     name = accountDraft.name,
-                    // person is what decides the bucket and where a bank
-                    // message lands. It was never written here, so an account
-                    // could not be moved between profiles at all.
                     person = accountDraft.owner,
                     owner = ownerLabel(accountDraft.owner),
-                    openingBalance = accountDraft.balanceText.toDoubleOrNull() ?: 0.0,
+                    openingBalance = newOpeningBal,
                     numberTail = tail
                 ) else it
             }
@@ -3432,13 +3434,22 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         return moved
     }
 
-    fun cardNamed(name: String): Card? =
-        visibleCards.firstOrNull { it.name.equals(name, true) }
-            ?: visibleCards.firstOrNull { name.isNotBlank() && it.name.contains(name, true) }
+    fun cardNamed(name: String): Card? {
+        val clean = name.trim()
+        if (clean.isEmpty()) return null
+        return cards.firstOrNull { it.name.equals(clean, true) }
+            ?: cards.firstOrNull { it.name.contains(clean, true) }
+            ?: cards.firstOrNull { clean.contains(it.name, true) }
+            ?: cards.firstOrNull { it.numberTail.isNotEmpty() && (clean.endsWith(it.numberTail) || clean.contains(it.numberTail)) }
+    }
 
-    fun loanNamed(name: String): Loan? =
-        visibleLoans.firstOrNull { it.name.equals(name, true) }
-            ?: visibleLoans.firstOrNull { name.isNotBlank() && it.name.contains(name, true) }
+    fun loanNamed(name: String): Loan? {
+        val clean = name.trim()
+        if (clean.isEmpty()) return null
+        return loans.firstOrNull { it.name.equals(clean, true) }
+            ?: loans.firstOrNull { it.name.contains(clean, true) }
+            ?: loans.firstOrNull { clean.contains(it.name, true) }
+    }
 
     fun updateCardDirect(
         id: String,
@@ -3488,9 +3499,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         return updated
     }
 
-    fun accountNamed(name: String): Account? =
-        visibleAccounts.firstOrNull { it.name.equals(name, true) }
-            ?: visibleAccounts.firstOrNull { it.name.contains(name, true) }
+    fun accountNamed(name: String): Account? {
+        val clean = name.trim()
+        if (clean.isEmpty()) return null
+        return accounts.firstOrNull { it.name.equals(clean, true) }
+            ?: accounts.firstOrNull { it.name.contains(clean, true) }
+            ?: accounts.firstOrNull { clean.contains(it.name, true) }
+            ?: accounts.firstOrNull { it.numberTail.isNotEmpty() && (clean.endsWith(it.numberTail) || clean.contains(it.numberTail)) }
+    }
 
     fun entryById(id: String): Entry? = entries.firstOrNull { it.id == id }
     fun loanById(id: String): Loan? = loans.firstOrNull { it.id == id }
@@ -3724,9 +3740,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateAccountDirect(id: String, newName: String?, balance: Double?, tail: String?): Account? {
         val a = accounts.firstOrNull { it.id == id } ?: return null
+        val curBal = balanceOf(a)
+        val netTxns = curBal - a.openingBalance
+        val newOpeningBal = if (balance != null) balance - netTxns else a.openingBalance
         val updated = a.copy(
             name = newName ?: a.name,
-            openingBalance = balance ?: a.openingBalance,
+            openingBalance = newOpeningBal,
             numberTail = tail ?: a.numberTail
         )
         update { s -> s.copy(accounts = s.accounts.map { if (it.id == id) updated else it }) }

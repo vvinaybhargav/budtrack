@@ -103,16 +103,41 @@ fun HomeScreen(vm: FinTrackViewModel) {
             )
         }
 
-        // 3. UNIFIED 1-BY-1 CLEAN LIST (No separate division boxes)
+        // 3. UNIFIED 1-BY-1 CLEAN LIST (Order: Banks -> Cards -> Loans -> Set Aside -> Salary)
         item {
             PfCard(
                 modifier = Modifier.fillMaxWidth(),
                 padding = PaddingValues(horizontal = Space.s4, vertical = Space.s2),
                 shape = Radius.Lg
             ) {
-                // DUES
+                // 1. BANKS
+                if (accounts.isNotEmpty()) {
+                    HomeListHeaderLabel("BANKS · ${inr(totalBankBalances)}")
+                    accounts.forEachIndexed { idx, a ->
+                        if (idx > 0) Hairline()
+                        val bal = vm.balanceOf(a)
+                        val subtitle = when {
+                            a.numberTail.isNotBlank() && a.person == "Joint" -> "••••${a.numberTail} · Joint"
+                            a.numberTail.isNotBlank() -> "••••${a.numberTail}"
+                            a.person == "Joint" -> "Joint"
+                            else -> "Bank Account"
+                        }
+                        HomeCompactRow(
+                            title = a.name,
+                            subtitle = subtitle,
+                            amount = inr(bal),
+                            amountColor = Pf.Text
+                        )
+                    }
+                }
+
+                // 2. CREDIT CARDS (DUES)
                 if (cards.isNotEmpty()) {
-                    HomeListHeaderLabel("DUES · ${inr(totalCardDues)}")
+                    if (accounts.isNotEmpty()) {
+                        Spacer(Modifier.height(Space.s2))
+                        Hairline()
+                    }
+                    HomeListHeaderLabel("CREDIT CARDS · ${inr(totalCardDues)}")
                     cards.forEachIndexed { idx, c ->
                         if (idx > 0) Hairline()
                         val cleanName = if (c.name.contains("••") && c.numberTail.isNotBlank()) {
@@ -132,34 +157,9 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     }
                 }
 
-                // BANKS
-                if (accounts.isNotEmpty()) {
-                    if (cards.isNotEmpty()) {
-                        Spacer(Modifier.height(Space.s2))
-                        Hairline()
-                    }
-                    HomeListHeaderLabel("BANKS · ${inr(totalBankBalances)}")
-                    accounts.forEachIndexed { idx, a ->
-                        if (idx > 0) Hairline()
-                        val bal = vm.balanceOf(a)
-                        val subtitle = when {
-                            a.numberTail.isNotBlank() && a.person == "Joint" -> "••••${a.numberTail} · Joint"
-                            a.numberTail.isNotBlank() -> "••••${a.numberTail}"
-                            a.person == "Joint" -> "Joint"
-                            else -> "Bank Account"
-                        }
-                        HomeCompactRow(
-                            title = a.name,
-                            subtitle = subtitle,
-                            amount = inr(bal),
-                            amountColor = if (bal < 0.0) Color(0xFFEF4444) else Pf.Text
-                        )
-                    }
-                }
-
-                // LOANS
+                // 3. LOANS
                 if (loans.isNotEmpty()) {
-                    if (cards.isNotEmpty() || accounts.isNotEmpty()) {
+                    if (accounts.isNotEmpty() || cards.isNotEmpty()) {
                         Spacer(Modifier.height(Space.s2))
                         Hairline()
                     }
@@ -176,28 +176,37 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     }
                 }
 
-                // SET ASIDE
+                // 4. SET ASIDE
                 if (setAsideItems.isNotEmpty()) {
-                    val totalSetAsideAmount = setAsideItems.sumOf { it.amount }
-                    if (cards.isNotEmpty() || accounts.isNotEmpty() || loans.isNotEmpty()) {
+                    val totalSetAsideMonthly = setAsideItems.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
+                    if (accounts.isNotEmpty() || cards.isNotEmpty() || loans.isNotEmpty()) {
                         Spacer(Modifier.height(Space.s2))
                         Hairline()
                     }
-                    HomeListHeaderLabel("SET ASIDE · ${inr(totalSetAsideAmount)}")
+                    HomeListHeaderLabel("SET ASIDE · ${inr(totalSetAsideMonthly)}/mo")
                     setAsideItems.forEachIndexed { idx, e ->
                         if (idx > 0) Hairline()
+                        val monthlyShare = e.monthly(vm.salaryResetDayFor(e.person))
+                        val monthsLeftPart = if (e.nextDue.isNotEmpty()) {
+                            val n = Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))
+                            "$n mo left · due ${prettyDate(e.nextDue)}"
+                        } else {
+                            "every ${e.everyMonths} mo"
+                        }
+                        val subtitle = "Total ${inr(e.amount)} · $monthsLeftPart"
+
                         HomeCompactRow(
                             title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
-                            subtitle = "Annual / Periodic",
-                            amount = inr(e.amount),
+                            subtitle = subtitle,
+                            amount = inr(monthlyShare),
                             amountColor = Pf.Text
                         )
                     }
                 }
 
-                // SALARY / EXPECTED INCOME
+                // 5. SALARY / EXPECTED INCOME
                 if (upcomingSalary > 0.0) {
-                    if (cards.isNotEmpty() || accounts.isNotEmpty() || loans.isNotEmpty() || setAsideItems.isNotEmpty()) {
+                    if (accounts.isNotEmpty() || cards.isNotEmpty() || loans.isNotEmpty() || setAsideItems.isNotEmpty()) {
                         Spacer(Modifier.height(Space.s2))
                         Hairline()
                     }
@@ -208,7 +217,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         title = if (vm.bucketView == "JOINT") "Joint Salary" else "${vm.activeProfile ?: "Personal"} Salary",
                         subtitle = subtitle,
                         amount = inr(upcomingSalary),
-                        amountColor = Color(0xFF10B981)
+                        amountColor = Pf.Text
                     )
                 }
             }
@@ -356,7 +365,7 @@ private fun AfterAllExpensesCard(
                 )
                 Text(
                     if (balanceHidden) "••••••" else inr(otherExpenses),
-                    color = Color(0xFFFCA5A5),
+                    color = Color.White,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -372,7 +381,7 @@ private fun AfterAllExpensesCard(
                     )
                     Text(
                         if (balanceHidden) "••••••" else inr(salary),
-                        color = Color(0xFF34D399),
+                        color = Color.White,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -381,6 +390,7 @@ private fun AfterAllExpensesCard(
         }
     }
 }
+
 
 
 
