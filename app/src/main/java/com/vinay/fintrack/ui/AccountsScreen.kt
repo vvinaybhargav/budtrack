@@ -176,7 +176,7 @@ private fun ManageBanksSection(vm: FinTrackViewModel) {
                 Tag(inr(totalBalance), Pf.Accent100, Pf.Accent800)
             }
             GhostButton("+ Add Bank", {
-                vm.addKind = "BANK_ACCOUNT"
+                vm.selectAddKind("BANK_ACCOUNT")
                 vm.tab = Tab.ADD
             })
         }
@@ -186,7 +186,7 @@ private fun ManageBanksSection(vm: FinTrackViewModel) {
                 Text("No bank accounts found for this profile.", color = Pf.Muted, fontSize = 14.sp)
                 Spacer(Modifier.height(Space.s2))
                 SecondaryButton("+ Add Bank Account", {
-                    vm.addKind = "BANK_ACCOUNT"
+                    vm.selectAddKind("BANK_ACCOUNT")
                     vm.tab = Tab.ADD
                 })
             }
@@ -296,7 +296,7 @@ private fun ManageCardsSection(vm: FinTrackViewModel) {
                 Tag("Total Due: ${inr(totalDues)}", Pf.Accent100, Pf.Accent800)
             }
             GhostButton("+ Add Card", {
-                vm.addKind = "CREDIT_CARD"
+                vm.selectAddKind("CREDIT_CARD")
                 vm.tab = Tab.ADD
             })
         }
@@ -306,7 +306,7 @@ private fun ManageCardsSection(vm: FinTrackViewModel) {
                 Text("No credit cards found for this profile.", color = Pf.Muted, fontSize = 14.sp)
                 Spacer(Modifier.height(Space.s2))
                 SecondaryButton("+ Add Credit Card", {
-                    vm.addKind = "CREDIT_CARD"
+                    vm.selectAddKind("CREDIT_CARD")
                     vm.tab = Tab.ADD
                 })
             }
@@ -463,7 +463,7 @@ private fun ManageLoansSection(vm: FinTrackViewModel) {
                 Tag("Total EMI: ${inr(totalEmis)}", Pf.Accent100, Pf.Accent800)
             }
             GhostButton("+ Add Loan", {
-                vm.addKind = "EMI_LOAN"
+                vm.selectAddKind("EMI_LOAN")
                 vm.tab = Tab.ADD
             })
         }
@@ -473,7 +473,7 @@ private fun ManageLoansSection(vm: FinTrackViewModel) {
                 Text("No active loans or car loans found.", color = Pf.Muted, fontSize = 14.sp)
                 Spacer(Modifier.height(Space.s2))
                 SecondaryButton("+ Add Loan / EMI", {
-                    vm.addKind = "EMI_LOAN"
+                    vm.selectAddKind("EMI_LOAN")
                     vm.tab = Tab.ADD
                 })
             }
