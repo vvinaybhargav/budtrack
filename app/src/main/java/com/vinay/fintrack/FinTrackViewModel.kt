@@ -40,6 +40,7 @@ import com.vinay.fintrack.data.payeeKey
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.dayFirstOf
 import com.vinay.fintrack.data.isoFromDayFirst
+import com.vinay.fintrack.data.normalizeDateToIso
 import com.vinay.fintrack.data.millisOfDate
 import com.vinay.fintrack.data.newId
 import com.vinay.fintrack.data.today
@@ -3600,7 +3601,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         return updated
     }
 
-    /** Adds a recurring entry — the plan, not a payment. */
+    /** Adds a recurring entry or set-aside plan. */
     fun addCommitmentDirect(
         amount: Double,
         category: String,
@@ -3612,18 +3613,19 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     ): Entry {
         val person = if (joint) "Joint" else activeProfile ?: "Me"
         val bucket = if (joint) "JOINT" else "PERSONAL"
+        val isoDue = if (dueDate.isNotBlank()) normalizeDateToIso(dueDate) ?: dueDate else ""
         val entry = Entry(
             id = newId("e"),
             person = person,
             type = type,
             bucket = bucket,
-            category = category,
+            category = category.ifBlank { "Other" },
             amount = amount,
-            frequency = if (everyMonths >= 12) "ANNUAL" else "MONTHLY",
+            frequency = if (everyMonths >= 12 || isoDue.isNotEmpty()) "ANNUAL" else "MONTHLY",
             note = note,
             accountId = defaultAccountFor(person, bucket),
             periodMonths = everyMonths.coerceIn(1, 12),
-            dueDate = dueDate
+            dueDate = isoDue
         )
         update { s -> s.copy(entries = s.entries + entry) }
         return entry
@@ -3639,13 +3641,15 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     ): Entry? {
         val e = entryById(id) ?: return null
         val months = everyMonths?.coerceIn(1, 12) ?: e.everyMonths
+        val isoDue = dueDate?.let { if (it.isNotBlank()) normalizeDateToIso(it) ?: it else "" }
+        val finalDue = isoDue ?: e.dueDate
         val updated = e.copy(
             amount = amount ?: e.amount,
             category = category ?: e.category,
             note = note ?: e.note,
             periodMonths = months,
-            dueDate = dueDate ?: e.dueDate,
-            frequency = if (months >= 12) "ANNUAL" else "MONTHLY"
+            dueDate = finalDue,
+            frequency = if (months >= 12 || finalDue.isNotEmpty()) "ANNUAL" else "MONTHLY"
         )
         update { s -> s.copy(entries = s.entries.map { if (it.id == id) updated else it }) }
         return updated

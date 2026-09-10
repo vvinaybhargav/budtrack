@@ -61,8 +61,8 @@ data class Entry(
         else -> Ledger.monthlyShare(amount, everyMonths)
     }
 
-    /** Anything that isn't monthly needs putting aside between payments. */
-    val isSetAside: Boolean get() = frequency != "ONE_TIME" && everyMonths > 1
+    /** Anything that isn't simple monthly or has a target due date needs putting aside. */
+    val isSetAside: Boolean get() = frequency != "ONE_TIME" && (everyMonths > 1 || dueDate.isNotEmpty())
 }
 
 @Serializable
@@ -299,6 +299,19 @@ fun isoFromDayFirst(text: String): String? {
     if (year < 100) year += 2000
     if (month !in 1..12 || day !in 1..31) return null
     return String.format(Locale("en", "IN"), "%04d-%02d-%02d", year, month, day)
+}
+
+/** Converts both DD-MM-YYYY and YYYY-MM-DD to standard ISO YYYY-MM-DD. */
+fun normalizeDateToIso(text: String): String? {
+    val trimmed = text.trim()
+    if (Regex("""^\d{4}-\d{2}-\d{2}$""").matches(trimmed)) {
+        val parts = trimmed.split("-")
+        val y = parts[0].toIntOrNull() ?: return null
+        val m = parts[1].toIntOrNull() ?: return null
+        val d = parts[2].toIntOrNull() ?: return null
+        if (m in 1..12 && d in 1..31 && y in 2000..2099) return trimmed
+    }
+    return isoFromDayFirst(trimmed)
 }
 
 fun monthsToDate(remaining: Int): String {

@@ -138,10 +138,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
                 // 2. LOANS
                 if (pendingLoans.isNotEmpty()) {
-                    if (hasPrior) {
-                        Spacer(Modifier.height(Space.s2))
-                        Hairline()
-                    }
+                    if (hasPrior) HomeSectionDivider()
                     HomeListHeaderLabel("LOANS · ${inr(totalLoanEmis)}/mo")
                     pendingLoans.forEachIndexed { idx, l ->
                         if (idx > 0) Hairline()
@@ -158,10 +155,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
                 // 3. RECURRING
                 if (pendingRecurring.isNotEmpty()) {
-                    if (hasPrior) {
-                        Spacer(Modifier.height(Space.s2))
-                        Hairline()
-                    }
+                    if (hasPrior) HomeSectionDivider()
                     HomeListHeaderLabel("RECURRING · ${inr(totalRecurring)}/mo")
                     pendingRecurring.forEachIndexed { idx, e ->
                         if (idx > 0) Hairline()
@@ -179,10 +173,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
                 // 4. SET ASIDE (Pending this month only)
                 if (pendingSetAsides.isNotEmpty()) {
-                    if (hasPrior) {
-                        Spacer(Modifier.height(Space.s2))
-                        Hairline()
-                    }
+                    if (hasPrior) HomeSectionDivider()
                     HomeListHeaderLabel("SET ASIDE · ${inr(totalSetAsidePending)}")
                     pendingSetAsides.forEachIndexed { idx, e ->
                         if (idx > 0) Hairline()
@@ -207,10 +198,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
                 // 5. SALARY / EXPECTED INCOME
                 if (upcomingSalary > 0.0) {
-                    if (hasPrior) {
-                        Spacer(Modifier.height(Space.s2))
-                        Hairline()
-                    }
+                    if (hasPrior) HomeSectionDivider()
                     HomeListHeaderLabel("SALARY · ${inr(upcomingSalary)}")
                     val salDay = vm.salaryResetDayFor(vm.activeProfile.orEmpty())
                     val subtitle = if (vm.bucketView == "JOINT") "Expected Income · Joint" else "Expected Income · Pay Day: ${salDay}th"
@@ -250,12 +238,27 @@ fun HomeScreen(vm: FinTrackViewModel) {
 private fun HomeListHeaderLabel(label: String) {
     Text(
         text = label,
-        color = Pf.Muted,
-        fontSize = 11.sp,
+        color = Pf.Accent400,
+        fontSize = 11.5.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 0.8.sp,
         modifier = Modifier.padding(top = 10.dp, bottom = 4.dp)
     )
+}
+
+@Composable
+private fun HomeSectionDivider() {
+    Spacer(Modifier.height(Space.s2))
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(
+                if (Pf.isDark) Color(0xFF374151)
+                else Color(0xFFE2E8F0)
+            )
+    )
+    Spacer(Modifier.height(Space.s1))
 }
 
 @Composable

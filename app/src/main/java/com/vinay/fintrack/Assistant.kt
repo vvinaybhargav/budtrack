@@ -10,6 +10,7 @@ import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.Txn
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.isoFromDayFirst
+import com.vinay.fintrack.data.normalizeDateToIso
 import com.vinay.fintrack.data.addDays
 import com.vinay.fintrack.data.today
 import kotlinx.serialization.json.Json
@@ -124,30 +125,35 @@ class Assistant(private val vm: FinTrackViewModel) {
             "delete_transaction" -> {
                 val t = vm.txnById(a.str("id").orEmpty())
                     ?: return@runCatching "No transaction with that id."
+                val accountName = vm.txnAccountLabel(t)
                 val what = "${inr(t.amount)} · ${t.note.ifEmpty { t.category }}"
                 vm.proposeDeletion(what, "${t.whenText} · ${t.category}") { vm.deleteTxn(t.id) }
-                "Waiting for the user to confirm deleting $what. Do not call this " +
-                    "again; tell them to tap Delete to go ahead."
+                "Prompted deletion for transaction '$what' on ${t.whenText} ($accountName). Please tap 'Delete' on screen to confirm."
             }
 
             "add_commitment" -> addCommitment(a)
             "edit_commitment" -> {
+                val rawDue = a.str("due_date")
+                val isoDue = rawDue?.let { normalizeDateToIso(it) ?: it }
                 val e = vm.updateCommitment(
                     a.str("id").orEmpty(), a.num("amount"),
                     a.str("category")?.let { vm.categoryNamed(it) },
-                    a.int("every_months"), a.str("note"), a.str("due_date")
+                    a.int("every_months"), a.str("note"), isoDue
                 ) ?: return@runCatching "No commitment with that id."
-                "Updated ${e.category}: ${inr(e.amount)} every ${e.everyMonths} month(s)" +
-                    (if (e.nextDue.isNotEmpty()) ", due ${prettyDate(e.nextDue)}" else "") +
-                    " — ${inr(e.monthly)} a month."
+                val section = if (e.isSetAside) "Set Aside" else "Recurring"
+                val label = e.note.ifBlank { e.category }
+                "Updated in **$section** (${e.person}): $label ${inr(e.amount)}" +
+                    (if (e.nextDue.isNotEmpty()) ", due ${prettyDate(e.nextDue)}" else " every ${e.everyMonths} month(s)") +
+                    " — ${inr(e.monthly)}/mo."
             }
             "delete_commitment" -> {
                 val e = vm.entryById(a.str("id").orEmpty())
                     ?: return@runCatching "No commitment with that id."
-                val what = "the ${e.category} commitment"
+                val section = if (e.isSetAside) "Set Aside" else "Recurring"
+                val label = e.note.ifBlank { e.category }
+                val what = "$label (${inr(e.amount)}) from $section"
                 vm.proposeDeletion(what, "${inr(e.amount)} · ${e.person}") { vm.deleteEntry(e.id) }
-                "Waiting for the user to confirm deleting $what. Do not call this " +
-                    "again; tell them to tap Delete to go ahead."
+                "Prompted deletion for '$what' (${e.person}). Please tap 'Delete' on screen to confirm."
             }
             "confirm_commitment" -> vm.confirmDirect(
                 a.str("id").orEmpty(),
@@ -160,14 +166,14 @@ class Assistant(private val vm: FinTrackViewModel) {
                     a.str("name").orEmpty(), a.num("balance") ?: 0.0,
                     a.str("last_digits").orEmpty(), a.bool("joint") ?: false
                 )
-                "Added ${acc.name}, opening ${inr(acc.openingBalance)}."
+                "Added to **Accounts** (${if (acc.person == "Joint") "Joint" else acc.person}): ${acc.name}, opening balance ${inr(acc.openingBalance)}."
             }
             "add_card" -> {
                 val c = vm.addCardDirect(
                     a.str("name").orEmpty(), a.num("limit") ?: 0.0, a.num("balance") ?: 0.0,
                     a.num("min_due") ?: 0.0, a.str("due").orEmpty(), a.str("last_digits").orEmpty()
                 )
-                "Added the card ${c.name}, limit ${inr(c.limit)}."
+                "Added to **Credit Cards** (${c.owner}): ${c.name}, limit ${inr(c.limit)} (due: ${c.due.ifBlank { "N/A" }})."
             }
             "add_loan" -> {
                 val total = a.int("total_months") ?: 0
@@ -177,7 +183,7 @@ class Assistant(private val vm: FinTrackViewModel) {
                     a.str("card").orEmpty(), a.str("account").orEmpty(),
                     a.str("due_date").orEmpty()
                 )
-                "Added ${l.name}, ${inr(l.monthlyEmi)} a month — ${vm.emiSourceLabel(l)}" +
+                "Added to **Loans** (${l.person}): ${l.name}, EMI ${inr(l.monthlyEmi)}/mo (${l.remainingMonths} mo left) — ${vm.emiSourceLabel(l)}" +
                     (if (l.nextDue.isNotEmpty()) ", due ${prettyDate(l.nextDue)}" else "") + "."
             }
             "summarise_spending" -> vm.spendingSummary(
@@ -209,7 +215,7 @@ class Assistant(private val vm: FinTrackViewModel) {
                     c.id, a.str("new_name"), a.num("limit"), a.num("balance"),
                     a.num("min_due"), a.str("due_date"), a.str("last_digits"), a.bool("paid")
                 )
-                "Updated ${updated?.name}, ${inr(updated?.balance ?: 0.0)} of " +
+                "Updated in **Credit Cards**: ${updated?.name}, ${inr(updated?.balance ?: 0.0)} of " +
                     "${inr(updated?.limit ?: 0.0)} used."
             }
             "update_loan" -> {
@@ -219,7 +225,7 @@ class Assistant(private val vm: FinTrackViewModel) {
                     l.id, a.num("emi"), a.int("remaining_months"), a.str("due_date"),
                     a.str("account"), a.str("card")
                 )
-                "Updated ${updated?.name}, ${inr(updated?.monthlyEmi ?: 0.0)} a month — " +
+                "Updated in **Loans**: ${updated?.name}, ${inr(updated?.monthlyEmi ?: 0.0)} a month — " +
                     "${vm.emiSourceLabel(updated ?: l)}."
             }
             "delete_account" -> {
@@ -229,15 +235,13 @@ class Assistant(private val vm: FinTrackViewModel) {
                     acc.name,
                     "Its transactions move to another account rather than being lost."
                 ) { vm.deleteAccount(acc.id) }
-                "Waiting for the user to confirm removing ${acc.name}. Do not call " +
-                    "this again; tell them to tap Delete."
+                "Prompted deletion for account '${acc.name}'. Please tap 'Delete' on screen to confirm."
             }
             "delete_card" -> {
                 val c = vm.cardNamed(a.str("name").orEmpty())
                     ?: return@runCatching "No card by that name."
                 vm.proposeDeletion(c.name, "${inr(c.balance)} outstanding") { vm.deleteCard(c.id) }
-                "Waiting for the user to confirm removing ${c.name}. Do not call " +
-                    "this again; tell them to tap Delete."
+                "Prompted deletion for credit card '${c.name}'. Please tap 'Delete' on screen to confirm."
             }
             "delete_loan" -> {
                 val l = vm.loanNamed(a.str("name").orEmpty())
@@ -245,8 +249,7 @@ class Assistant(private val vm: FinTrackViewModel) {
                 vm.proposeDeletion(
                     l.name, "${l.remainingMonths} of ${l.totalMonths} months left"
                 ) { vm.deleteLoan(l.id) }
-                "Waiting for the user to confirm removing ${l.name}. Do not call " +
-                    "this again; tell them to tap Delete."
+                "Prompted deletion for loan '${l.name}'. Please tap 'Delete' on screen to confirm."
             }
             "set_budget_rollover" -> {
                 val on = a.bool("on") ?: false
@@ -478,29 +481,36 @@ class Assistant(private val vm: FinTrackViewModel) {
         val account = a.str("account")?.let { vm.accountNamed(it) }
             ?: vm.accountNamed(vm.oneOffAccountName)
         val accountId = account?.id ?: vm.resolvedOneOffAccount
-        val date = a.str("date")?.let { isoFromDayFirst(it) } ?: today()
+        val accountName = account?.name ?: vm.oneOffAccountName
+        val rawDate = a.str("date")
+        val date = rawDate?.let { normalizeDateToIso(it) } ?: today()
+        val note = a.str("note").orEmpty().ifEmpty { category }
         val t = vm.addTransactionDirect(
-            amount, category, credit, accountId, a.str("note").orEmpty().ifEmpty { category }, date,
+            amount, category, credit, accountId, note, date,
             borrowedFrom = a.str("borrowed_from").orEmpty(),
             returnDate = a.str("return_date").orEmpty()
         )
-        return "Recorded ${describe(t)}."
+        val profile = vm.activeProfile ?: "Personal"
+        val kindStr = if (credit) "Received (+)" else "Spent (-)"
+        return "Recorded in **Transactions** ($profile · $accountName): $kindStr ${inr(t.amount)} for $note ($category) on ${prettyDate(t.date)}."
     }
 
     private fun editTransaction(a: JsonObject): String {
         val id = a.str("id") ?: return "I need the transaction id."
+        val rawDate = a.str("date")
         val t = vm.updateTransaction(
             id = id,
             amount = a.num("amount"),
             category = a.str("category")?.let { vm.categoryNamed(it) },
             accountId = a.str("account")?.let { vm.accountNamed(it)?.id },
             note = a.str("note"),
-            dateIso = a.str("date")?.let { isoFromDayFirst(it) },
+            dateIso = rawDate?.let { normalizeDateToIso(it) },
             borrowedFrom = a.str("borrowed_from"),
             returned = a.bool("returned"),
             returnDate = a.str("return_date")
         ) ?: return "No transaction with that id."
-        return "Updated ${describe(t)}."
+        val accountName = vm.txnAccountLabel(t)
+        return "Updated in **Transactions**: ${t.whenText} ${if (t.kind == "INCOME") "+" else "-"}${inr(t.amount)} · ${t.note.ifBlank { t.category }} ($accountName)."
     }
 
     private fun addCommitment(a: JsonObject): String {
@@ -510,34 +520,28 @@ class Assistant(private val vm: FinTrackViewModel) {
             "income" -> "INCOME"
             else -> "EXPENSE"
         }
+        val rawDue = a.str("due_date").orEmpty()
+        val isoDue = if (rawDue.isNotBlank()) normalizeDateToIso(rawDue) ?: rawDue else ""
+        val categoryName = a.str("category")?.let { vm.categoryNamed(it) } ?: "Other"
+        val note = a.str("note").orEmpty()
         val e = vm.addCommitmentDirect(
             amount = amount,
-            category = vm.categoryNamed(a.str("category").orEmpty()),
-            everyMonths = a.int("every_months") ?: 1,   // schema requires it; 1 only if omitted anyway
+            category = categoryName,
+            everyMonths = a.int("every_months") ?: 1,
             type = type,
-            // Personal unless the user actually said shared. Following whichever
-            // side happened to be on screen put private commitments on the joint
-            // side because of where the user was standing at the time.
             joint = a.bool("joint") ?: false,
-            note = a.str("note").orEmpty(),
-            dueDate = a.str("due_date").orEmpty()
+            note = note,
+            dueDate = isoDue
         )
-        val side = if (e.bucket == "JOINT") "joint" else "personal"
-        // Always states the figures it worked out, so a period or a date read
-        // wrongly shows up as a number the user can see is wrong, rather than
-        // as a plausible sentence.
+        val side = if (e.bucket == "JOINT") "Joint" else "Personal"
+        val label = e.note.ifBlank { e.category }
         return when {
             e.nextDue.isNotEmpty() ->
-                "Added ${e.category} ${inr(e.amount)} due ${prettyDate(e.nextDue)} on the " +
-                    "$side side — ${inr(e.monthly)} a month over the " +
-                    "${Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))} months left."
+                "Added to **Set Aside** for ${e.person} ($side side): $label ${inr(e.amount)} due ${prettyDate(e.nextDue)} — ${inr(e.monthly)} a month over the ${Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))} month(s) left."
             e.everyMonths > 1 ->
-                "Added ${e.category} ${inr(e.amount)} every ${e.everyMonths} months on the " +
-                    "$side side — ${inr(e.monthly)} to set aside each month."
+                "Added to **Set Aside** for ${e.person} ($side side): $label ${inr(e.amount)} every ${e.everyMonths} months — ${inr(e.monthly)} to set aside each month."
             else ->
-                "Added ${e.category} on the $side side as ${inr(e.amount)} charged every " +
-                    "single month, ${inr(e.amount * 12)} a year. Tell the user this plainly, " +
-                    "and check it is what they meant if they described one due date."
+                "Added to **Recurring** for ${e.person} ($side side): $label ${inr(e.amount)} every month (${inr(e.amount * 12)}/year)."
         }
     }
 

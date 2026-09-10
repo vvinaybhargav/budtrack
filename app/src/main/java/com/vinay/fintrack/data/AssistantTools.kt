@@ -64,14 +64,14 @@ object AssistantTools {
         // ── transactions ───────────────────────────────────────────────
         add(tool(
             "add_transaction",
-            "Record money that has already moved."
+            "Record money that has ALREADY moved (spent, received, or transferred) on or before today. STRICTLY for past/completed payments. NEVER use for future dates, upcoming purchases, or planned savings (use add_commitment instead)."
         ) {
             put("amount", num("Rupees. Required."))
             put("category", str("One of the existing categories."))
             put("direction", enum("Which way the money went.", listOf("out", "in")))
             put("account", str("Account name."))
             put("note", str("Payee or description."))
-            put("date", str("dd-MM-yyyy. Default today."))
+            put("date", str("dd-MM-yyyy. Default today. MUST NOT be a future date."))
             put("borrowed_from", str("Profile name (e.g. 'Wife') or custom name this was borrowed from / lent to."))
             put("return_date", str("Target return date as YYYY-MM-DD."))
             required("amount")
@@ -99,37 +99,24 @@ object AssistantTools {
         // ── commitments ────────────────────────────────────────────────
         add(tool(
             "add_commitment",
-            "A monthly cost, or a set-aside paid every few months. A plan, not a " +
-                "payment: it is confirmed each month."
+            "Add a plan or goal to Set Aside or Recurring bills. Use this for ANY upcoming purchase, future planned expense, goal, periodic bill, or monthly commitment (e.g. 'i need to buy spects for 2500 on 15th sep', 'plan 50000 for insurance on 10 Oct', 'rent 20000/mo'). Never record future expenses as transactions."
         ) {
             put("amount", num(
-                "The whole amount charged each time the bill comes, NOT the monthly " +
-                    "share. A ₹55,000 yearly premium is 55000. Required."
+                "The total amount of the planned purchase, goal, or periodic bill. Required."
             ))
             put("category", str("One of the existing categories."))
             put("every_months", int(
-                "How many months between one payment and the next, 1 to 12. A yearly " +
-                    "premium or annual bill is 12; half-yearly is 6; quarterly is 3. " +
-                    "Use 1 only when the full amount really is charged every single " +
-                    "month, like rent. If the user names one due date for a large " +
-                    "bill, it is not monthly. Required — never guess 1 by default."
+                "How many months between one payment and the next (1 to 12). Default 1 for single goal/purchase with due date or monthly bills; 12 for yearly bills."
             ))
             put("due_date", str(
-                "When the bill is actually due, as YYYY-MM-DD, if the user says. " +
-                    "The share each month is then worked out from the months left " +
-                    "before that date, not from every_months."
+                "When the planned purchase or bill is due, as YYYY-MM-DD (e.g. '2026-09-15') or dd-MM-yyyy."
             ))
             put("kind", enum("What sort of commitment.", listOf("expense", "savings", "income")))
             put("joint", bool(
-                "True ONLY if the user says this is joint, shared, household or " +
-                    "both of you. Leave it out otherwise — anything unsaid is the " +
-                    "user's own personal side."
+                "True ONLY if the user says this is joint, shared, household or both of you. Default false."
             ))
-            put("note", str("Description."))
-            // Required, because defaulting it to 1 turned a ₹55,000 yearly premium
-            // into a ₹55,000 monthly commitment — a twelvefold error that read as
-            // a plausible sentence.
-            required("amount", "every_months")
+            put("note", str("Description of the item or purchase (e.g. 'Spectacles')."))
+            required("amount")
         })
         add(tool("edit_commitment", "Change a recurring entry.") {
             put("id", str("Entry id. Required."))
@@ -326,41 +313,34 @@ object AssistantTools {
         """.trimIndent()
 
     private val STATIC_PROMPT = """
-        You are the assistant inside FinTrack, a household finance app for two
-        people. You can read and change everything in it through your tools.
+        You are the AI assistant inside FinTrack, a household finance app for two people.
+        You can read and modify financial data accurately through your tools.
 
-        How the app is arranged, so your answers match what the user sees:
-        - A commitment is a plan that repeats. It only moves money when confirmed.
-        - A transaction is money that actually moved. Balances come from these.
-        - A set-aside is one large bill you save up for: each month you put by a
-          share, and confirming transfers that to savings rather than spending it.
-          When it falls due, pay_set_aside pays it out of what was saved.
-        - Recurring and set-aside are not the same. Rent is recurring: every_months
-          1, and the full amount leaves the account monthly. One large bill with a
-          due date — insurance, school fees, road tax — is a set-aside: give the
-          whole bill as the amount, and every_months for how often it comes round.
-        - With a due date, the monthly share comes from the months left until then,
-          not from every_months: ₹55,000 due 29 January, decided in August, is
-          ₹11,000 a month over five months, not a twelfth. Say both figures back,
-          so a period read wrongly shows up as a number rather than a fluent
-          sentence.
-        - Personal is the user's own; Joint is shared. Personal is the default —
-          only mark something joint when they say it is shared, household, ours or
-          both of you. Never infer it from whichever side is on screen.
-        - A payee is not a category. "Eastern Power" is a payee whose category is
-          Utilities. When something is Uncategorised, suggest a fitting category
-          and use set_payee_category, which settles that payee for good.
+        CRITICAL RULES FOR INSERT, UPDATE, AND DELETE:
+        1. FUTURE EXPENSES & GOALS vs COMPLETED TRANSACTIONS:
+           - A planned expense, goal, or upcoming purchase with a future date or future need (e.g. "i need to buy spects 2500 for me on 15th sep", "plan 50000 for insurance on 10 Oct", "save 10000 for travel next month") is ALWAYS a Set Aside / Goal (`add_commitment` with `due_date` and `note`).
+           - NEVER call `add_transaction` for future dates, upcoming purchases, or plans. `add_transaction` is STRICTLY for money that was ALREADY spent, received, or transferred in the past or on today's date.
+        2. CLEAR INFORMATION ON WHERE ACTIONS ARE TAKEN:
+           - Whenever you insert, update, or delete anything, clearly tell the user EXACTLY WHERE it was added, updated, or deleted (e.g. "Added to Set Aside (Vinay): Spectacles ₹2,500 due 15 Sep 2026", "Recorded in Transactions under ICICI: Spent ₹250 on Food", "Updated in Credit Cards: ICICI Sapphiro limit ₹3,00,000", etc.).
+           - Explicitly state the destination section (Set Aside, Recurring, Transactions, Accounts, Credit Cards, Loans, Budgets), the profile (Vinay / Wife / Joint), the date, and the amount.
+        3. ASKING BEFORE ACTION WHEN AMBIGUOUS:
+           - If a user's instruction is ambiguous — for example, if it is unclear whether they already made a payment or are planning to make it later, or if crucial details (which bank account, which profile, or which category) are missing and cannot be reasonably deduced — ask the user for clarification before executing a modifying tool.
+        4. DELETIONS ALWAYS REQUIRE USER CONFIRMATION:
+           - When deleting a transaction, commitment, account, card, or loan, the tool registers a proposal on screen. Always clearly tell the user what is being removed and inform them that a confirmation dialog has appeared on screen for them to tap "Delete".
 
-        Choosing a tool:
-        - Totals, trends, averages, comparisons: summarise_spending. It returns
-          figures the app worked out. Never add up list_transactions yourself.
-        - What is coming up, what is owed this week: due_soon.
-        - Individual payments and history: list_transactions.
+        APP CONCEPTS & SECTIONS:
+        - Set Aside (`add_commitment` with `due_date` or `every_months > 1`): One-time future goals or periodic large bills to save up for (e.g., Spectacles on 15 Sep, Insurance in Nov, Holiday fund). Monthly share is calculated automatically until due date.
+        - Recurring (`add_commitment` with `every_months = 1` and no future due date): Fixed monthly bills paid every single month (e.g. Rent, Wi-Fi, Maid).
+        - Transactions (`add_transaction`): Money that has already moved in/out of an account on or before today. Affects live account balances.
+        - Profiles & Scope: Personal is the user's own (default); Joint is shared. Only mark something joint when the user explicitly says "joint", "shared", "household", or "both of us".
+        - Payee vs Category: Payee is the merchant/person (e.g. "Eastern Power"); Category is the classification (e.g. "Utilities"). When something is Uncategorised, suggest a fitting category and use set_payee_category.
 
-        Deleting is confirmed by the user, not by you: the tool describes what
-        would go and they tap a button. Say what you changed after an edit. Keep
-        replies short and plain — this is a phone screen. Amounts in rupees, like
-        ₹4,500.
+        CHOOSING TOOLS:
+        - Totals, trends, averages, comparisons: summarise_spending. Never manually add up rows.
+        - Upcoming bills and due dates: due_soon.
+        - Individual transaction lookup: list_transactions. Users may refer to items by date and serial number (e.g. "yesterday 1", "today first 3").
+
+        Keep replies concise, clear, and direct. Always format amounts in rupees (e.g. ₹2,500).
     """.trimIndent()
 
     // ── schema helpers ─────────────────────────────────────────────────

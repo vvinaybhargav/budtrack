@@ -54,6 +54,7 @@ import com.vinay.fintrack.ui.SettingsScreen
 import com.vinay.fintrack.ui.Space
 import com.vinay.fintrack.ui.Tag
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material3.IconButton
 import com.vinay.fintrack.ui.AccountsScreen
@@ -118,6 +119,32 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun UnlockedShell(vm: FinTrackViewModel) {
+    val canGoBack = vm.tab != Tab.HOME ||
+        vm.editingTxnId != null ||
+        vm.editingAccountId != null ||
+        vm.editingCardId != null ||
+        vm.editingLoanId != null ||
+        vm.editingEntryId != null ||
+        vm.settlingCardId != null ||
+        vm.settlingBorrowedTxnId != null ||
+        vm.pendingConfirm != null ||
+        vm.pendingDeletion != null
+
+    BackHandler(enabled = canGoBack) {
+        when {
+            vm.pendingDeletion != null -> vm.cancelDeletion()
+            vm.editingTxnId != null -> vm.cancelEditTxn()
+            vm.editingAccountId != null -> vm.cancelEditAccount()
+            vm.editingCardId != null -> vm.cancelEditCard()
+            vm.editingLoanId != null -> vm.cancelEditLoan()
+            vm.editingEntryId != null -> vm.cancelEdit()
+            vm.settlingCardId != null -> vm.cancelSettleCard()
+            vm.settlingBorrowedTxnId != null -> vm.cancelSettleBorrowed()
+            vm.pendingConfirm != null -> vm.cancelConfirm()
+            vm.tab != Tab.HOME -> vm.tab = Tab.HOME
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         Header(vm)
         Box(Modifier.weight(1f)) {
