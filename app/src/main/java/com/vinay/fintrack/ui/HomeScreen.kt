@@ -584,7 +584,7 @@ private fun SetAsideCleanSection(
                 val pct = (fraction * 100).toInt()
 
                 PfCard(
-                    onClick = { vm.openEditEntry(e) }
+                    modifier = Modifier.clickable { vm.openEditEntry(e) }
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
