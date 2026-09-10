@@ -417,7 +417,7 @@ class Assistant(private val vm: FinTrackViewModel) {
         val month = a.str("month")
         val category = a.str("category")
         val search = a.str("search")
-        val limit = (a.int("limit") ?: 30).coerceIn(1, 100)
+        val limit = (a.int("limit") ?: 50).coerceIn(1, 100)
 
         val from = a.str("from")
         val to = a.str("to")
@@ -437,9 +437,21 @@ class Assistant(private val vm: FinTrackViewModel) {
             .take(limit)
 
         if (rows.isEmpty()) return "No transactions match."
+        val grouped = rows.groupBy { it.date }
+        val yesterday = Ledger.addDays(today(), -1)
         return buildString {
             appendLine("${rows.size} transaction(s):")
-            rows.forEach { appendLine("  ${describe(it)}") }
+            grouped.forEach { (date, dateRows) ->
+                val dateLabel = when (date) {
+                    today() -> "Today ($date)"
+                    yesterday -> "Yesterday ($date)"
+                    else -> "${prettyDate(date)} ($date)"
+                }
+                appendLine("Date: $dateLabel")
+                dateRows.forEachIndexed { idx, t ->
+                    appendLine("  #${idx + 1}: ${describe(t)}")
+                }
+            }
         }
     }
 

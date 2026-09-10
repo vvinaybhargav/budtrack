@@ -27,50 +27,129 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.Tab
+import com.vinay.fintrack.data.Entry
+import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.inr
+import com.vinay.fintrack.data.prettyDate
+import com.vinay.fintrack.data.today
 
 @Composable
 fun AccountsScreen(vm: FinTrackViewModel) {
+    var selectedFilter by remember { mutableStateOf("All") }
+
+    val filterOptions = listOf(
+        "All" to "All",
+        "Banks" to "Banks (${vm.scopedAccounts.size})",
+        "Cards" to "Cards (${vm.scopedCards.size})",
+        "Loans" to "Loans (${vm.scopedLoans.filter { !vm.isLoanCleared(it) }.size})",
+        "Recurring" to "Recurring (${vm.commitments.size})",
+        "Set Aside" to "Set Aside (${vm.annualSetAsides.size})"
+    )
+
     LazyColumn(
         Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(bottom = 90.dp, top = Space.s3, start = Space.s4, end = Space.s4),
         verticalArrangement = Arrangement.spacedBy(Space.s5)
     ) {
-        // 1. Header
+        // 1. Header & Filter Chips
         item {
-            Column(Modifier.fillMaxWidth()) {
-                Text(
-                    "Accounts & Balances",
-                    color = Pf.Text,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-                Spacer(Modifier.height(2.dp))
-                Muted("Tap any item to edit balance, card limits, or EMI details", size = 13)
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+                Column(Modifier.fillMaxWidth()) {
+                    Text(
+                        "Accounts & Balances",
+                        color = Pf.Text,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Muted("Tap any item to edit balance, card limits, or EMI details", size = 13)
+                }
+
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    filterOptions.forEach { (key, label) ->
+                        val isSelected = selectedFilter == key
+                        Box(
+                            Modifier
+                                .background(
+                                    if (isSelected) Pf.Accent else Pf.Surface2,
+                                    Radius.Pill
+                                )
+                                .border(
+                                    1.dp,
+                                    if (isSelected) Pf.Accent else Pf.Hairline,
+                                    Radius.Pill
+                                )
+                                .clickable { selectedFilter = key }
+                                .padding(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                label,
+                                color = if (isSelected) Color.White else Pf.Text,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
             }
         }
 
         // 2. Bank Accounts Section
-        item {
-            ManageBanksSection(vm)
+        if (selectedFilter == "All" || selectedFilter == "Banks") {
+            item {
+                ManageBanksSection(vm)
+            }
         }
 
         // 3. Credit Cards Section
-        item {
-            ManageCardsSection(vm)
+        if (selectedFilter == "All" || selectedFilter == "Cards") {
+            item {
+                ManageCardsSection(vm)
+            }
         }
 
         // 4. Loans Section
-        item {
-            ManageLoansSection(vm)
+        if (selectedFilter == "All" || selectedFilter == "Loans") {
+            item {
+                ManageLoansSection(vm)
+            }
+        }
+
+        // 5. Recurring Section
+        if (selectedFilter == "All" || selectedFilter == "Recurring") {
+            item {
+                ManageRecurringSection(vm)
+            }
+        }
+
+        // 6. Set Aside Section
+        if (selectedFilter == "All" || selectedFilter == "Set Aside") {
+            item {
+                ManageSetAsidesSection(vm)
+            }
         }
     }
+
+    ConfirmSheet(vm)
+    CardSettleSheet(vm)
+    BorrowedSettleSheet(vm)
 }
 
 @Composable
@@ -504,6 +583,245 @@ private fun ManageLoansSection(vm: FinTrackViewModel) {
                                     )
                                 }
                                 Text("›", color = Pf.Muted, fontSize = 16.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManageRecurringSection(vm: FinTrackViewModel) {
+    val items = vm.commitments
+    val totalMonthly = items.sumOf { it.monthly }
+
+    Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+        SectionHeader(
+            icon = Icons.Default.Receipt,
+            title = "Recurring Bills",
+            badgeText = "${inr(totalMonthly)}/mo",
+            onAddClick = {
+                vm.selectAddKind("RECURRING")
+                vm.tab = Tab.ADD
+            }
+        )
+
+        if (items.isEmpty()) {
+            PfCard(padding = PaddingValues(Space.s4)) {
+                Text("No recurring commitments or bills found.", color = Pf.Muted, fontSize = 14.sp)
+                Spacer(Modifier.height(Space.s2))
+                SecondaryButton("+ Add Recurring Bill", {
+                    vm.selectAddKind("RECURRING")
+                    vm.tab = Tab.ADD
+                })
+            }
+        } else {
+            PfCard(padding = PaddingValues(0.dp)) {
+                items.forEachIndexed { idx, e ->
+                    if (idx > 0) Hairline()
+                    val done = vm.isConfirmed(e.id)
+                    val kind = vm.commitmentKind(e)
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { vm.openEditEntry(e) }
+                            .padding(horizontal = Space.s4, vertical = Space.s3),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f).padding(end = Space.s2)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                            ) {
+                                Text(
+                                    e.note.ifEmpty { e.category },
+                                    color = Pf.Text,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                when (kind) {
+                                    "Investment" -> Tag(kind, Pf.Accent100, Pf.Accent800)
+                                    "Savings" -> Tag(kind, Pf.Accent2_100, Pf.Accent2_800)
+                                    else -> Tag(kind, Pf.Neutral100, Pf.Neutral800)
+                                }
+                            }
+                            val when_ = if (e.nextDue.isEmpty()) "" else " · due in ${Ledger.untilText(today(), e.nextDue)}"
+                            val subtitle = "${e.person} · ${inr(e.monthly)}/mo$when_"
+                            Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                        ) {
+                            Box(
+                                Modifier
+                                    .background(if (done) Pf.Surface2 else Pf.Accent, Radius.Pill)
+                                    .border(1.dp, if (done) Pf.Hairline else Pf.Accent, Radius.Pill)
+                                    .clickable { vm.requestConfirm(e) }
+                                    .padding(horizontal = 10.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    if (done) "Paid" else "Pay",
+                                    color = if (done) Pf.Muted else Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.Delete, "Delete", Modifier.size(15.dp), tint = Pf.Accent400)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
+    val items = vm.annualSetAsides
+    val totalDone = vm.annualSetAsideDone
+    val totalNeeded = vm.annualSetAsideMonthly
+
+    Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+        SectionHeader(
+            icon = Icons.Default.TrendingUp,
+            title = "Set Aside",
+            badgeText = "${inr(totalNeeded)}/mo",
+            onAddClick = {
+                vm.selectAddKind("SET_ASIDE")
+                vm.tab = Tab.ADD
+            }
+        )
+
+        if (items.isEmpty()) {
+            PfCard(padding = PaddingValues(Space.s4)) {
+                Text(
+                    "Nothing set aside yet. Add one to put aside funds monthly for upcoming yearly/periodic bills or goals.",
+                    color = Pf.Muted,
+                    fontSize = 14.sp
+                )
+                Spacer(Modifier.height(Space.s2))
+                SecondaryButton("+ Add Set Aside", {
+                    vm.selectAddKind("SET_ASIDE")
+                    vm.tab = Tab.ADD
+                })
+            }
+        } else {
+            PfCard(padding = PaddingValues(Space.s4)) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = Space.s3),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    Column {
+                        Muted("Needed each month")
+                        Text(
+                            inr(totalNeeded),
+                            color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    Muted(
+                        "${inr(totalDone)} done · ${inr((totalNeeded - totalDone).coerceAtLeast(0.0))} left",
+                        size = 12
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+                    items.forEach { e ->
+                        val put = vm.setAsideDone(e)
+                        val left = vm.setAsideLeft(e)
+                        val pot = vm.setAsidePot(e)
+                        val fraction = safeFraction(pot, e.amount)
+                        val pct = (fraction * 100).toInt()
+
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(Pf.Surface2.copy(alpha = 0.6f), Radius.Md)
+                                .border(1.dp, Pf.Hairline, Radius.Md)
+                                .clickable { vm.openEditEntry(e) }
+                                .padding(Space.s3)
+                        ) {
+                            Column {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        e.note.ifEmpty { e.category },
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    Spacer(Modifier.width(Space.s2))
+                                    Text(
+                                        "$pct%",
+                                        color = if (pct >= 100) Color(0xFF00BFA5) else Pf.Text,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+
+                                ProgressBar(
+                                    fraction = fraction,
+                                    color = if (pct >= 100) Color(0xFF00BFA5) else Pf.Accent,
+                                    height = 5,
+                                    modifier = Modifier.padding(vertical = 6.dp)
+                                )
+
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f).padding(end = Space.s2)) {
+                                        Muted(
+                                            "${inr(e.monthly(vm.salaryResetDayFor(e.person)))}/mo · " +
+                                                if (put > 0) "${inr(put)} put by, ${inr(left)} left"
+                                                else "none put by yet",
+                                            size = 11
+                                        )
+                                        Muted(
+                                            if (e.nextDue.isNotEmpty()) {
+                                                val n = Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))
+                                                "${inr(pot)} of ${inr(e.amount)} saved · due ${prettyDate(e.nextDue)}, $n mo to go"
+                                            } else {
+                                                "${inr(pot)} of ${inr(e.amount)} saved · every ${e.everyMonths} mo"
+                                            },
+                                            size = 11
+                                        )
+                                    }
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(Space.s1)
+                                    ) {
+                                        if (vm.canPaySetAside(e)) {
+                                            PrimaryButton("Pay ${inr(e.amount)}", { vm.paySetAside(e) })
+                                        } else if (left <= 0.0) {
+                                            SecondaryButton("Undo", { vm.requestConfirm(e) })
+                                        } else {
+                                            PrimaryButton(if (put > 0) "Add" else "Set aside", { vm.requestConfirm(e) })
+                                        }
+                                        IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(28.dp)) {
+                                            Icon(Icons.Default.Delete, "Delete", Modifier.size(15.dp), tint = Pf.Accent400)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

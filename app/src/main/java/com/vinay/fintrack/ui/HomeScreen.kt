@@ -68,17 +68,18 @@ private const val ALERT_PCT = 0.90f
 @Composable
 fun HomeScreen(vm: FinTrackViewModel) {
     val totalBankBalances = vm.scopedAccounts.sumOf { vm.balanceOf(it) }
-    val totalCardDues = vm.scopedCards.sumOf { it.balance }
-    val activeLoans = vm.scopedLoans.filter { !vm.isLoanCleared(it) }
-    val totalLoanEmis = activeLoans.sumOf { it.monthlyEmi }
-    val otherExpenses = totalCardDues + totalLoanEmis
+    val pendingCards = vm.scopedCards.filter { !it.paid && it.balance > 0.0 }
+    val totalCardDues = pendingCards.sumOf { it.balance }
+    val pendingLoans = vm.scopedLoans.filter { !vm.isLoanCleared(it) && !vm.isLoanConfirmed(it.id) }
+    val totalLoanEmis = pendingLoans.sumOf { it.monthlyEmi }
+    val pendingRecurring = vm.commitments.filter { !vm.isConfirmed(it.id) }
+    val totalRecurring = pendingRecurring.sumOf { it.monthly }
+    val pendingSetAsides = vm.annualSetAsides.filter { vm.setAsideLeft(it) > 0.0 }
+    val totalSetAsidePending = pendingSetAsides.sumOf { vm.setAsideLeft(it) }
+
+    val otherExpenses = totalCardDues + totalLoanEmis + totalRecurring + totalSetAsidePending
     val upcomingSalary = vm.scopedUpcomingSalary
     val netBalance = totalBankBalances - otherExpenses + upcomingSalary
-
-    val cards = vm.scopedCards
-    val accounts = vm.scopedAccounts
-    val loans = activeLoans
-    val setAsideItems = vm.annualSetAsides
 
     LazyColumn(
         Modifier.fillMaxWidth(),
@@ -103,106 +104,19 @@ fun HomeScreen(vm: FinTrackViewModel) {
             )
         }
 
-        // 3. UNIFIED 1-BY-1 CLEAN LIST (Order: Banks -> Cards -> Loans -> Set Aside -> Salary)
+        // 3. UNIFIED 1-BY-1 CLEAN LIST (Credit Cards -> Loans -> Recurring -> Set Aside -> Salary)
         item {
             PfCard(
                 modifier = Modifier.fillMaxWidth(),
                 padding = PaddingValues(horizontal = Space.s4, vertical = Space.s2),
                 shape = Radius.Lg
             ) {
-                // 1. BANKS (Side by Side)
-                if (accounts.isNotEmpty()) {
-                    HomeListHeaderLabel("BANKS · ${inr(totalBankBalances)}")
-                    val accountPairs = accounts.chunked(2)
-                    accountPairs.forEachIndexed { rowIdx, pair ->
-                        if (rowIdx > 0) Hairline()
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(Space.s3)
-                        ) {
-                            val a1 = pair[0]
-                            val bal1 = vm.balanceOf(a1)
-                            val subtitle1 = when {
-                                a1.numberTail.isNotBlank() && a1.person == "Joint" -> "••••${a1.numberTail} · Joint"
-                                a1.numberTail.isNotBlank() -> "••••${a1.numberTail}"
-                                a1.person == "Joint" -> "Joint"
-                                else -> "Bank Account"
-                            }
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    a1.name,
-                                    color = Pf.Text,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    subtitle1,
-                                    color = Pf.Muted,
-                                    fontSize = 10.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    inr(bal1),
-                                    color = Pf.Text,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                            }
+                var hasPrior = false
 
-                            if (pair.size > 1) {
-                                val a2 = pair[1]
-                                val bal2 = vm.balanceOf(a2)
-                                val subtitle2 = when {
-                                    a2.numberTail.isNotBlank() && a2.person == "Joint" -> "••••${a2.numberTail} · Joint"
-                                    a2.numberTail.isNotBlank() -> "••••${a2.numberTail}"
-                                    a2.person == "Joint" -> "Joint"
-                                    else -> "Bank Account"
-                                }
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        a2.name,
-                                        color = Pf.Text,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        subtitle2,
-                                        color = Pf.Muted,
-                                        fontSize = 10.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        inr(bal2),
-                                        color = Pf.Text,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(top = 2.dp)
-                                    )
-                                }
-                            } else {
-                                Spacer(Modifier.weight(1f))
-                            }
-                        }
-                    }
-                }
-
-                // 2. CREDIT CARDS (DUES)
-                if (cards.isNotEmpty()) {
-                    if (accounts.isNotEmpty()) {
-                        Spacer(Modifier.height(Space.s2))
-                        Hairline()
-                    }
+                // 1. CREDIT CARDS (DUES)
+                if (pendingCards.isNotEmpty()) {
                     HomeListHeaderLabel("CREDIT CARDS · ${inr(totalCardDues)}")
-                    cards.forEachIndexed { idx, c ->
+                    pendingCards.forEachIndexed { idx, c ->
                         if (idx > 0) Hairline()
                         val cleanName = if (c.name.contains("••") && c.numberTail.isNotBlank()) {
                             c.name.substringBefore("••").trim().ifEmpty { c.name }
@@ -213,44 +127,66 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         val subtitle = listOfNotNull(duePart, tailPart, ownerPart).joinToString(" · ").ifEmpty { "Credit Card" }
 
                         HomeCompactRow(
-                            title = cleanName,
+                            title = "${idx + 1}. $cleanName",
                             subtitle = subtitle,
                             amount = inr(c.balance),
                             amountColor = Pf.Text
                         )
                     }
+                    hasPrior = true
                 }
 
-                // 3. LOANS
-                if (loans.isNotEmpty()) {
-                    if (accounts.isNotEmpty() || cards.isNotEmpty()) {
+                // 2. LOANS
+                if (pendingLoans.isNotEmpty()) {
+                    if (hasPrior) {
                         Spacer(Modifier.height(Space.s2))
                         Hairline()
                     }
                     HomeListHeaderLabel("LOANS · ${inr(totalLoanEmis)}/mo")
-                    loans.forEachIndexed { idx, l ->
+                    pendingLoans.forEachIndexed { idx, l ->
                         if (idx > 0) Hairline()
                         val subtitle = "${l.remainingMonths} mo left · EMI ${inr(l.monthlyEmi)}"
                         HomeCompactRow(
-                            title = l.name,
+                            title = "${idx + 1}. ${l.name}",
                             subtitle = subtitle,
                             amount = inr(l.monthlyEmi),
                             amountColor = Pf.Text
                         )
                     }
+                    hasPrior = true
                 }
 
-                // 4. SET ASIDE
-                if (setAsideItems.isNotEmpty()) {
-                    val totalSetAsideMonthly = setAsideItems.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
-                    if (accounts.isNotEmpty() || cards.isNotEmpty() || loans.isNotEmpty()) {
+                // 3. RECURRING
+                if (pendingRecurring.isNotEmpty()) {
+                    if (hasPrior) {
                         Spacer(Modifier.height(Space.s2))
                         Hairline()
                     }
-                    HomeListHeaderLabel("SET ASIDE · ${inr(totalSetAsideMonthly)}/mo")
-                    setAsideItems.forEachIndexed { idx, e ->
+                    HomeListHeaderLabel("RECURRING · ${inr(totalRecurring)}/mo")
+                    pendingRecurring.forEachIndexed { idx, e ->
                         if (idx > 0) Hairline()
-                        val monthlyShare = e.monthly(vm.salaryResetDayFor(e.person))
+                        val when_ = if (e.nextDue.isEmpty()) "" else " · due in ${Ledger.untilText(today(), e.nextDue)}"
+                        val subtitle = "${e.person} · ${e.category}$when_"
+                        HomeCompactRow(
+                            title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
+                            subtitle = subtitle,
+                            amount = inr(e.monthly),
+                            amountColor = Pf.Text
+                        )
+                    }
+                    hasPrior = true
+                }
+
+                // 4. SET ASIDE (Pending this month only)
+                if (pendingSetAsides.isNotEmpty()) {
+                    if (hasPrior) {
+                        Spacer(Modifier.height(Space.s2))
+                        Hairline()
+                    }
+                    HomeListHeaderLabel("SET ASIDE · ${inr(totalSetAsidePending)}")
+                    pendingSetAsides.forEachIndexed { idx, e ->
+                        if (idx > 0) Hairline()
+                        val left = vm.setAsideLeft(e)
                         val monthsLeftPart = if (e.nextDue.isNotEmpty()) {
                             val n = Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))
                             "$n mo left · due ${prettyDate(e.nextDue)}"
@@ -262,15 +198,16 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         HomeCompactRow(
                             title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
                             subtitle = subtitle,
-                            amount = inr(monthlyShare),
+                            amount = inr(left),
                             amountColor = Pf.Text
                         )
                     }
+                    hasPrior = true
                 }
 
                 // 5. SALARY / EXPECTED INCOME
                 if (upcomingSalary > 0.0) {
-                    if (accounts.isNotEmpty() || cards.isNotEmpty() || loans.isNotEmpty() || setAsideItems.isNotEmpty()) {
+                    if (hasPrior) {
                         Spacer(Modifier.height(Space.s2))
                         Hairline()
                     }
@@ -283,6 +220,22 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         amount = inr(upcomingSalary),
                         amountColor = Pf.Text
                     )
+                    hasPrior = true
+                }
+
+                if (!hasPrior) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = Space.s4),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "All dues, bills, and set-asides for this cycle are clear! 🎉",
+                            color = Pf.Muted,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
         }
@@ -422,7 +375,7 @@ private fun AfterAllExpensesCard(
             Text("—", color = Color(0xFF9CA3AF), fontSize = 13.sp)
             Column(horizontalAlignment = if (salary > 0.0) Alignment.CenterHorizontally else Alignment.End) {
                 Text(
-                    "Expenses (Dues+EMI)",
+                    "Expenses (Dues+Bills)",
                     color = Color(0xFF9CA3AF),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium
@@ -455,16 +408,14 @@ private fun AfterAllExpensesCard(
     }
 }
 
-
-
-
 /**
  * Shown when a confirm needs an account. An expense asks where the money left
  * from, income where it landed, and a set-aside asks both — debit and credit —
  * because both sides are yours.
  */
 @Composable
-private fun ConfirmSheet(vm: FinTrackViewModel) {
+fun ConfirmSheet(vm: FinTrackViewModel) {
+
     val pending = vm.pendingConfirm ?: return
     // Labelled with the owner: "SBI Savings · Me" beats "SBI Savings" when both
     // of you bank at the same place and the transfer is between profiles.
@@ -556,7 +507,7 @@ private fun ConfirmSheet(vm: FinTrackViewModel) {
 }
 
 @Composable
-private fun CardSettleSheet(vm: FinTrackViewModel) {
+fun CardSettleSheet(vm: FinTrackViewModel) {
     val cardId = vm.settlingCardId ?: return
     val card = vm.cards.firstOrNull { it.id == cardId } ?: return
 
@@ -613,7 +564,7 @@ private fun CardSettleSheet(vm: FinTrackViewModel) {
 }
 
 @Composable
-private fun BorrowedSettleSheet(vm: FinTrackViewModel) {
+fun BorrowedSettleSheet(vm: FinTrackViewModel) {
     val txnId = vm.settlingBorrowedTxnId ?: return
     val txn = vm.borrowedLentTxns.firstOrNull { it.id == txnId } ?: return
 

@@ -12,17 +12,23 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Text
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -413,57 +419,140 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                     }
                 }
 
-                items(dateTxns, key = { it.id }) { t ->
-                    PfCard(
-                        modifier = Modifier.clickable { vm.startEditTxn(t.id) },
-                        padding = PaddingValues(horizontal = Space.s4, vertical = 10.dp)
-                    ) {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Space.s3)
-                        ) {
-                            CategoryAvatar(t.category, t.kind)
-
-                            Column(Modifier.weight(1f)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(
-                                        t.note.ifEmpty { t.category },
-                                        color = Pf.Text,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    if (t.source == "sms") OutlineTag("SMS")
+                itemsIndexed(dateTxns, key = { _, t -> t.id }) { idx, t ->
+                    @OptIn(ExperimentalMaterial3Api::class)
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        confirmValueChange = { dismissValue ->
+                            when (dismissValue) {
+                                SwipeToDismissBoxValue.StartToEnd -> {
+                                    vm.deleteTxn(t.id)
+                                    true
                                 }
-                                Spacer(Modifier.height(2.dp))
-                                Muted(
-                                    "${t.category} · ${vm.txnAccountLabel(t)}",
-                                    size = 11
-                                )
+                                SwipeToDismissBoxValue.EndToStart -> {
+                                    vm.startEditTxn(t.id)
+                                    false
+                                }
+                                SwipeToDismissBoxValue.Settled -> false
+                            }
+                        }
+                    )
+
+                    @OptIn(ExperimentalMaterial3Api::class)
+                    SwipeToDismissBox(
+                        state = dismissState,
+                        enableDismissFromStartToEnd = true,
+                        enableDismissFromEndToStart = true,
+                        backgroundContent = {
+                            val direction = dismissState.dismissDirection
+                            val isDeleting = direction == SwipeToDismissBoxValue.StartToEnd
+                            val isEditing = direction == SwipeToDismissBoxValue.EndToStart
+
+                            val bgColor = when {
+                                isDeleting -> Color(0xFFEF4444)
+                                isEditing -> Pf.Accent
+                                else -> Color.Transparent
                             }
 
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    when (t.kind) {
-                                        "INCOME" -> "+${inr(t.amount)}"
-                                        "TRANSFER" -> "↔ ${inr(t.amount)}"
-                                        else -> "−${inr(t.amount)}"
-                                    },
-                                    color = when (t.kind) {
-                                        "TRANSFER" -> Pf.Muted
-                                        else -> Pf.Text
-                                    },
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1
-                                )
-                                Spacer(Modifier.height(2.dp))
-                                Muted(t.whenText, size = 11)
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .background(bgColor, Radius.Md)
+                                    .padding(horizontal = Space.s4),
+                                contentAlignment = if (isDeleting) Alignment.CenterStart else Alignment.CenterEnd
+                            ) {
+                                if (isDeleting) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(Space.s1)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "Delete",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text(
+                                            "Delete",
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                } else if (isEditing) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(Space.s1)
+                                    ) {
+                                        Text(
+                                            "Edit",
+                                            color = Pf.OnAccent,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Icon(
+                                            Icons.Default.Edit,
+                                            contentDescription = "Edit",
+                                            tint = Pf.OnAccent,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    ) {
+                        PfCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { vm.startEditTxn(t.id) },
+                            padding = PaddingValues(horizontal = Space.s4, vertical = 10.dp)
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Space.s3)
+                            ) {
+                                CategoryAvatar(t.category, t.kind)
+
+                                Column(Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            "${idx + 1}. ${t.note.ifEmpty { t.category }}",
+                                            color = Pf.Text,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        if (t.source == "sms") OutlineTag("SMS")
+                                    }
+                                    Spacer(Modifier.height(2.dp))
+                                    Muted(
+                                        "${t.category} · ${vm.txnAccountLabel(t)}",
+                                        size = 11
+                                    )
+                                }
+
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        when (t.kind) {
+                                            "INCOME" -> "+${inr(t.amount)}"
+                                            "TRANSFER" -> "↔ ${inr(t.amount)}"
+                                            else -> "−${inr(t.amount)}"
+                                        },
+                                        color = when (t.kind) {
+                                            "TRANSFER" -> Pf.Muted
+                                            else -> Pf.Text
+                                        },
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Muted(t.whenText, size = 11)
+                                }
                             }
                         }
                     }

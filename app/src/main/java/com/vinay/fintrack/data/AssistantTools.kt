@@ -51,14 +51,14 @@ object AssistantTools {
         })
         add(tool(
             "list_transactions",
-            "Individual transactions, newest first."
+            "Individual transactions grouped by date, newest first. In chat, users can reference them by date and day serial number starting at 1 per day (e.g. 'yesterday 1', 'yesterday first 5 transactions', 'today 2')."
         ) {
             put("month", str("Restrict to a month as yyyy-MM. Omit for all."))
             put("category", str("Restrict to one category."))
             put("search", str("Match payee, note or reference."))
             put("from", str("Earliest date, YYYY-MM-DD."))
             put("to", str("Latest date, YYYY-MM-DD."))
-            put("limit", int("How many to return. Default 30."))
+            put("limit", int("How many to return. Default 50."))
         })
 
         // ── transactions ───────────────────────────────────────────────
