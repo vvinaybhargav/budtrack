@@ -110,24 +110,88 @@ fun HomeScreen(vm: FinTrackViewModel) {
                 padding = PaddingValues(horizontal = Space.s4, vertical = Space.s2),
                 shape = Radius.Lg
             ) {
-                // 1. BANKS
+                // 1. BANKS (Side by Side)
                 if (accounts.isNotEmpty()) {
                     HomeListHeaderLabel("BANKS · ${inr(totalBankBalances)}")
-                    accounts.forEachIndexed { idx, a ->
-                        if (idx > 0) Hairline()
-                        val bal = vm.balanceOf(a)
-                        val subtitle = when {
-                            a.numberTail.isNotBlank() && a.person == "Joint" -> "••••${a.numberTail} · Joint"
-                            a.numberTail.isNotBlank() -> "••••${a.numberTail}"
-                            a.person == "Joint" -> "Joint"
-                            else -> "Bank Account"
+                    val accountPairs = accounts.chunked(2)
+                    accountPairs.forEachIndexed { rowIdx, pair ->
+                        if (rowIdx > 0) Hairline()
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(Space.s3)
+                        ) {
+                            val a1 = pair[0]
+                            val bal1 = vm.balanceOf(a1)
+                            val subtitle1 = when {
+                                a1.numberTail.isNotBlank() && a1.person == "Joint" -> "••••${a1.numberTail} · Joint"
+                                a1.numberTail.isNotBlank() -> "••••${a1.numberTail}"
+                                a1.person == "Joint" -> "Joint"
+                                else -> "Bank Account"
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    a1.name,
+                                    color = Pf.Text,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    subtitle1,
+                                    color = Pf.Muted,
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    inr(bal1),
+                                    color = Pf.Text,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+
+                            if (pair.size > 1) {
+                                val a2 = pair[1]
+                                val bal2 = vm.balanceOf(a2)
+                                val subtitle2 = when {
+                                    a2.numberTail.isNotBlank() && a2.person == "Joint" -> "••••${a2.numberTail} · Joint"
+                                    a2.numberTail.isNotBlank() -> "••••${a2.numberTail}"
+                                    a2.person == "Joint" -> "Joint"
+                                    else -> "Bank Account"
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        a2.name,
+                                        color = Pf.Text,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        subtitle2,
+                                        color = Pf.Muted,
+                                        fontSize = 10.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        inr(bal2),
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    )
+                                }
+                            } else {
+                                Spacer(Modifier.weight(1f))
+                            }
                         }
-                        HomeCompactRow(
-                            title = a.name,
-                            subtitle = subtitle,
-                            amount = inr(bal),
-                            amountColor = Pf.Text
-                        )
                     }
                 }
 
