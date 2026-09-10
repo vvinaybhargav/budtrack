@@ -1880,6 +1880,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         draft = draft.copy(person = scopePerson)
     }
 
+    fun toggleBucket() {
+        setScope(bucketView != "JOINT")
+    }
+
     /**
      * Balances for every account in one pass, cached against the transaction
      * list it was built from. Recomputing per account per recomposition was
