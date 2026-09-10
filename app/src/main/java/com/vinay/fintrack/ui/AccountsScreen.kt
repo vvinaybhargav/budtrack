@@ -3,7 +3,6 @@ package com.vinay.fintrack.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,25 +15,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CreditCard
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Payments
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.People
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -45,114 +33,83 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.Tab
-import com.vinay.fintrack.data.Account
-import com.vinay.fintrack.data.Card
-import com.vinay.fintrack.data.Loan
 import com.vinay.fintrack.data.inr
-
-private enum class AccountsSectionFilter(val label: String) {
-    ALL("All"),
-    BANKS("Bank Accounts"),
-    CARDS("Credit Cards"),
-    LOANS("Loans & EMIs")
-}
 
 @Composable
 fun AccountsScreen(vm: FinTrackViewModel) {
-    var sectionFilter by remember { mutableStateOf(AccountsSectionFilter.ALL) }
-
     LazyColumn(
         Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(bottom = 80.dp, top = Space.s2, start = Space.s4, end = Space.s4),
-        verticalArrangement = Arrangement.spacedBy(Space.s4)
+        contentPadding = PaddingValues(bottom = 90.dp, top = Space.s3, start = Space.s4, end = Space.s4),
+        verticalArrangement = Arrangement.spacedBy(Space.s5)
     ) {
-        // 1. Header with Scope Switch
+        // 1. Header
         item {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        "Accounts & Balances",
-                        color = Pf.Text,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                    Muted("Edit bank balances, card limits & loan EMIs")
-                }
-                Row(
-                    Modifier
-                        .background(Pf.Surface2, Radius.Pill)
-                        .clickable { vm.toggleBucket() }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        if (vm.bucketView == "JOINT") Icons.Default.People else Icons.Default.Person,
-                        null,
-                        Modifier.size(13.dp),
-                        tint = Pf.Accent400
-                    )
-                    Text(
-                        if (vm.bucketView == "JOINT") "Joint" else (vm.activeProfile ?: "Personal"),
-                        color = Pf.Text,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    "Accounts & Balances",
+                    color = Pf.Text,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(Modifier.height(2.dp))
+                Muted("Tap any item to edit balance, card limits, or EMI details", size = 13)
             }
         }
 
-        // 2. Filter Pills
+        // 2. Bank Accounts Section
         item {
-            Row(
+            ManageBanksSection(vm)
+        }
+
+        // 3. Credit Cards Section
+        item {
+            ManageCardsSection(vm)
+        }
+
+        // 4. Loans Section
+        item {
+            ManageLoansSection(vm)
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(
+    icon: ImageVector,
+    title: String,
+    badgeText: String,
+    onAddClick: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = Space.s1),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.s2),
+            modifier = Modifier.weight(1f, fill = false)
+        ) {
+            Box(
                 Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    .size(28.dp)
+                    .background(Pf.Surface2, Radius.Sm),
+                contentAlignment = Alignment.Center
             ) {
-                AccountsSectionFilter.values().forEach { filter ->
-                    val isSelected = sectionFilter == filter
-                    Text(
-                        filter.label,
-                        modifier = Modifier
-                            .background(
-                                if (isSelected) Pf.Accent else Pf.Surface2,
-                                Radius.Pill
-                            )
-                            .clickable { sectionFilter = filter }
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
-                        color = if (isSelected) Pf.OnAccent else Pf.Text,
-                        fontSize = 13.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold
-                    )
-                }
+                Icon(icon, null, Modifier.size(15.dp), tint = Pf.Accent400)
             }
+            Text(
+                title,
+                color = Pf.Text,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+            Tag(badgeText, Pf.Accent100, Pf.Accent800)
         }
-
-        // 3. Bank Accounts Section
-        if (sectionFilter == AccountsSectionFilter.ALL || sectionFilter == AccountsSectionFilter.BANKS) {
-            item {
-                ManageBanksSection(vm)
-            }
-        }
-
-        // 4. Credit Cards Section
-        if (sectionFilter == AccountsSectionFilter.ALL || sectionFilter == AccountsSectionFilter.CARDS) {
-            item {
-                ManageCardsSection(vm)
-            }
-        }
-
-        // 5. Loans Section
-        if (sectionFilter == AccountsSectionFilter.ALL || sectionFilter == AccountsSectionFilter.LOANS) {
-            item {
-                ManageLoansSection(vm)
-            }
-        }
+        GhostButton("+ Add", onClick = onAddClick)
     }
 }
 
@@ -162,25 +119,15 @@ private fun ManageBanksSection(vm: FinTrackViewModel) {
     val totalBalance = accounts.sumOf { vm.balanceOf(it) }
 
     Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.s2),
-                modifier = Modifier.weight(1f, fill = false)
-            ) {
-                Icon(Icons.Default.AccountBalance, null, Modifier.size(18.dp), tint = Pf.Accent400)
-                Text("Bank Accounts", color = Pf.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Tag(inr(totalBalance), Pf.Accent100, Pf.Accent800)
-            }
-            GhostButton("+ Add", {
+        SectionHeader(
+            icon = Icons.Default.AccountBalance,
+            title = "Bank Accounts",
+            badgeText = inr(totalBalance),
+            onAddClick = {
                 vm.selectAddKind("BANK_ACCOUNT")
                 vm.tab = Tab.ADD
-            })
-        }
+            }
+        )
 
         if (accounts.isEmpty()) {
             PfCard(padding = PaddingValues(Space.s4)) {
@@ -229,6 +176,8 @@ private fun ManageBanksSection(vm: FinTrackViewModel) {
                             }
                         }
                     } else {
+                        val bal = vm.balanceOf(a)
+                        val isNegative = bal < 0.0
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -237,7 +186,7 @@ private fun ManageBanksSection(vm: FinTrackViewModel) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(Modifier.weight(1f)) {
+                            Column(Modifier.weight(1f).padding(end = Space.s2)) {
                                 Text(
                                     a.name,
                                     color = Pf.Text,
@@ -246,28 +195,25 @@ private fun ManageBanksSection(vm: FinTrackViewModel) {
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    if (a.numberTail.isNotBlank()) "••${a.numberTail} · ${a.owner}" else a.owner,
-                                    color = Pf.Muted,
-                                    fontSize = 12.sp
-                                )
+                                val subtitle = when {
+                                    a.numberTail.isNotBlank() && a.person == "Joint" -> "••••${a.numberTail} · Joint"
+                                    a.numberTail.isNotBlank() -> "••••${a.numberTail}"
+                                    a.person == "Joint" -> "Joint"
+                                    else -> "Bank Account"
+                                }
+                                Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
                             }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(Space.s2)
                             ) {
                                 Text(
-                                    inr(vm.balanceOf(a)),
-                                    color = Pf.Text,
+                                    inr(bal),
+                                    color = if (isNegative) Color(0xFFEF4444) else Pf.Text,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold
                                 )
-                                IconButton(
-                                    onClick = { vm.startEditAccount(a) },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(Icons.Default.Edit, "Edit account", Modifier.size(16.dp), tint = Pf.Accent400)
-                                }
+                                Text("›", color = Pf.Muted, fontSize = 16.sp)
                             }
                         }
                     }
@@ -283,25 +229,15 @@ private fun ManageCardsSection(vm: FinTrackViewModel) {
     val totalDues = cards.sumOf { it.balance }
 
     Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.s2),
-                modifier = Modifier.weight(1f, fill = false)
-            ) {
-                Icon(Icons.Default.CreditCard, null, Modifier.size(18.dp), tint = Pf.Accent400)
-                Text("Credit Cards", color = Pf.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Tag(inr(totalDues), Pf.Accent100, Pf.Accent800)
-            }
-            GhostButton("+ Add", {
+        SectionHeader(
+            icon = Icons.Default.CreditCard,
+            title = "Credit Cards",
+            badgeText = inr(totalDues),
+            onAddClick = {
                 vm.selectAddKind("CREDIT_CARD")
                 vm.tab = Tab.ADD
-            })
-        }
+            }
+        )
 
         if (cards.isEmpty()) {
             PfCard(padding = PaddingValues(Space.s4)) {
@@ -385,6 +321,10 @@ private fun ManageCardsSection(vm: FinTrackViewModel) {
                             }
                         }
                     } else {
+                        val cleanName = if (c.name.contains("••") && c.numberTail.isNotBlank()) {
+                            c.name.substringBefore("••").trim().ifEmpty { c.name }
+                        } else c.name
+
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -395,20 +335,18 @@ private fun ManageCardsSection(vm: FinTrackViewModel) {
                         ) {
                             Column(Modifier.weight(1f).padding(end = Space.s2)) {
                                 Text(
-                                    c.name,
+                                    cleanName,
                                     color = Pf.Text,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                val info = when {
-                                    c.dueText.isNotBlank() && c.numberTail.isNotBlank() -> "Due: ${c.dueText} · ••${c.numberTail}"
-                                    c.dueText.isNotBlank() -> "Due: ${c.dueText} · ${c.owner}"
-                                    c.numberTail.isNotBlank() -> "••${c.numberTail} · ${c.owner}"
-                                    else -> c.owner
-                                }
-                                Text(info, color = Pf.Muted, fontSize = 12.sp)
+                                val duePart = if (c.dueText.isNotBlank()) "Due: ${c.dueText}" else null
+                                val tailPart = if (c.numberTail.isNotBlank()) "••••${c.numberTail}" else null
+                                val ownerPart = if (c.owner == "Joint") "Joint" else null
+                                val subtitle = listOfNotNull(duePart, tailPart, ownerPart).joinToString(" · ").ifEmpty { "Credit Card" }
+                                Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
                             }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -424,18 +362,14 @@ private fun ManageCardsSection(vm: FinTrackViewModel) {
                                     Box(
                                         Modifier
                                             .background(Pf.Surface2, Radius.Pill)
+                                            .border(1.dp, Pf.Hairline, Radius.Pill)
                                             .clickable { vm.startSettleCard(c.id) }
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            .padding(horizontal = 10.dp, vertical = 3.dp)
                                     ) {
-                                        Text("Settle", color = Pf.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("Settle", color = Pf.Text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
-                                IconButton(
-                                    onClick = { vm.startEditCard(c) },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(Icons.Default.Edit, "Edit card", Modifier.size(16.dp), tint = Pf.Accent400)
-                                }
+                                Text("›", color = Pf.Muted, fontSize = 16.sp)
                             }
                         }
                     }
@@ -451,25 +385,15 @@ private fun ManageLoansSection(vm: FinTrackViewModel) {
     val totalEmis = loans.sumOf { it.monthlyEmi }
 
     Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.s2),
-                modifier = Modifier.weight(1f, fill = false)
-            ) {
-                Icon(Icons.Default.Payments, null, Modifier.size(18.dp), tint = Pf.Accent400)
-                Text("Loans & EMIs", color = Pf.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Tag(inr(totalEmis), Pf.Accent100, Pf.Accent800)
-            }
-            GhostButton("+ Add", {
+        SectionHeader(
+            icon = Icons.Default.Payments,
+            title = "Loans & EMIs",
+            badgeText = inr(totalEmis),
+            onAddClick = {
                 vm.selectAddKind("EMI_LOAN")
                 vm.tab = Tab.ADD
-            })
-        }
+            }
+        )
 
         if (loans.isEmpty()) {
             PfCard(padding = PaddingValues(Space.s4)) {
@@ -546,7 +470,7 @@ private fun ManageLoansSection(vm: FinTrackViewModel) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(Modifier.weight(1f)) {
+                            Column(Modifier.weight(1f).padding(end = Space.s2)) {
                                 Text(
                                     l.name,
                                     color = Pf.Text,
@@ -555,11 +479,10 @@ private fun ManageLoansSection(vm: FinTrackViewModel) {
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    "${l.remainingMonths} mo left · EMI ${inr(l.monthlyEmi)} · ${l.person}",
-                                    color = Pf.Muted,
-                                    fontSize = 12.sp
-                                )
+                                val personPart = if (l.person == "Joint") "Joint" else null
+                                val tenurePart = "${l.remainingMonths} mo left · EMI ${inr(l.monthlyEmi)}"
+                                val subtitle = listOfNotNull(tenurePart, personPart).joinToString(" · ")
+                                Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
                             }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -569,22 +492,18 @@ private fun ManageLoansSection(vm: FinTrackViewModel) {
                                 Box(
                                     Modifier
                                         .background(Pf.Surface2, Radius.Pill)
+                                        .border(1.dp, Pf.Hairline, Radius.Pill)
                                         .clickable { vm.confirmLoan(l) }
-                                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                                    ) {
-                                        Text(
-                                            if (isPaid) "Paid" else "Pay EMI",
-                                            color = if (isPaid) Pf.Muted else Pf.Text,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    }
-                                IconButton(
-                                    onClick = { vm.startEditLoan(l) },
-                                    modifier = Modifier.size(32.dp)
+                                        .padding(horizontal = 10.dp, vertical = 3.dp)
                                 ) {
-                                    Icon(Icons.Default.Edit, "Edit loan", Modifier.size(16.dp), tint = Pf.Accent400)
+                                    Text(
+                                        if (isPaid) "Paid" else "Pay EMI",
+                                        color = if (isPaid) Pf.Muted else Pf.Text,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 }
+                                Text("›", color = Pf.Muted, fontSize = 16.sp)
                             }
                         }
                     }

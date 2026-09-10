@@ -216,6 +216,10 @@ private fun DuesCleanSection(vm: FinTrackViewModel) {
                 Column {
                     cards.forEachIndexed { idx, c ->
                         if (idx > 0) Hairline()
+                        val cleanName = if (c.name.contains("••") && c.numberTail.isNotBlank()) {
+                            c.name.substringBefore("••").trim().ifEmpty { c.name }
+                        } else c.name
+
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -226,20 +230,19 @@ private fun DuesCleanSection(vm: FinTrackViewModel) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(Modifier.weight(1f)) {
+                            Column(Modifier.weight(1f).padding(end = Space.s2)) {
                                 Text(
-                                    c.name,
+                                    cleanName,
                                     color = Pf.Text,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Normal,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                val subtitle = when {
-                                    c.dueText.isNotBlank() -> "Due: ${c.dueText}"
-                                    c.numberTail.isNotBlank() -> "•••• ${c.numberTail}"
-                                    else -> c.owner
-                                }
+                                val duePart = if (c.dueText.isNotBlank()) "Due: ${c.dueText}" else null
+                                val tailPart = if (c.numberTail.isNotBlank()) "••••${c.numberTail}" else null
+                                val ownerPart = if (c.owner == "Joint") "Joint" else null
+                                val subtitle = listOfNotNull(duePart, tailPart, ownerPart).joinToString(" · ").ifEmpty { "Credit Card" }
                                 Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
                             }
                             Text(
@@ -275,6 +278,8 @@ private fun BanksCleanSection(vm: FinTrackViewModel) {
                 Column {
                     accounts.forEachIndexed { idx, a ->
                         if (idx > 0) Hairline()
+                        val bal = vm.balanceOf(a)
+                        val isNegative = bal < 0.0
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -282,7 +287,7 @@ private fun BanksCleanSection(vm: FinTrackViewModel) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(Modifier.weight(1f)) {
+                            Column(Modifier.weight(1f).padding(end = Space.s2)) {
                                 Text(
                                     a.name,
                                     color = Pf.Text,
@@ -291,15 +296,17 @@ private fun BanksCleanSection(vm: FinTrackViewModel) {
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    if (a.numberTail.isNotBlank()) "••${a.numberTail} · ${a.owner}" else a.owner,
-                                    color = Pf.Muted,
-                                    fontSize = 12.sp
-                                )
+                                val subtitle = when {
+                                    a.numberTail.isNotBlank() && a.person == "Joint" -> "••••${a.numberTail} · Joint"
+                                    a.numberTail.isNotBlank() -> "••••${a.numberTail}"
+                                    a.person == "Joint" -> "Joint"
+                                    else -> "Bank Account"
+                                }
+                                Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
                             }
                             Text(
-                                inr(vm.balanceOf(a)),
-                                color = Pf.Text,
+                                inr(bal),
+                                color = if (isNegative) Color(0xFFEF4444) else Pf.Text,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Medium
                             )

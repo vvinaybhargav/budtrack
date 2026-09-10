@@ -227,7 +227,11 @@ fun looksLikePlainPin(value: String): Boolean =
 
 private val inrFormat: NumberFormat = NumberFormat.getIntegerInstance(Locale("en", "IN"))
 
-fun inr(n: Double): String = "₹" + inrFormat.format(Math.round(n))
+fun inr(n: Double): String {
+    val rounded = Math.round(n)
+    return if (rounded < 0) "-₹" + inrFormat.format(-rounded)
+    else "₹" + inrFormat.format(rounded)
+}
 
 fun ownerLabel(person: String): String = if (person == "Joint") "Joint" else "$person · personal"
 
