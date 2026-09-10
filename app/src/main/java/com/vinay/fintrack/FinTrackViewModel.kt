@@ -154,6 +154,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             persisted = persisted.copy(txns = remote + localOnly).also { ownRevision = store.save(it) }
             localOnly.forEach { sync.upsertTxn(it) }
             syncedAt = System.currentTimeMillis()
+            reconcileUnmatchedTxns()
         }
         sync.onTxnsMissing = { sync.pushAllTxns(persisted.txns) }
         // Nothing that touches state is started here: the session properties
@@ -1424,6 +1425,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         cancelUnmatchedAccountPrompt()
+        reconcileUnmatchedTxns()
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             android.widget.Toast.makeText(appContext, "${entity.suggestedName} added & transactions linked!", android.widget.Toast.LENGTH_SHORT).show()
         }
@@ -1524,6 +1526,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
         newAccountDraft = NewAccountDraft(owner = activeProfile ?: "Me")
         tab = Tab.HOME
+        reconcileUnmatchedTxns()
     }
 
     fun addNewCard() {
@@ -1558,6 +1561,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
         newCardDraft = NewCardDraft(owner = activeProfile ?: "Me")
         tab = Tab.HOME
+        reconcileUnmatchedTxns()
     }
 
     // ── inline editors ─────────────────────────────────────────────────
@@ -1598,6 +1602,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             s.copy(accounts = updatedAccounts, txns = updatedTxns)
         }
         editingAccountId = null
+        reconcileUnmatchedTxns()
     }
 
     /**
@@ -1719,6 +1724,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             s.copy(cards = updatedCards, txns = updatedTxns)
         }
         editingCardId = null
+        reconcileUnmatchedTxns()
     }
 
     /**
@@ -2808,6 +2814,69 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s -> s.copy(entries = s.entries.filterNot { it.id in doomed }) }
     }
 
+    /**
+     * Auto-reconciles any imported transactions that have no account/card yet
+     * against existing accounts or credit cards matching the account tail or name.
+     */
+    fun reconcileUnmatchedTxns() {
+        val currentCards = persisted.cards
+        val currentAccounts = persisted.accounts
+        if (currentCards.isEmpty() && currentAccounts.isEmpty()) return
+
+        var hasChanges = false
+        val modifiedTxns = mutableListOf<Txn>()
+        val cardSpendToAdd = mutableMapOf<String, Double>()
+
+        val updatedTxns = persisted.txns.map { t ->
+            if (t.cardId.isEmpty() && t.fromAccountId.isEmpty() && t.toAccountId.isEmpty()) {
+                val tail = t.accountTail.trim()
+                val digits = tail.filter { it.isDigit() }
+
+                // 1. Try matching with existing Credit Cards
+                val matchedCard = currentCards.firstOrNull { c ->
+                    (tail.isNotEmpty() && c.numberTail.isNotBlank() && DetectedAccountParser.tailsMatch(c.numberTail, tail)) ||
+                    (digits.length >= 3 && c.name.filter { it.isDigit() }.endsWith(digits)) ||
+                    (tail.isNotEmpty() && c.name.contains(tail, ignoreCase = true))
+                }
+                if (matchedCard != null) {
+                    hasChanges = true
+                    val updated = t.copy(cardId = matchedCard.id, accountTail = "")
+                    modifiedTxns.add(updated)
+                    if (t.kind == "EXPENSE") {
+                        cardSpendToAdd[matchedCard.id] = (cardSpendToAdd[matchedCard.id] ?: 0.0) + t.amount
+                    }
+                    return@map updated
+                }
+
+                // 2. Try matching with existing Bank Accounts
+                val matchedAccount = currentAccounts.firstOrNull { a ->
+                    (tail.isNotEmpty() && a.numberTail.isNotBlank() && DetectedAccountParser.tailsMatch(a.numberTail, tail)) ||
+                    (digits.length >= 3 && a.name.filter { it.isDigit() }.endsWith(digits)) ||
+                    (tail.isNotEmpty() && a.name.contains(tail, ignoreCase = true))
+                }
+                if (matchedAccount != null) {
+                    hasChanges = true
+                    val updated = if (t.kind == "INCOME") t.copy(toAccountId = matchedAccount.id, accountTail = "")
+                                  else t.copy(fromAccountId = matchedAccount.id, accountTail = "")
+                    modifiedTxns.add(updated)
+                    return@map updated
+                }
+            }
+            t
+        }
+
+        if (hasChanges) {
+            val updatedCards = persisted.cards.map { c ->
+                val addSpend = cardSpendToAdd[c.id] ?: 0.0
+                if (c.balance == 0.0 && addSpend > 0.0) {
+                    c.copy(balance = addSpend)
+                } else c
+            }
+            persisted = persisted.copy(txns = updatedTxns, cards = updatedCards).also { ownRevision = store.save(it) }
+            modifiedTxns.forEach { sync.upsertTxn(it) }
+        }
+    }
+
     init {
         // Joint briefly was a sign-in profile; it's a view now, so take it back
         // out of the list rather than leaving a login nobody should use.
@@ -2820,6 +2889,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         migrateDuplicateEmiEntries()
         migratePlainPins()
         addStandardCategories()
+        reconcileUnmatchedTxns()
         if (persisted.firebaseConfigText.isNotBlank()) connectSync()
     }
 

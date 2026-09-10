@@ -223,10 +223,15 @@ object DetectedAccountParser {
      * Checks if two account/card tails match (e.g. "345" vs "1345" or exact match).
      */
     fun tailsMatch(a: String, b: String): Boolean {
+        val digitsA = a.filter { it.isDigit() }
+        val digitsB = b.filter { it.isDigit() }
+        if (digitsA.isNotEmpty() && digitsB.isNotEmpty()) {
+            return digitsA == digitsB || digitsA.endsWith(digitsB) || digitsB.endsWith(digitsA)
+        }
         val cleanA = a.trim()
         val cleanB = b.trim()
         if (cleanA.isEmpty() || cleanB.isEmpty()) return false
-        return cleanA == cleanB || cleanA.endsWith(cleanB) || cleanB.endsWith(cleanA)
+        return cleanA.equals(cleanB, ignoreCase = true) || cleanA.endsWith(cleanB, ignoreCase = true) || cleanB.endsWith(cleanA, ignoreCase = true)
     }
 
     /**

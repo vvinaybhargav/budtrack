@@ -1221,8 +1221,25 @@ private fun OverviewUpcomingDues(vm: FinTrackViewModel) {
 
 @Composable
 private fun UnmatchedAccountAlert(vm: FinTrackViewModel) {
-    val txnsNeedingAccount = vm.txnsNeedingAccount.filter { it.accountTail.isNotBlank() }
-    val uniqueTails = txnsNeedingAccount.map { it.accountTail }.distinct()
+    val knownTails = (
+        vm.accounts.map { it.numberTail } +
+        vm.cards.map { it.numberTail } +
+        vm.accounts.map { it.name } +
+        vm.cards.map { it.name }
+    ).filter { it.isNotBlank() }
+
+    val txnsNeedingAccount = vm.txnsNeedingAccount
+        .filter { it.accountTail.isNotBlank() }
+        .filter { t ->
+            val tail = t.accountTail.trim()
+            val digits = tail.filter { it.isDigit() }
+            knownTails.none { known ->
+                DetectedAccountParser.tailsMatch(known, tail) ||
+                (digits.length >= 3 && known.filter { it.isDigit() }.endsWith(digits)) ||
+                known.contains(tail, ignoreCase = true)
+            }
+        }
+    val uniqueTails = txnsNeedingAccount.map { it.accountTail.trim() }.distinct()
 
     if (uniqueTails.isNotEmpty()) {
         Column(
@@ -1235,8 +1252,8 @@ private fun UnmatchedAccountAlert(vm: FinTrackViewModel) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(Pf.Accent100, Radius.Md)
-                        .border(1.dp, Pf.Accent, Radius.Md)
+                        .background(Pf.Surface2, Radius.Md)
+                        .border(1.dp, Pf.Hairline, Radius.Md)
                         .clickable { vm.navigateToCreateAccountFromTail(tail) }
                         .padding(Space.s3),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1245,7 +1262,7 @@ private fun UnmatchedAccountAlert(vm: FinTrackViewModel) {
                     Column(Modifier.weight(1f)) {
                         Text(
                             "New Account/Card detected: ••$tail",
-                            color = Pf.Accent800, fontSize = 13.sp, fontWeight = FontWeight.Bold
+                            color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold
                         )
                         Spacer(Modifier.height(2.dp))
                         Muted(
@@ -1253,7 +1270,7 @@ private fun UnmatchedAccountAlert(vm: FinTrackViewModel) {
                             size = 11
                         )
                     }
-                    Tag("Action Required", Pf.Accent, Color.White)
+                    Tag("Action Required", Pf.Accent, if (Pf.isDark) Color.Black else Color.White)
                 }
             }
         }

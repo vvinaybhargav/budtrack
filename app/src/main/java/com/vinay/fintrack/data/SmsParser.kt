@@ -301,20 +301,22 @@ fun matchCardByBank(cards: List<Card>, body: String): AccountMatch {
 }
 
 private fun matchByTail(items: List<Pair<String, String>>, tail: String): AccountMatch {
-    if (tail.isBlank()) return AccountMatch.None
-    val withTails = items.filter { it.second.isNotBlank() }
+    val cleanTail = tail.filter { it.isDigit() }.ifEmpty { tail.trim() }
+    if (cleanTail.isBlank()) return AccountMatch.None
+    val withTails = items.map { (id, raw) -> id to raw.filter { it.isDigit() }.ifEmpty { raw.trim() } }
+        .filter { it.second.isNotBlank() }
 
-    withTails.filter { it.second == tail }.let {
+    withTails.filter { it.second == cleanTail }.let {
         if (it.size == 1) return AccountMatch.One(it.first().first)
-        if (it.size > 1) return AccountMatch.Ambiguous(tail, it.size)
+        if (it.size > 1) return AccountMatch.Ambiguous(cleanTail, it.size)
     }
 
     val suffix = withTails.filter {
-        it.second.endsWith(tail) || tail.endsWith(it.second)
+        it.second.endsWith(cleanTail) || cleanTail.endsWith(it.second)
     }
     return when {
         suffix.size == 1 -> AccountMatch.One(suffix.first().first)
-        suffix.size > 1 -> AccountMatch.Ambiguous(tail, suffix.size)
+        suffix.size > 1 -> AccountMatch.Ambiguous(cleanTail, suffix.size)
         else -> AccountMatch.None
     }
 }
