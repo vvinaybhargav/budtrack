@@ -74,13 +74,15 @@ fun HomeScreen(vm: FinTrackViewModel) {
     val otherExpenses = totalCardDues + totalLoanEmis
     val afterAllExpenses = totalBankBalances - otherExpenses
 
+    val cards = vm.scopedCards
+    val accounts = vm.scopedAccounts
+    val loans = activeLoans
     val setAsideItems = vm.annualSetAsides
-    val totalSetAsideAmount = setAsideItems.sumOf { it.amount }
 
     LazyColumn(
         Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(bottom = 80.dp, top = Space.s2, start = Space.s4, end = Space.s4),
-        verticalArrangement = Arrangement.spacedBy(Space.s4)
+        contentPadding = PaddingValues(bottom = 90.dp, top = Space.s2, start = Space.s4, end = Space.s4),
+        verticalArrangement = Arrangement.spacedBy(Space.s3)
     ) {
         // 1. Scope Switch (Personal / Joint ledger toggle) + billing cycle
         item { ScopeSwitch(vm) }
@@ -99,41 +101,97 @@ fun HomeScreen(vm: FinTrackViewModel) {
             )
         }
 
-        // 3. DUES Section (Swiggy Credit card - 850, Icici - 2554)
+        // 3. UNIFIED 1-BY-1 CLEAN LIST (No separate division boxes)
         item {
-            DuesCleanSection(vm)
-        }
-
-        // 4. BANKS Section (ICICI Bank - 54000)
-        item {
-            BanksCleanSection(vm)
-        }
-
-        // 5. LOANS Section
-        item {
-            LoansCleanSection(vm)
-        }
-
-        // 6. SET ASIDE Section (Set a Side - Total amount, 1. 2.)
-        item {
-            SetAsideCleanSection(
-                vm = vm,
-                items = setAsideItems,
-                totalAmount = totalSetAsideAmount
-            )
-        }
-
-        item {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = Space.s2),
-                horizontalArrangement = Arrangement.Center
+            PfCard(
+                modifier = Modifier.fillMaxWidth(),
+                padding = PaddingValues(horizontal = Space.s4, vertical = Space.s2),
+                shape = Radius.Lg
             ) {
-                SecondaryButton(
-                    text = "Edit Balances, Cards & Loans ›",
-                    onClick = { vm.tab = com.vinay.fintrack.Tab.ACCOUNTS }
-                )
+                // DUES
+                if (cards.isNotEmpty()) {
+                    HomeListHeaderLabel("DUES · ${inr(totalCardDues)}")
+                    cards.forEachIndexed { idx, c ->
+                        if (idx > 0) Hairline()
+                        val cleanName = if (c.name.contains("••") && c.numberTail.isNotBlank()) {
+                            c.name.substringBefore("••").trim().ifEmpty { c.name }
+                        } else c.name
+                        val duePart = if (c.dueText.isNotBlank()) "Due: ${c.dueText}" else null
+                        val tailPart = if (c.numberTail.isNotBlank()) "••••${c.numberTail}" else null
+                        val ownerPart = if (c.owner == "Joint") "Joint" else null
+                        val subtitle = listOfNotNull(duePart, tailPart, ownerPart).joinToString(" · ").ifEmpty { "Credit Card" }
+
+                        HomeCompactRow(
+                            title = cleanName,
+                            subtitle = subtitle,
+                            amount = inr(c.balance),
+                            amountColor = Pf.Text
+                        )
+                    }
+                }
+
+                // BANKS
+                if (accounts.isNotEmpty()) {
+                    if (cards.isNotEmpty()) {
+                        Spacer(Modifier.height(Space.s2))
+                        Hairline()
+                    }
+                    HomeListHeaderLabel("BANKS · ${inr(totalBankBalances)}")
+                    accounts.forEachIndexed { idx, a ->
+                        if (idx > 0) Hairline()
+                        val bal = vm.balanceOf(a)
+                        val subtitle = when {
+                            a.numberTail.isNotBlank() && a.person == "Joint" -> "••••${a.numberTail} · Joint"
+                            a.numberTail.isNotBlank() -> "••••${a.numberTail}"
+                            a.person == "Joint" -> "Joint"
+                            else -> "Bank Account"
+                        }
+                        HomeCompactRow(
+                            title = a.name,
+                            subtitle = subtitle,
+                            amount = inr(bal),
+                            amountColor = if (bal < 0.0) Color(0xFFEF4444) else Pf.Text
+                        )
+                    }
+                }
+
+                // LOANS
+                if (loans.isNotEmpty()) {
+                    if (cards.isNotEmpty() || accounts.isNotEmpty()) {
+                        Spacer(Modifier.height(Space.s2))
+                        Hairline()
+                    }
+                    HomeListHeaderLabel("LOANS · ${inr(totalLoanEmis)}/mo")
+                    loans.forEachIndexed { idx, l ->
+                        if (idx > 0) Hairline()
+                        val subtitle = "${l.remainingMonths} mo left · EMI ${inr(l.monthlyEmi)}"
+                        HomeCompactRow(
+                            title = l.name,
+                            subtitle = subtitle,
+                            amount = inr(l.monthlyEmi),
+                            amountColor = Pf.Text
+                        )
+                    }
+                }
+
+                // SET ASIDE
+                if (setAsideItems.isNotEmpty()) {
+                    val totalSetAsideAmount = setAsideItems.sumOf { it.amount }
+                    if (cards.isNotEmpty() || accounts.isNotEmpty() || loans.isNotEmpty()) {
+                        Spacer(Modifier.height(Space.s2))
+                        Hairline()
+                    }
+                    HomeListHeaderLabel("SET ASIDE · ${inr(totalSetAsideAmount)}")
+                    setAsideItems.forEachIndexed { idx, e ->
+                        if (idx > 0) Hairline()
+                        HomeCompactRow(
+                            title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
+                            subtitle = "Annual / Periodic",
+                            amount = inr(e.amount),
+                            amountColor = Pf.Text
+                        )
+                    }
+                }
             }
         }
     }
@@ -144,6 +202,58 @@ fun HomeScreen(vm: FinTrackViewModel) {
 }
 
 @Composable
+private fun HomeListHeaderLabel(label: String) {
+    Text(
+        text = label,
+        color = Pf.Muted,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.8.sp,
+        modifier = Modifier.padding(top = 10.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
+private fun HomeCompactRow(
+    title: String,
+    subtitle: String,
+    amount: String,
+    amountColor: Color
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 9.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f).padding(end = Space.s2)) {
+            Text(
+                title,
+                color = Pf.Text,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                subtitle,
+                color = Pf.Muted,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Text(
+            amount,
+            color = amountColor,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
 private fun AfterAllExpensesCard(
     afterAllExpenses: Double,
     bankBalances: Double,
@@ -151,10 +261,16 @@ private fun AfterAllExpensesCard(
     balanceHidden: Boolean,
     onToggleVisibility: () -> Unit
 ) {
-    PfCard(
-        modifier = Modifier.fillMaxWidth(),
-        padding = PaddingValues(Space.s4),
-        shape = Radius.Lg
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(
+                if (Pf.isDark) Brush.linearGradient(listOf(Color(0xFF1E1B2E), Color(0xFF13111C)))
+                else Brush.linearGradient(listOf(Color(0xFF1F2937), Color(0xFF111827))),
+                Radius.Lg
+            )
+            .border(1.dp, Pf.Hairline, Radius.Lg)
+            .padding(horizontal = Space.s4, vertical = Space.s4)
     ) {
         Row(
             Modifier.fillMaxWidth(),
@@ -162,277 +278,73 @@ private fun AfterAllExpensesCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "After all expenses",
-                color = Pf.Muted,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Normal
+                "AFTER ALL EXPENSES",
+                color = Color(0xFF9CA3AF),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
             )
-            IconButton(onClick = onToggleVisibility, modifier = Modifier.size(24.dp)) {
+            IconButton(onClick = onToggleVisibility, modifier = Modifier.size(28.dp)) {
                 Icon(
                     if (balanceHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                     "Toggle balance visibility",
                     Modifier.size(16.dp),
-                    tint = Pf.Muted
+                    tint = Color(0xFFE5E7EB)
                 )
             }
         }
-
-        Spacer(Modifier.height(6.dp))
 
         Text(
             if (balanceHidden) "••••••" else inr(afterAllExpenses),
-            color = Pf.Text,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.SemiBold
+            Modifier.padding(top = 4.dp, bottom = 10.dp),
+            color = Color.White,
+            fontSize = 32.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
 
-        Spacer(Modifier.height(8.dp))
-
-        Text(
-            text = "Total balances of bank (${if (balanceHidden) "••••" else inr(bankBalances)}) − Other expenses (${if (balanceHidden) "••••" else inr(otherExpenses)})",
-            color = Pf.Muted,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Normal
-        )
-    }
-}
-
-@Composable
-private fun DuesCleanSection(vm: FinTrackViewModel) {
-    val cards = vm.scopedCards
-
-    Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-        Text("Dues", color = Pf.Muted, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-
-        PfCard(padding = PaddingValues(0.dp)) {
-            if (cards.isEmpty()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(Color.White.copy(alpha = 0.08f), Radius.Sm)
+                .padding(horizontal = Space.s3, vertical = Space.s2),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
                 Text(
-                    "No credit card dues",
-                    color = Pf.Muted,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(horizontal = Space.s4, vertical = Space.s3)
+                    "Bank Balances",
+                    color = Color(0xFF9CA3AF),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
                 )
-            } else {
-                Column {
-                    cards.forEachIndexed { idx, c ->
-                        if (idx > 0) Hairline()
-                        val cleanName = if (c.name.contains("••") && c.numberTail.isNotBlank()) {
-                            c.name.substringBefore("••").trim().ifEmpty { c.name }
-                        } else c.name
-
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (c.balance > 0) vm.startSettleCard(c.id)
-                                }
-                                .padding(horizontal = Space.s4, vertical = Space.s3),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f).padding(end = Space.s2)) {
-                                Text(
-                                    cleanName,
-                                    color = Pf.Text,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                val duePart = if (c.dueText.isNotBlank()) "Due: ${c.dueText}" else null
-                                val tailPart = if (c.numberTail.isNotBlank()) "••••${c.numberTail}" else null
-                                val ownerPart = if (c.owner == "Joint") "Joint" else null
-                                val subtitle = listOfNotNull(duePart, tailPart, ownerPart).joinToString(" · ").ifEmpty { "Credit Card" }
-                                Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
-                            }
-                            Text(
-                                inr(c.balance),
-                                color = Pf.Text,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                }
+                Text(
+                    if (balanceHidden) "••••••" else inr(bankBalances),
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Text("—", color = Color(0xFF9CA3AF), fontSize = 14.sp)
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    "Other Expenses (Dues + EMIs)",
+                    color = Color(0xFF9CA3AF),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    if (balanceHidden) "••••••" else inr(otherExpenses),
+                    color = Color(0xFFFCA5A5),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }
 }
 
-@Composable
-private fun BanksCleanSection(vm: FinTrackViewModel) {
-    val accounts = vm.scopedAccounts
-
-    Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-        Text("Banks", color = Pf.Muted, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-
-        PfCard(padding = PaddingValues(0.dp)) {
-            if (accounts.isEmpty()) {
-                Text(
-                    "No bank accounts added",
-                    color = Pf.Muted,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(horizontal = Space.s4, vertical = Space.s3)
-                )
-            } else {
-                Column {
-                    accounts.forEachIndexed { idx, a ->
-                        if (idx > 0) Hairline()
-                        val bal = vm.balanceOf(a)
-                        val isNegative = bal < 0.0
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = Space.s4, vertical = Space.s3),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f).padding(end = Space.s2)) {
-                                Text(
-                                    a.name,
-                                    color = Pf.Text,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                val subtitle = when {
-                                    a.numberTail.isNotBlank() && a.person == "Joint" -> "••••${a.numberTail} · Joint"
-                                    a.numberTail.isNotBlank() -> "••••${a.numberTail}"
-                                    a.person == "Joint" -> "Joint"
-                                    else -> "Bank Account"
-                                }
-                                Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
-                            }
-                            Text(
-                                inr(bal),
-                                color = if (isNegative) Color(0xFFEF4444) else Pf.Text,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LoansCleanSection(vm: FinTrackViewModel) {
-    val loans = vm.scopedLoans.filter { !vm.isLoanCleared(it) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-        Text("Loans", color = Pf.Muted, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-
-        PfCard(padding = PaddingValues(0.dp)) {
-            if (loans.isEmpty()) {
-                Text(
-                    "No active loans",
-                    color = Pf.Muted,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(horizontal = Space.s4, vertical = Space.s3)
-                )
-            } else {
-                Column {
-                    loans.forEachIndexed { idx, l ->
-                        if (idx > 0) Hairline()
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = Space.s4, vertical = Space.s3),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    l.name,
-                                    color = Pf.Text,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    "${l.remainingMonths} mo left · EMI ${inr(l.monthlyEmi)}",
-                                    color = Pf.Muted,
-                                    fontSize = 12.sp
-                                )
-                            }
-                            val isPaid = vm.isLoanConfirmed(l.id)
-                            Box(
-                                Modifier
-                                    .background(Pf.Surface2, Radius.Pill)
-                                    .clickable { vm.confirmLoan(l) }
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    if (isPaid) "Paid" else "Pay EMI",
-                                    color = if (isPaid) Pf.Muted else Pf.Text,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SetAsideCleanSection(
-    vm: FinTrackViewModel,
-    items: List<com.vinay.fintrack.data.Entry>,
-    totalAmount: Double
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-        Text("Set a Side - ${inr(totalAmount)}", color = Pf.Muted, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-
-        PfCard(padding = PaddingValues(0.dp)) {
-            if (items.isEmpty()) {
-                Text(
-                    "No set aside items",
-                    color = Pf.Muted,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(horizontal = Space.s4, vertical = Space.s3)
-                )
-            } else {
-                Column {
-                    items.forEachIndexed { idx, e ->
-                        if (idx > 0) Hairline()
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable { vm.openEditEntry(e) }
-                                .padding(horizontal = Space.s4, vertical = Space.s3),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "${idx + 1}. ${e.note.ifEmpty { e.category }}",
-                                color = Pf.Text,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Normal,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(Modifier.width(Space.s2))
-                            Text(
-                                inr(e.amount),
-                                color = Pf.Text,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 /**
  * Shown when a confirm needs an account. An expense asks where the money left
