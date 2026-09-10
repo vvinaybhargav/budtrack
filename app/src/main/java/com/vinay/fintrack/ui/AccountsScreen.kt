@@ -169,13 +169,14 @@ private fun ManageBanksSection(vm: FinTrackViewModel) {
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                modifier = Modifier.weight(1f, fill = false)
             ) {
                 Icon(Icons.Default.AccountBalance, null, Modifier.size(18.dp), tint = Pf.Accent400)
                 Text("Bank Accounts", color = Pf.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Tag(inr(totalBalance), Pf.Accent100, Pf.Accent800)
             }
-            GhostButton("+ Add Bank", {
+            GhostButton("+ Add", {
                 vm.selectAddKind("BANK_ACCOUNT")
                 vm.tab = Tab.ADD
             })
@@ -289,13 +290,14 @@ private fun ManageCardsSection(vm: FinTrackViewModel) {
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                modifier = Modifier.weight(1f, fill = false)
             ) {
                 Icon(Icons.Default.CreditCard, null, Modifier.size(18.dp), tint = Pf.Accent400)
                 Text("Credit Cards", color = Pf.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Tag("Total Due: ${inr(totalDues)}", Pf.Accent100, Pf.Accent800)
+                Tag(inr(totalDues), Pf.Accent100, Pf.Accent800)
             }
-            GhostButton("+ Add Card", {
+            GhostButton("+ Add", {
                 vm.selectAddKind("CREDIT_CARD")
                 vm.tab = Tab.ADD
             })
@@ -391,7 +393,7 @@ private fun ManageCardsSection(vm: FinTrackViewModel) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(Modifier.weight(1f)) {
+                            Column(Modifier.weight(1f).padding(end = Space.s2)) {
                                 Text(
                                     c.name,
                                     color = Pf.Text,
@@ -456,13 +458,14 @@ private fun ManageLoansSection(vm: FinTrackViewModel) {
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                modifier = Modifier.weight(1f, fill = false)
             ) {
                 Icon(Icons.Default.Payments, null, Modifier.size(18.dp), tint = Pf.Accent400)
                 Text("Loans & EMIs", color = Pf.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Tag("Total EMI: ${inr(totalEmis)}", Pf.Accent100, Pf.Accent800)
+                Tag(inr(totalEmis), Pf.Accent100, Pf.Accent800)
             }
-            GhostButton("+ Add Loan", {
+            GhostButton("+ Add", {
                 vm.selectAddKind("EMI_LOAN")
                 vm.tab = Tab.ADD
             })
