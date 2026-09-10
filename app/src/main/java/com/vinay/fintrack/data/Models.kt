@@ -241,6 +241,13 @@ private val prettyFmt = java.text.SimpleDateFormat("d MMM yyyy", Locale("en", "I
 
 fun today(): String = isoDate.format(Calendar.getInstance().time)
 
+fun addDays(iso: String, days: Int): String = runCatching {
+    val c = Calendar.getInstance()
+    c.time = isoDate.parse(iso)!!
+    c.add(Calendar.DAY_OF_YEAR, days)
+    isoDate.format(c.time)
+}.getOrDefault(iso)
+
 fun currentPeriod(): String = isoMonth.format(Calendar.getInstance().time)
 
 /** "2026-08-08" → "8 Aug 2026". Falls back to the raw string if unparseable. */

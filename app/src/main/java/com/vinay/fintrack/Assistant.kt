@@ -10,6 +10,7 @@ import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.Txn
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.isoFromDayFirst
+import com.vinay.fintrack.data.addDays
 import com.vinay.fintrack.data.today
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -438,7 +439,7 @@ class Assistant(private val vm: FinTrackViewModel) {
 
         if (rows.isEmpty()) return "No transactions match."
         val grouped = rows.groupBy { it.date }
-        val yesterday = Ledger.addDays(today(), -1)
+        val yesterday = addDays(today(), -1)
         return buildString {
             appendLine("${rows.size} transaction(s):")
             grouped.forEach { (date, dateRows) ->
