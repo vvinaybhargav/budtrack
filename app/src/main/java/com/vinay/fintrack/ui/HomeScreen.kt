@@ -72,7 +72,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
     val activeLoans = vm.scopedLoans.filter { !vm.isLoanCleared(it) }
     val totalLoanEmis = activeLoans.sumOf { it.monthlyEmi }
     val otherExpenses = totalCardDues + totalLoanEmis
-    val afterAllExpenses = totalBankBalances - otherExpenses
+    val upcomingSalary = vm.scopedUpcomingSalary
+    val netBalance = totalBankBalances - otherExpenses + upcomingSalary
 
     val cards = vm.scopedCards
     val accounts = vm.scopedAccounts
@@ -90,12 +91,13 @@ fun HomeScreen(vm: FinTrackViewModel) {
         // Alert if SMS transactions need account link
         item { UnmatchedAccountAlert(vm) }
 
-        // 2. HERO CARD: After all expenses - Total balances of bank - other expenses
+        // 2. HERO CARD: Net balance (Bank Balances - Other Expenses + Salary)
         item {
             AfterAllExpensesCard(
-                afterAllExpenses = afterAllExpenses,
+                netBalance = netBalance,
                 bankBalances = totalBankBalances,
                 otherExpenses = otherExpenses,
+                salary = upcomingSalary,
                 balanceHidden = vm.balanceHidden,
                 onToggleVisibility = vm::toggleBalanceVisible
             )
@@ -192,6 +194,23 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         )
                     }
                 }
+
+                // SALARY / EXPECTED INCOME
+                if (upcomingSalary > 0.0) {
+                    if (cards.isNotEmpty() || accounts.isNotEmpty() || loans.isNotEmpty() || setAsideItems.isNotEmpty()) {
+                        Spacer(Modifier.height(Space.s2))
+                        Hairline()
+                    }
+                    HomeListHeaderLabel("SALARY · ${inr(upcomingSalary)}")
+                    val salDay = vm.salaryResetDayFor(vm.activeProfile.orEmpty())
+                    val subtitle = if (vm.bucketView == "JOINT") "Expected Income · Joint" else "Expected Income · Pay Day: ${salDay}th"
+                    HomeCompactRow(
+                        title = if (vm.bucketView == "JOINT") "Joint Salary" else "${vm.activeProfile ?: "Personal"} Salary",
+                        subtitle = subtitle,
+                        amount = inr(upcomingSalary),
+                        amountColor = Color(0xFF10B981)
+                    )
+                }
             }
         }
     }
@@ -255,9 +274,10 @@ private fun HomeCompactRow(
 
 @Composable
 private fun AfterAllExpensesCard(
-    afterAllExpenses: Double,
+    netBalance: Double,
     bankBalances: Double,
     otherExpenses: Double,
+    salary: Double,
     balanceHidden: Boolean,
     onToggleVisibility: () -> Unit
 ) {
@@ -278,7 +298,7 @@ private fun AfterAllExpensesCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "AFTER ALL EXPENSES",
+                if (salary > 0.0) "NET BALANCE (INCL. SALARY)" else "AFTER ALL EXPENSES",
                 color = Color(0xFF9CA3AF),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
@@ -295,7 +315,7 @@ private fun AfterAllExpensesCard(
         }
 
         Text(
-            if (balanceHidden) "••••••" else inr(afterAllExpenses),
+            if (balanceHidden) "••••••" else inr(netBalance),
             Modifier.padding(top = 4.dp, bottom = 10.dp),
             color = Color.White,
             fontSize = 32.sp,
@@ -326,10 +346,10 @@ private fun AfterAllExpensesCard(
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            Text("—", color = Color(0xFF9CA3AF), fontSize = 14.sp)
-            Column(horizontalAlignment = Alignment.End) {
+            Text("—", color = Color(0xFF9CA3AF), fontSize = 13.sp)
+            Column(horizontalAlignment = if (salary > 0.0) Alignment.CenterHorizontally else Alignment.End) {
                 Text(
-                    "Other Expenses (Dues + EMIs)",
+                    "Expenses (Dues+EMI)",
                     color = Color(0xFF9CA3AF),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium
@@ -341,9 +361,27 @@ private fun AfterAllExpensesCard(
                     fontWeight = FontWeight.SemiBold
                 )
             }
+            if (salary > 0.0) {
+                Text("+", color = Color(0xFF9CA3AF), fontSize = 13.sp)
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        "Salary",
+                        color = Color(0xFF9CA3AF),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        if (balanceHidden) "••••••" else inr(salary),
+                        color = Color(0xFF34D399),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
         }
     }
 }
+
 
 
 /**

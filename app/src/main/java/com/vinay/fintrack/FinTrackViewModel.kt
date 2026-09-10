@@ -780,6 +780,26 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun upcomingSalaryFor(profile: String, monthsAhead: Int = 1): Double {
+        val targetDate = Ledger.addMonths(today(), monthsAhead)
+        val yearMonth = targetDate.substring(0, 7)
+        val override = persisted.salaryOverrides["${profile}_$yearMonth"]
+        if (override != null) {
+            return override.amount.coerceAtLeast(0.0)
+        }
+        return (persisted.salaries[profile] ?: 0.0).coerceAtLeast(0.0)
+    }
+
+    val scopedUpcomingSalary: Double
+        get() {
+            return if (bucketView == "JOINT") {
+                profileNames.sumOf { upcomingSalaryFor(it, 1) }
+            } else {
+                upcomingSalaryFor(activeProfile.orEmpty(), 1)
+            }
+        }
+
+
     fun salaryResetDayFor(person: String, onDate: String = ""): Int {
         if (onDate.isNotEmpty()) {
             val yearMonth = onDate.substring(0, 7)
