@@ -82,6 +82,11 @@ fun HomeScreen(vm: FinTrackViewModel) {
     val upcomingSalary = vm.scopedUpcomingSalary
     val netBalance = totalBankBalances - otherExpenses + upcomingSalary
 
+    val nextMonthOutlook = vm.outlook(1).firstOrNull()
+    val nextMonthSalary = nextMonthOutlook?.income ?: upcomingSalary
+    val nextMonthExpenses = nextMonthOutlook?.out ?: (totalLoanEmis + totalRecurring + totalSetAsidePending)
+    val nextMonthLeft = nextMonthOutlook?.left ?: (nextMonthSalary - nextMonthExpenses)
+
     LazyColumn(
         Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(bottom = 90.dp, top = Space.s2, start = Space.s4, end = Space.s4),
@@ -100,6 +105,9 @@ fun HomeScreen(vm: FinTrackViewModel) {
                 bankBalances = totalBankBalances,
                 otherExpenses = otherExpenses,
                 salary = upcomingSalary,
+                nextMonthSalary = nextMonthSalary,
+                nextMonthExpenses = nextMonthExpenses,
+                nextMonthLeft = nextMonthLeft,
                 balanceHidden = vm.balanceHidden,
                 onToggleVisibility = vm::toggleBalanceVisible,
                 onBankBalancesClick = {
@@ -488,6 +496,9 @@ private fun AfterAllExpensesCard(
     bankBalances: Double,
     otherExpenses: Double,
     salary: Double,
+    nextMonthSalary: Double = 0.0,
+    nextMonthExpenses: Double = 0.0,
+    nextMonthLeft: Double = 0.0,
     balanceHidden: Boolean,
     onToggleVisibility: () -> Unit,
     onBankBalancesClick: (() -> Unit)? = null,
@@ -607,6 +618,42 @@ private fun AfterAllExpensesCard(
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+            }
+        }
+
+        if (nextMonthSalary > 0.0 || nextMonthExpenses > 0.0) {
+            Spacer(Modifier.height(Space.s2))
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(alpha = 0.06f), Radius.Sm)
+                    .padding(horizontal = Space.s3, vertical = 5.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        "Next Month:",
+                        color = Color(0xFF9CA3AF),
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        "Salary ${if (balanceHidden) "••••••" else inr(nextMonthSalary)} — Expenses ${if (balanceHidden) "••••••" else inr(nextMonthExpenses)}",
+                        color = Color(0xFFD1D5DB),
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Text(
+                    if (balanceHidden) "••••••" else "= ${inr(nextMonthLeft)} left",
+                    color = if (nextMonthLeft >= 0.0) Color(0xFF34D399) else Color(0xFFF87171),
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -1602,7 +1649,7 @@ private fun OutlookSection(vm: FinTrackViewModel) {
 @Composable
 private fun MonthPlan(vm: FinTrackViewModel) {
     val nextMonth = vm.outlook(1).firstOrNull()
-    val salary = vm.plannedIncome
+    val salary = nextMonth?.income ?: vm.plannedIncome
     val nextLoans = nextMonth?.loans ?: 0.0
     val nextSetAside = nextMonth?.setAside ?: 0.0
     val nextRecurring = nextMonth?.recurring ?: 0.0

@@ -83,6 +83,7 @@ data class Draft(
     val accountId: String = "",
     /** Months between payments, 1–12. Twelve is the old "annual". */
     val periodMonths: Int = 1,
+    val startDateText: String = "",
     /** When the bill is due, as the form takes it (dd-mm-yyyy). Optional. */
     val dueText: String = ""
 ) {
@@ -759,30 +760,57 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         update { s -> s.copy(salaries = s.salaries + (profile to amount)) }
     }
 
+    fun overrideKeyCandidates(profile: String, yearMonth: String): List<String> {
+        val ym = yearMonth.take(7)
+        val candidates = mutableListOf<String>()
+        if (profile.isNotBlank()) {
+            candidates.add("${profile}_$ym")
+            candidates.add("${profile.trim()}_$ym")
+            candidates.add("${profile.trim().lowercase()}_$ym")
+        }
+        val active = activeProfile.orEmpty()
+        if (active.isNotBlank()) {
+            candidates.add("${active}_$ym")
+            candidates.add("${active.trim()}_$ym")
+            candidates.add("${active.trim().lowercase()}_$ym")
+        }
+        candidates.add("_${ym}")
+        candidates.add(ym)
+        return candidates.distinct()
+    }
+
     fun getSalaryOverride(profile: String, yearMonth: String): SalaryOverride? {
-        return persisted.salaryOverrides["${profile}_$yearMonth"]
+        val keys = overrideKeyCandidates(profile, yearMonth)
+        for (k in keys) {
+            persisted.salaryOverrides[k]?.let { return it }
+        }
+        return null
     }
 
     fun removeSalaryOverride(profile: String, yearMonth: String) {
+        val keys = overrideKeyCandidates(profile, yearMonth)
         update { s ->
-            val key = "${profile}_$yearMonth"
-            s.copy(salaryOverrides = s.salaryOverrides - key)
+            s.copy(salaryOverrides = s.salaryOverrides.filterKeys { it !in keys })
         }
     }
 
     fun setSalaryOverride(profile: String, yearMonth: String, amount: Double?, resetDay: Int?) {
+        val ym = yearMonth.take(7)
+        val canonProfile = profile.trim().ifEmpty { activeProfile?.trim().orEmpty() }
+        val canonKey = if (canonProfile.isNotEmpty()) "${canonProfile}_$ym" else "_$ym"
+        val keys = overrideKeyCandidates(profile, yearMonth)
         update { s ->
-            val key = "${profile}_$yearMonth"
+            val cleaned = s.salaryOverrides.filterKeys { it !in keys }
             if (amount == null || amount <= 0.0) {
-                s.copy(salaryOverrides = s.salaryOverrides - key)
+                s.copy(salaryOverrides = cleaned)
             } else {
-                val current = s.salaryOverrides[key]
-                val defaultDay = s.salaryDays[profile] ?: s.cycleResetDay
+                val current = getSalaryOverride(profile, ym)
+                val defaultDay = s.salaryDays[canonProfile] ?: s.cycleResetDay
                 val nextOverride = SalaryOverride(
                     amount = amount,
                     resetDay = resetDay ?: current?.resetDay ?: defaultDay
                 )
-                s.copy(salaryOverrides = s.salaryOverrides + (key to nextOverride))
+                s.copy(salaryOverrides = cleaned + (canonKey to nextOverride))
             }
         }
     }
@@ -790,7 +818,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun upcomingSalaryFor(profile: String, monthsAhead: Int = 1): Double {
         val targetDate = Ledger.addMonths(today(), monthsAhead)
         val yearMonth = targetDate.substring(0, 7)
-        val override = persisted.salaryOverrides["${profile}_$yearMonth"]
+        val override = getSalaryOverride(profile, yearMonth)
         if (override != null) {
             return override.amount.coerceAtLeast(0.0)
         }
@@ -810,7 +838,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun salaryResetDayFor(person: String, onDate: String = ""): Int {
         if (onDate.isNotEmpty()) {
             val yearMonth = onDate.substring(0, 7)
-            val override = persisted.salaryOverrides["${person}_$yearMonth"]
+            val override = getSalaryOverride(person, yearMonth)
             if (override != null) return override.resetDay
         }
         return persisted.salaryDays[person] ?: persisted.cycleResetDay
@@ -1117,8 +1145,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun openEditEntry(e: Entry) {
         editingEntryId = e.id
         tab = Tab.ADD
-        // Named, because a positional list this long is how the bucket field
-        // silently took the wrong value once already.
+        val startFormatted = if (e.startDate.isNotEmpty()) dayFirstOf(e.startDate) else ""
+        val dueFormatted = if (e.dueDate.isNotEmpty()) dayFirstOf(e.dueDate) else ""
         draft = Draft(
             person = e.person,
             type = e.type,
@@ -1128,7 +1156,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             note = e.note,
             accountId = e.accountId,
             periodMonths = e.everyMonths,
-            dueText = if (e.dueDate.isEmpty()) "" else e.dueDate.split("-").getOrNull(2)?.toIntOrNull()?.toString() ?: ""
+            startDateText = startFormatted,
+            dueText = dueFormatted
         )
     }
 
@@ -1248,6 +1277,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * rather than an entry. As an entry it sat on Home asking to be confirmed
      * every month, and never appeared in Transactions at all.
      */
+    val draftStartDateIso: String get() {
+        if (draft.startDateText.isBlank()) return today()
+        val parsed = isoFromDayFirst(draft.startDateText)
+        if (parsed != null) return parsed
+        return draft.startDateText
+    }
+
     val draftDueIso: String get() {
         val parsed = isoFromDayFirst(draft.dueText)
         if (parsed != null) return parsed
@@ -1263,14 +1299,17 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             Ledger.nextDue(draftDueIso, draft.periodMonths.coerceAtLeast(1), today())
         )
 
-    /**
-     * How many months the form will actually spread the amount over, so the
-     * line under the field shows the real figure rather than a twelfth that
-     * only holds if you started a full year early.
-     */
     val draftInstalments: Int
-        get() = if (draftDueIso.isNotEmpty()) Ledger.instalmentsUntil(today(), draftDueIso, salaryResetDayFor(draft.person))
-        else draft.periodMonths.coerceAtLeast(1)
+        get() = if (draftDueIso.isNotEmpty()) {
+            val start = if (draft.startDateText.isNotBlank()) draftStartDateIso else today()
+            Ledger.instalmentsBetween(start, draftDueIso, salaryResetDayFor(draft.person))
+        } else draft.periodMonths.coerceAtLeast(1)
+
+    val draftPaydaysList: List<String>
+        get() = if (draftDueIso.isNotEmpty()) {
+            val start = if (draft.startDateText.isNotBlank()) draftStartDateIso else today()
+            Ledger.paydaysBetween(start, draftDueIso, salaryResetDayFor(draft.person))
+        } else emptyList()
 
     /** Never blank: falls back to the account implied by who it's for. */
     val draftAccountName: String
@@ -1346,6 +1385,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val editingId = editingEntryId
+        val startIso = if (draft.startDateText.isNotBlank()) draftStartDateIso else ""
         update { s ->
             val entry = Entry(
                 id = editingId ?: newId("e"),
@@ -1355,10 +1395,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 category = draft.category,
                 amount = amount,
                 // Kept for older readers; the period is what actually counts.
-                frequency = if (draft.periodMonths >= 12) "ANNUAL" else "MONTHLY",
+                frequency = if (draft.periodMonths >= 12 || draftDueIso.isNotEmpty()) "ANNUAL" else "MONTHLY",
                 note = draft.note,
                 accountId = draft.accountId.ifEmpty { defaultAccountFor(draft.person, draft.bucket) },
                 periodMonths = draft.periodMonths,
+                startDate = startIso,
                 dueDate = draftDueIso
             )
             if (editingId != null) {
@@ -2101,12 +2142,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             val yearMonth = onDate.substring(0, 7)
             return if (view == "JOINT") {
                 persisted.profiles.keys.sumOf { p ->
-                    val override = persisted.salaryOverrides["${p}_$yearMonth"]
+                    val override = getSalaryOverride(p, yearMonth)
                     override?.amount ?: (persisted.salaries[p] ?: 0.0)
                 }
             } else {
                 val activeP = activeProfile.orEmpty()
-                val override = persisted.salaryOverrides["${activeP}_$yearMonth"]
+                val override = getSalaryOverride(activeP, yearMonth)
                 override?.amount ?: (persisted.salaries[activeP] ?: 0.0)
             }
         }
@@ -3757,10 +3798,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         type: String,
         joint: Boolean,
         note: String,
+        startDate: String = "",
         dueDate: String = ""
     ): Entry {
         val person = if (joint) "Joint" else activeProfile ?: "Me"
         val bucket = if (joint) "JOINT" else "PERSONAL"
+        val isoStart = if (startDate.isNotBlank()) normalizeDateToIso(startDate) ?: startDate else ""
         val isoDue = if (dueDate.isNotBlank()) normalizeDateToIso(dueDate) ?: dueDate else ""
         val isTargetOrGoal = isoDue.isNotEmpty() || everyMonths > 1 || type == "SAVINGS" || type == "INCOME" || note.isNotBlank()
         val entryType = if (type == "INCOME" || type == "SAVINGS") "SAVINGS" else type
@@ -3778,6 +3821,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             note = note,
             accountId = defaultAccountFor(person, bucket),
             periodMonths = finalEveryMonths,
+            startDate = isoStart,
             dueDate = isoDue
         )
         update { s -> s.copy(entries = s.entries + entry) }

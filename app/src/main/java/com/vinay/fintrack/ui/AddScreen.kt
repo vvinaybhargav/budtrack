@@ -686,7 +686,18 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
 
         val context = LocalContext.current
         val calendar = Calendar.getInstance()
-        val datePickerDialog = remember {
+        val startDatePickerDialog = remember {
+            android.app.DatePickerDialog(
+                context,
+                { _, year, month, dayOfMonth ->
+                    vm.draft = vm.draft.copy(startDateText = "%02d-%02d-%04d".format(dayOfMonth, month + 1, year))
+                },
+                calendar.get(Calendar.YEAR),
+                calendar.get(Calendar.MONTH),
+                calendar.get(Calendar.DAY_OF_MONTH)
+            )
+        }
+        val dueDatePickerDialog = remember {
             android.app.DatePickerDialog(
                 context,
                 { _, year, month, dayOfMonth ->
@@ -698,23 +709,103 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             )
         }
 
-        if (vm.addKind == "SET_ASIDE") {
-            PfField(
-                "Due date (dd/mm/yy or use calendar)",
-                vm.draft.dueText,
-                { vm.draft = vm.draft.copy(dueText = it) },
-                placeholder = "e.g. 22/10/26",
-                numeric = false,
-                trailingIcon = {
-                    IconButton(onClick = { datePickerDialog.show() }) {
-                        Icon(
-                            imageVector = Icons.Default.DateRange,
-                            contentDescription = "Choose Date",
-                            tint = Pf.Accent400
-                        )
+        val isSetAsideKind = vm.addKind == "SET_ASIDE" || (isEditing && vm.draft.type == "SAVINGS")
+
+        if (isSetAsideKind) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s3)
+            ) {
+                PfField(
+                    label = "Start Date",
+                    value = if (vm.draft.startDateText.isNotEmpty()) vm.draft.startDateText else vm.todayDayFirstText,
+                    onValueChange = { vm.draft = vm.draft.copy(startDateText = it) },
+                    placeholder = "dd-mm-yyyy",
+                    numeric = false,
+                    modifier = Modifier.weight(1f),
+                    trailingIcon = {
+                        IconButton(onClick = { startDatePickerDialog.show() }) {
+                            Icon(
+                                imageVector = Icons.Default.DateRange,
+                                contentDescription = "Start Date",
+                                tint = Pf.Accent400
+                            )
+                        }
+                    }
+                )
+                PfField(
+                    label = "Target / End Date",
+                    value = vm.draft.dueText,
+                    onValueChange = { vm.draft = vm.draft.copy(dueText = it) },
+                    placeholder = "dd-mm-yyyy",
+                    numeric = false,
+                    modifier = Modifier.weight(1f),
+                    trailingIcon = {
+                        IconButton(onClick = { dueDatePickerDialog.show() }) {
+                            Icon(
+                                imageVector = Icons.Default.DateRange,
+                                contentDescription = "End Date",
+                                tint = Pf.Accent400
+                            )
+                        }
+                    }
+                )
+            }
+
+            val resetDay = vm.salaryResetDayFor(vm.draft.person)
+            val paydaysList = vm.draftPaydaysList
+            val instalments = vm.draftInstalments
+            val amount = vm.draft.amountText.toDoubleOrNull() ?: 0.0
+
+            if (vm.draftDueIso.isNotEmpty()) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(Radius.Md)
+                        .background(Pf.Surface2)
+                        .border(1.dp, Pf.Hairline, Radius.Md)
+                        .padding(Space.s3)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Payday / Reset: ${resetDay}th of month",
+                                color = Pf.Accent400,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Tag(
+                                "$instalments payday${if (instalments > 1) "s" else ""}",
+                                Pf.Accent100,
+                                Pf.Accent800
+                            )
+                        }
+                        if (paydaysList.isNotEmpty()) {
+                            Text(
+                                "Paydays: ${paydaysList.joinToString(", ")}",
+                                color = Pf.Text,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        if (amount > 0.0) {
+                            val monthlyShare = amount / instalments.coerceAtLeast(1)
+                            Text(
+                                "Split equally: ${inr(monthlyShare)} / month",
+                                color = Pf.Accent,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
                     }
                 }
-            )
+            } else {
+                Muted("Pick start & end dates. The amount splits equally across the paydays (${resetDay}th of each month) between them.")
+            }
         } else {
             PfField(
                 "Due day of month (1-31)",
@@ -723,40 +814,10 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
                 placeholder = "e.g. 29",
                 numeric = true
             )
-        }
-
-        val amount = vm.draft.amountText.toDoubleOrNull() ?: 0.0
-        val due = vm.draftDueIso
-        val setAside = isEditing || vm.addKind == "SET_ASIDE"
-        when {
-            due.isNotEmpty() && !setAside ->
+            val due = vm.draftDueIso
+            if (due.isNotEmpty()) {
                 Muted("Due in ${vm.draftDueIn}, then the same day each month.")
-            due.isNotEmpty() && amount > 0 -> {
-                val months = vm.draftInstalments
-                Muted(
-                    "Due in ${vm.draftDueIn} — put by " +
-                        "${inr(amount / months.coerceAtLeast(1))} a month over " +
-                        "$months month${if (months == 1) "" else "s"}. Confirming that " +
-                        "on Home moves it to savings rather than spending it."
-                )
             }
-            due.isNotEmpty() -> Muted("Due in ${vm.draftDueIn}. Add the amount.")
-            vm.draft.dueText.isNotBlank() ->
-                if (setAside) Muted("Enter a valid date (dd/mm/yy) or use the calendar.")
-                else Muted("Enter a valid day number (1-31).")
-            setAside ->
-                Muted("Give the due date and the full amount; the monthly " +
-                    "share is worked out from the months left based on your salary reset day.")
-            else -> Muted("The day it comes out each month, if you know it.")
-        }
-
-        if (due.isEmpty() && setAside) {
-            PfSelect(
-                "Or split evenly over",
-                periodLabel(vm.draft.periodMonths),
-                PERIOD_OPTIONS,
-                { vm.draft = vm.draft.copy(periodMonths = periodFromLabel(it)) }
-            )
         }
 
         PfSelect(

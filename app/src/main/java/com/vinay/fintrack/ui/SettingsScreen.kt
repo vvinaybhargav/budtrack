@@ -1031,95 +1031,119 @@ private fun SalaryOverrideMonthItem(
 
     val displayMonth = formatYearMonth(yearMonth)
 
-    Row(
+    Box(
         Modifier
             .fillMaxWidth()
-            .padding(vertical = Space.s1),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            .clip(Radius.Sm)
+            .background(if (hasOverride) Pf.Accent.copy(alpha = 0.08f) else Pf.Surface)
+            .border(1.dp, if (hasOverride) Pf.Accent.copy(alpha = 0.35f) else Pf.Hairline, Radius.Sm)
+            .padding(Space.s3)
     ) {
-        Column(Modifier.weight(1.2f)) {
-            Text(
-                displayMonth,
-                color = Pf.Text,
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                if (hasOverride) "Custom: ₹${inr(override!!.amount)}" else "Default: ₹${inr(defaultSalary)}",
-                color = if (hasOverride) Pf.Accent400 else Pf.Muted,
-                fontSize = 11.sp
-            )
-        }
-
-        OutlinedTextField(
-            value = draftText,
-            onValueChange = { input ->
-                val clean = input.filter { it.isDigit() }
-                draftText = clean
-                val amt = clean.toDoubleOrNull()
-                if (amt != null && amt > 0.0) {
-                    vm.setSalaryOverride(profile, yearMonth, amt, null)
-                } else {
-                    vm.removeSalaryOverride(profile, yearMonth)
+        Column(
+            Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(Space.s2)
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        displayMonth,
+                        color = Pf.Text,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        if (hasOverride) "Custom override: ₹${inr(override!!.amount)}" else "Using default: ₹${inr(defaultSalary)}",
+                        color = if (hasOverride) Pf.Accent400 else Pf.Muted,
+                        fontSize = 11.5.sp,
+                        fontWeight = if (hasOverride) FontWeight.SemiBold else FontWeight.Normal
+                    )
                 }
-            },
-            placeholder = {
-                Text(
-                    if (defaultSalary > 0.0) "₹${defaultSalary.toLong()}" else "0",
-                    color = Pf.Muted,
-                    fontSize = 13.sp
-                )
-            },
-            singleLine = true,
-            shape = Radius.Sm,
-            textStyle = androidx.compose.ui.text.TextStyle(color = Pf.Text, fontSize = 13.sp),
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-            trailingIcon = {
-                if (draftText.isNotEmpty()) {
-                    IconButton(
-                        onClick = {
-                            draftText = ""
-                            vm.removeSalaryOverride(profile, yearMonth)
-                        },
-                        modifier = Modifier.size(24.dp)
+
+                if (hasOverride) {
+                    Row(
+                        Modifier
+                            .clip(Radius.Sm)
+                            .clickable {
+                                draftText = ""
+                                vm.removeSalaryOverride(profile, yearMonth)
+                            }
+                            .background(Pf.Rose.copy(alpha = 0.12f))
+                            .padding(horizontal = Space.s2, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Icon(
                             Icons.Default.Close,
-                            contentDescription = "Reset override",
-                            tint = Pf.Muted,
-                            modifier = Modifier.size(14.dp)
+                            contentDescription = "Reset to Default",
+                            tint = Pf.Rose,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            "Reset to Default",
+                            color = Pf.Rose,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Pf.Surface,
-                unfocusedContainerColor = Pf.Surface,
-                focusedBorderColor = Pf.Accent,
-                unfocusedBorderColor = Pf.Hairline,
-                cursorColor = Pf.Accent,
-                focusedTextColor = Pf.Text,
-                unfocusedTextColor = Pf.Text
-            ),
-            modifier = Modifier.weight(1f)
-        )
-
-        if (hasOverride) {
-            IconButton(
-                onClick = {
-                    draftText = ""
-                    vm.removeSalaryOverride(profile, yearMonth)
-                },
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Clear override",
-                    tint = Pf.Accent400,
-                    modifier = Modifier.size(16.dp)
-                )
             }
+
+            OutlinedTextField(
+                value = draftText,
+                onValueChange = { input ->
+                    val clean = input.filter { it.isDigit() }
+                    draftText = clean
+                    val amt = clean.toDoubleOrNull()
+                    if (amt != null && amt > 0.0) {
+                        vm.setSalaryOverride(profile, yearMonth, amt, null)
+                    } else {
+                        vm.removeSalaryOverride(profile, yearMonth)
+                    }
+                },
+                placeholder = {
+                    Text(
+                        "Enter custom salary (e.g. 75000)",
+                        color = Pf.Muted.copy(alpha = 0.6f),
+                        fontSize = 12.5.sp
+                    )
+                },
+                singleLine = true,
+                shape = Radius.Sm,
+                textStyle = androidx.compose.ui.text.TextStyle(color = Pf.Text, fontSize = 13.sp),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                trailingIcon = {
+                    if (draftText.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                draftText = ""
+                                vm.removeSalaryOverride(profile, yearMonth)
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Clear input",
+                                tint = Pf.Muted,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Pf.Surface2,
+                    unfocusedContainerColor = Pf.Surface2,
+                    focusedBorderColor = Pf.Accent,
+                    unfocusedBorderColor = Pf.Hairline,
+                    cursorColor = Pf.Accent,
+                    focusedTextColor = Pf.Text,
+                    unfocusedTextColor = Pf.Text
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }

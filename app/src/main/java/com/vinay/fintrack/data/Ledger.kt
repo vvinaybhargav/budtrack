@@ -327,24 +327,31 @@ object Ledger {
      * December — five. The due month itself is left out so the money is there
      * before the day rather than on it, and being early costs nothing while
      * being short costs the whole point of saving up.
+    /**
+     * Calculates the number of salary paydays that fall between [startIso] and [dueIso] (inclusive).
+     *
+     * Example: Payday is 6th of month (resetDay = 6).
+     * - Start: 2026-10-07, Due: 2027-01-05 -> Paydays: 2026-11-06, 2026-12-06 => 2 months.
+     * - Start: 2026-10-05, Due: 2027-01-07 -> Paydays: 2026-10-06, 2026-11-06, 2026-12-06, 2027-01-06 => 4 months.
+     * - Start: 2026-10-07, Due: 2026-11-08 -> Payday: 2026-11-06 => 1 month.
      */
-    fun instalmentsUntil(todayIso: String, dueIso: String, resetDay: Int = 1): Int {
+    fun instalmentsBetween(startIso: String, dueIso: String, resetDay: Int = 1): Int {
         if (dueIso.isEmpty()) return 1
-        if (todayIso >= dueIso) return 1
+        val start = if (startIso.isNotBlank()) startIso else today()
+        if (start >= dueIso) return 1
         
-        val partsToday = todayIso.split("-")
+        val partsStart = start.split("-")
         val partsDue = dueIso.split("-")
-        if (partsToday.size < 3 || partsDue.size < 3) return 1
+        if (partsStart.size < 3 || partsDue.size < 3) return 1
         
-        val startYear = partsToday[0].toIntOrNull() ?: return 1
-        val startMonth = partsToday[1].toIntOrNull() ?: return 1
+        val startYear = partsStart[0].toIntOrNull() ?: return 1
+        val startMonth = partsStart[1].toIntOrNull() ?: return 1
         val endYear = partsDue[0].toIntOrNull() ?: return 1
         val endMonth = partsDue[1].toIntOrNull() ?: return 1
         
         var count = 0
         var currYear = startYear
         var currMonth = startMonth
-        
         val endLimit = endYear * 12 + endMonth
         
         while (currYear * 12 + currMonth <= endLimit) {
@@ -356,7 +363,7 @@ object Ledger {
             
             val paydayIso = "%04d-%02d-%02d".format(currYear, currMonth, day)
             
-            if (paydayIso > todayIso && paydayIso <= dueIso) {
+            if (paydayIso >= start && paydayIso <= dueIso) {
                 count++
             }
             
@@ -369,6 +376,60 @@ object Ledger {
         }
         
         return count.coerceAtLeast(1)
+    }
+
+    /**
+     * How many salary paydays remain from [todayIso] to [dueIso].
+     */
+    fun instalmentsUntil(todayIso: String, dueIso: String, resetDay: Int = 1): Int =
+        instalmentsBetween(todayIso, dueIso, resetDay)
+
+    /**
+     * Returns list of human-readable month names for paydays falling between [startIso] and [dueIso].
+     */
+    fun paydaysBetween(startIso: String, dueIso: String, resetDay: Int = 1): List<String> {
+        if (dueIso.isEmpty()) return emptyList()
+        val start = if (startIso.isNotBlank()) startIso else today()
+        if (start >= dueIso) return emptyList()
+        
+        val partsStart = start.split("-")
+        val partsDue = dueIso.split("-")
+        if (partsStart.size < 3 || partsDue.size < 3) return emptyList()
+        
+        val startYear = partsStart[0].toIntOrNull() ?: return emptyList()
+        val startMonth = partsStart[1].toIntOrNull() ?: return emptyList()
+        val endYear = partsDue[0].toIntOrNull() ?: return emptyList()
+        val endMonth = partsDue[1].toIntOrNull() ?: return emptyList()
+        
+        val list = mutableListOf<String>()
+        var currYear = startYear
+        var currMonth = startMonth
+        val endLimit = endYear * 12 + endMonth
+        
+        while (currYear * 12 + currMonth <= endLimit) {
+            val calendar = java.util.Calendar.getInstance()
+            calendar.set(java.util.Calendar.YEAR, currYear)
+            calendar.set(java.util.Calendar.MONTH, currMonth - 1)
+            val maxDay = calendar.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+            val day = minOf(resetDay, maxDay)
+            
+            val paydayIso = "%04d-%02d-%02d".format(currYear, currMonth, day)
+            
+            if (paydayIso >= start && paydayIso <= dueIso) {
+                val cal = java.util.Calendar.getInstance()
+                cal.set(currYear, currMonth - 1, day)
+                val monthName = cal.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.SHORT, java.util.Locale.getDefault()) ?: ""
+                list.add("$monthName $currYear")
+            }
+            
+            if (currMonth == 12) {
+                currMonth = 1
+                currYear++
+            } else {
+                currMonth++
+            }
+        }
+        return list
     }
 
     /**

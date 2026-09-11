@@ -516,6 +516,8 @@ class Assistant(private val vm: FinTrackViewModel) {
             "income" -> "SAVINGS"
             else -> "EXPENSE"
         }
+        val rawStart = a.str("start_date").orEmpty()
+        val isoStart = if (rawStart.isNotBlank()) normalizeDateToIso(rawStart) ?: rawStart else ""
         val rawDue = a.str("due_date").orEmpty()
         val isoDue = if (rawDue.isNotBlank()) normalizeDateToIso(rawDue) ?: rawDue else ""
         val categoryName = a.str("category")?.let { vm.categoryNamed(it) } ?: if (kindStr == "income") "Receivable" else "Other"
@@ -528,6 +530,7 @@ class Assistant(private val vm: FinTrackViewModel) {
             type = type,
             joint = a.bool("joint") ?: false,
             note = note,
+            startDate = isoStart,
             dueDate = isoDue
         )
         val side = if (e.bucket == "JOINT") "Joint" else "Personal"

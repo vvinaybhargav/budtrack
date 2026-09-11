@@ -21,6 +21,7 @@ data class Entry(
     /** How many months between payments, 1–12. Zero means fall back to
      *  [frequency], so entries written before this field still read correctly. */
     val periodMonths: Int = 0,
+    val startDate: String = "",
     /** When the bill is actually due, as YYYY-MM-DD. Empty means it isn't
      *  known, and the amount is simply split over [everyMonths]. */
     val dueDate: String = "",
@@ -38,30 +39,21 @@ data class Entry(
             else -> 1
         }
 
-    /** What it costs each month: a quarterly bill is a third of itself, an
-     *  annual one a twelfth. A one-off is simply its own amount. */
-    /** The due date this is next working towards, rolled past any that have
-     *  already gone by. Empty when no date was given. */
     val nextDue: String get() = Ledger.nextDue(dueDate, everyMonths, today())
 
-    /**
-     * What to put by this month.
-     *
-     * With a due date this is the amount divided by the months left before it,
-     * not by the full period: ₹55,000 due on 29 January, decided in August, is
-     * ₹11,000 a month over five months — not the ₹4,583 that a blind twelfth
-     * would give, which would leave you ₹27,500 short on the day.
-     */
     val monthly: Double
         get() = monthly(1)
 
     fun monthly(resetDay: Int): Double = when {
         frequency == "ONE_TIME" -> amount
-        dueDate.isNotEmpty() -> Ledger.shareUntilDue(amount, today(), nextDue, resetDay)
+        dueDate.isNotEmpty() -> {
+            val start = if (startDate.isNotEmpty()) startDate else today()
+            val instalments = Ledger.instalmentsBetween(start, nextDue, resetDay)
+            Ledger.monthlyShare(amount, instalments)
+        }
         else -> Ledger.monthlyShare(amount, everyMonths)
     }
 
-    /** Anything that isn't simple monthly or has a target due date needs putting aside. */
     val isSetAside: Boolean get() = frequency != "ONE_TIME" && (everyMonths > 1 || dueDate.isNotEmpty() || frequency == "ANNUAL" || type == "SAVINGS")
 }
 
