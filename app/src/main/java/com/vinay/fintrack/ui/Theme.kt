@@ -113,6 +113,8 @@ object Pf {
 
     val isDark: Boolean @Composable @ReadOnlyComposable get() = LocalPfColors.current.isDark
     val OnAccent: Color @Composable @ReadOnlyComposable get() = if (LocalPfColors.current.isDark) Color(0xFF111827) else Color.White
+    val Rose: Color = Color(0xFFF43F5E)
+    val Danger: Color = Color(0xFFEF4444)
 }
 
 object Radius {
