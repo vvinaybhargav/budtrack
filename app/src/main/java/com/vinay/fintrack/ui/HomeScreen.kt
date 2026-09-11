@@ -280,7 +280,7 @@ private fun SpentTodayBadge(vm: FinTrackViewModel) {
             .clip(Radius.Md)
             .background(Pf.Surface)
             .border(1.dp, Pf.Hairline, Radius.Md)
-            .clickable { vm.tab = Tab.TRANSACTIONS }
+            .clickable { vm.tab = Tab.ENTRIES }
             .padding(horizontal = Space.s4, vertical = Space.s3)
     ) {
         Row(

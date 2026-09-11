@@ -1724,6 +1724,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val statementAmount = cardDraft.statementAmountText.toDoubleOrNull() ?: 0.0
         val newBal = cardDraft.balanceText.toDoubleOrNull() ?: 0.0
         val isPaid = if (newBal > 0.0) false else true
+        val tail = cardDraft.numberTail.trim()
         update { s ->
             val updatedCards = s.cards.map {
                 if (it.id == id) it.copy(
