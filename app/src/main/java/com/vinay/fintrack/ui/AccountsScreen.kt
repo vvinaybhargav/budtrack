@@ -51,7 +51,7 @@ import com.vinay.fintrack.data.today
 
 @Composable
 fun AccountsScreen(vm: FinTrackViewModel) {
-    var selectedFilter by remember { mutableStateOf("All") }
+    val selectedFilter = vm.accountsFilter
 
     val filterOptions = listOf(
         "All" to "All",
@@ -100,7 +100,7 @@ fun AccountsScreen(vm: FinTrackViewModel) {
                                     if (isSelected) Pf.Accent else Pf.Hairline,
                                     Radius.Pill
                                 )
-                                .clickable { selectedFilter = key }
+                                .clickable { vm.accountsFilter = key }
                                 .padding(horizontal = 14.dp, vertical = 6.dp)
                         ) {
                             Text(

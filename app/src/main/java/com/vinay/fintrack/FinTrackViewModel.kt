@@ -459,7 +459,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     var bucketView by mutableStateOf("PERSONAL")
     var balanceHidden by mutableStateOf(false); private set
     var expandedLoan by mutableStateOf<String?>(null); private set
-
+    var accountsFilter by mutableStateOf("All")
 
     var entriesSearch by mutableStateOf("")
     var amountFilterMinText by mutableStateOf("")
@@ -2351,6 +2351,15 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     val txnChips: List<String>
         get() = txns.filter { inBucket(it) }.map { it.category }.distinct()
+
+    val todayTxns: List<Txn>
+        get() = txns.filter { inBucket(it) && it.date == today() && it.kind == "EXPENSE" }
+
+    val todaySpent: Double
+        get() = todayTxns.sumOf { it.amount }
+
+    val todayTxnCount: Int
+        get() = todayTxns.size
 
     /** Removes it here and in Firestore, and the balance follows. */
     fun deleteTxn(id: String) = removeTxns { it.id == id }

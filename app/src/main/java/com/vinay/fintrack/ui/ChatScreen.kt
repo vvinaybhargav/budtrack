@@ -225,9 +225,10 @@ fun ChatScreen(vm: FinTrackViewModel) {
             val suggestions = listOf(
                 "💰 Spent this month",
                 "💳 Credit card dues",
-                "📊 Joint balance",
-                "🚗 Active loan EMIs",
-                "💡 Subscriptions"
+                "🎯 Set-aside pots",
+                "🚗 Loan EMIs",
+                "📅 Upcoming bills this week",
+                "📊 Joint balance"
             )
             Row(
                 Modifier
