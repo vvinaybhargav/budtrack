@@ -2194,7 +2194,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             .sumOf { it.monthly }
 
     fun plannedSetAsideFor(view: String): Double =
-        annualSetAsidesFor(view).sumOf { it.monthly }
+        annualSetAsidesFor(view).filter { isSetAsideActiveThisMonth(it) }.sumOf { it.monthly }
 
     fun plannedLoansFor(view: String): Double =
         scopedLoansFor(view).sumOf { it.monthlyEmi }
@@ -2203,7 +2203,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         scopedEntriesFor(view).filter { it.isSetAside && it.category != "Salary" }
 
     fun annualSetAsideDoneFor(view: String): Double =
-        annualSetAsidesFor(view).sumOf { setAsideDone(it).coerceAtMost(it.monthly) }
+        annualSetAsidesFor(view).filter { isSetAsideActiveThisMonth(it) }.sumOf { setAsideDone(it).coerceAtMost(it.monthly) }
 
     fun totalBalanceFor(view: String): Double =
         scopedAccountsFor(view).sumOf { balanceOf(it) }
@@ -2296,11 +2296,15 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             if (e.dueDate.isEmpty()) {
                 Ledger.monthlyShare(e.amount, e.everyMonths)
             } else {
-                val nextDueFromToday = Ledger.nextDue(e.dueDate, e.everyMonths, today())
-                if (on > nextDueFromToday) {
-                    Ledger.monthlyShare(e.amount, e.everyMonths)
+                val resetDay = salaryResetDayFor(e.person, on)
+                val start = if (e.startDate.isNotEmpty()) e.startDate else today()
+                val paydays = Ledger.allPaydayDatesBetween(start, e.dueDate, resetDay)
+                val onYm = on.take(7)
+                val isActiveInOnMonth = paydays.any { it.startsWith(onYm) }
+                if (isActiveInOnMonth) {
+                    e.monthly(resetDay)
                 } else {
-                    e.monthly(salaryResetDayFor(e.person, on))
+                    0.0
                 }
             }
         }
