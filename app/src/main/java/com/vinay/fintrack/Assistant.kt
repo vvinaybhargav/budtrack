@@ -133,12 +133,18 @@ class Assistant(private val vm: FinTrackViewModel) {
 
             "add_commitment" -> addCommitment(a)
             "edit_commitment" -> {
+                val rawStart = a.str("start_date")
+                val isoStart = rawStart?.let { normalizeDateToIso(it) ?: it }
                 val rawDue = a.str("due_date")
                 val isoDue = rawDue?.let { normalizeDateToIso(it) ?: it }
                 val e = vm.updateCommitment(
-                    a.str("id").orEmpty(), a.num("amount"),
-                    a.str("category")?.let { vm.categoryNamed(it) },
-                    a.int("every_months"), a.str("note"), isoDue
+                    id = a.str("id").orEmpty(),
+                    amount = a.num("amount"),
+                    category = a.str("category")?.let { vm.categoryNamed(it) },
+                    everyMonths = a.int("every_months"),
+                    note = a.str("note"),
+                    startDate = isoStart,
+                    dueDate = isoDue
                 ) ?: return@runCatching "No commitment with that id."
                 val section = if (e.isSetAside) "Set Aside" else "Recurring"
                 val label = e.note.ifBlank { e.category }

@@ -1172,7 +1172,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun openEditEntry(e: Entry) {
         editingEntryId = e.id
         tab = Tab.ADD
-        val startFormatted = if (e.startDate.isNotEmpty()) dayFirstOf(e.startDate) else ""
+        addKind = if (e.isSetAside) "SET_ASIDE" else if (e.type == "SAVINGS") "INVESTMENT" else "RECURRING"
+        val startFormatted = if (e.startDate.isNotEmpty()) dayFirstOf(e.startDate) else todayDayFirst()
         val dueFormatted = if (e.dueDate.isNotEmpty()) dayFirstOf(e.dueDate) else ""
         draft = Draft(
             person = e.person,
@@ -1204,7 +1205,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val p = scopePerson
         when (k) {
             "RECURRING" -> draft = Draft(person = p, type = "EXPENSE", frequency = "MONTHLY", periodMonths = 1)
-            "SET_ASIDE" -> draft = Draft(person = p, type = "EXPENSE", frequency = "ANNUAL", periodMonths = 12)
+            "SET_ASIDE" -> draft = Draft(person = p, type = "EXPENSE", frequency = "ANNUAL", periodMonths = 12, startDateText = todayDayFirst())
             "INVESTMENT" -> draft = Draft(person = p, type = "SAVINGS", category = "LIC", frequency = "MONTHLY")
             "ONE_TIME" -> draft = Draft(person = p, type = "EXPENSE", frequency = "ONE_TIME")
             "EMI_LOAN" -> newLoanDraft = NewLoanDraft(person = p)
@@ -1412,7 +1413,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val editingId = editingEntryId
-        val startIso = if (draft.startDateText.isNotBlank()) draftStartDateIso else ""
+        val startIso = if (draft.startDateText.isNotBlank()) draftStartDateIso else today()
         update { s ->
             val entry = Entry(
                 id = editingId ?: newId("e"),
@@ -3834,7 +3835,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     ): Entry {
         val person = if (joint) "Joint" else activeProfile ?: "Me"
         val bucket = if (joint) "JOINT" else "PERSONAL"
-        val isoStart = if (startDate.isNotBlank()) normalizeDateToIso(startDate) ?: startDate else ""
+        val isoStart = if (startDate.isNotBlank()) normalizeDateToIso(startDate) ?: startDate else today()
         val isoDue = if (dueDate.isNotBlank()) normalizeDateToIso(dueDate) ?: dueDate else ""
         val isTargetOrGoal = isoDue.isNotEmpty() || everyMonths > 1 || type == "SAVINGS" || type == "INCOME" || note.isNotBlank()
         val entryType = if (type == "INCOME" || type == "SAVINGS") "SAVINGS" else type
@@ -3865,17 +3866,21 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         category: String? = null,
         everyMonths: Int? = null,
         note: String? = null,
+        startDate: String? = null,
         dueDate: String? = null
     ): Entry? {
         val e = entryById(id) ?: return null
         val months = everyMonths?.coerceIn(1, 12) ?: e.everyMonths
+        val isoStart = startDate?.let { if (it.isNotBlank()) normalizeDateToIso(it) ?: it else "" }
         val isoDue = dueDate?.let { if (it.isNotBlank()) normalizeDateToIso(it) ?: it else "" }
+        val finalStart = isoStart ?: e.startDate
         val finalDue = isoDue ?: e.dueDate
         val updated = e.copy(
             amount = amount ?: e.amount,
             category = category ?: e.category,
             note = note ?: e.note,
             periodMonths = months,
+            startDate = finalStart,
             dueDate = finalDue,
             frequency = if (months >= 12 || finalDue.isNotEmpty()) "ANNUAL" else "MONTHLY"
         )

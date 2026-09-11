@@ -709,7 +709,7 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             )
         }
 
-        val isSetAsideKind = vm.addKind == "SET_ASIDE" || (isEditing && vm.draft.type == "SAVINGS")
+        val isSetAsideKind = vm.addKind == "SET_ASIDE" || (isEditing && (vm.draft.type == "SAVINGS" || vm.draft.dueText.isNotEmpty() || vm.draft.startDateText.isNotEmpty() || vm.draft.periodMonths > 1 || vm.draft.frequency == "ANNUAL"))
 
         if (isSetAsideKind) {
             Row(
@@ -718,7 +718,7 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             ) {
                 PfField(
                     label = "Start Date",
-                    value = if (vm.draft.startDateText.isNotEmpty()) vm.draft.startDateText else vm.todayDayFirstText,
+                    value = vm.draft.startDateText.ifEmpty { vm.todayDayFirstText },
                     onValueChange = { vm.draft = vm.draft.copy(startDateText = it) },
                     placeholder = "dd-mm-yyyy",
                     numeric = false,

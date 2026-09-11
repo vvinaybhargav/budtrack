@@ -103,6 +103,9 @@ object AssistantTools {
             put("every_months", int(
                 "How many months between one payment and the next (1 to 12). Default 1 for single goal/purchase with due date or monthly bills; 12 for yearly bills."
             ))
+            put("start_date", str(
+                "When the set-aside or plan starts, as YYYY-MM-DD or dd-MM-yyyy. Default today."
+            ))
             put("due_date", str(
                 "When the planned purchase or bill is due, as YYYY-MM-DD (e.g. '2026-09-15') or dd-MM-yyyy."
             ))
@@ -113,12 +116,13 @@ object AssistantTools {
             put("note", str("Description of the item or purchase (e.g. 'Spectacles')."))
             required("amount")
         })
-        add(tool("edit_commitment", "Change a recurring entry.") {
+        add(tool("edit_commitment", "Change a recurring entry or set aside.") {
             put("id", str("Entry id. Required."))
             put("amount", num("New amount."))
             put("category", str("New category."))
             put("every_months", int("New period in months, 1 to 12."))
-            put("due_date", str("New due date as YYYY-MM-DD."))
+            put("start_date", str("New start date as YYYY-MM-DD or dd-MM-yyyy."))
+            put("due_date", str("New due date as YYYY-MM-DD or dd-MM-yyyy."))
             put("note", str("New description."))
             required("id")
         })
