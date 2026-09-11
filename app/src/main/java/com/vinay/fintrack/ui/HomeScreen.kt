@@ -231,44 +231,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     hasPrior = true
                 }
 
-                // 5. BORROWED & LENT
-                val borrowedLentItems = vm.borrowedLentTxns
-                val totalBorrowed = borrowedLentItems.sumOf { it.amount }
-                if (borrowedLentItems.isNotEmpty()) {
-                    if (hasPrior) HomeSectionDivider()
-                    HomeListHeaderLabel("BORROWED & LENT · ${inr(totalBorrowed)}") {
-                        vm.accountsFilter = "Borrowed"
-                        vm.tab = Tab.ACCOUNTS
-                    }
-                    borrowedLentItems.forEachIndexed { idx, t ->
-                        if (idx > 0) Hairline()
-                        val isMyTxn = vm.visibleAccounts.any { it.id == t.fromAccountId || it.id == t.toAccountId } ||
-                                      vm.cards.any { it.id == t.cardId }
-                        val title = if (isMyTxn) {
-                            val isBorrowed = t.kind == "INCOME" || t.kind == "REFUND"
-                            if (isBorrowed) "Borrowed from ${t.borrowedFrom}" else "Lent to ${t.borrowedFrom}"
-                        } else {
-                            val isBorrowed = !(t.kind == "INCOME" || t.kind == "REFUND")
-                            val otherProfileName = vm.profileNames.firstOrNull { it != vm.activeProfile } ?: "Partner"
-                            if (isBorrowed) "Borrowed from $otherProfileName" else "Lent to $otherProfileName"
-                        }
-                        val returnPart = if (t.returnDate.isNotEmpty()) "due ${prettyDate(t.returnDate)}" else null
-                        val datePart = prettyDate(t.date)
-                        val notePart = t.note.ifBlank { null }
-                        val subtitle = listOfNotNull(datePart, returnPart, notePart).joinToString(" · ")
-
-                        HomeCompactRow(
-                            title = "${idx + 1}. $title",
-                            subtitle = subtitle,
-                            amount = inr(t.amount),
-                            amountColor = Pf.Text,
-                            onClick = { vm.startSettleBorrowed(t.id) }
-                        )
-                    }
-                    hasPrior = true
-                }
-
-                // 6. SALARY / EXPECTED INCOME
+                // 5. SALARY / EXPECTED INCOME
                 if (upcomingSalary > 0.0) {
                     if (hasPrior) HomeSectionDivider()
                     HomeListHeaderLabel("SALARY · ${inr(upcomingSalary)}")
@@ -303,7 +266,6 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
     ConfirmSheet(vm)
     CardSettleSheet(vm)
-    BorrowedSettleSheet(vm)
 }
 
 @Composable
@@ -805,68 +767,7 @@ fun CardSettleSheet(vm: FinTrackViewModel) {
     }
 }
 
-@Composable
-fun BorrowedSettleSheet(vm: FinTrackViewModel) {
-    val txnId = vm.settlingBorrowedTxnId ?: return
-    val txn = vm.borrowedLentTxns.firstOrNull { it.id == txnId } ?: return
 
-    val isBorrowed = txn.kind == "INCOME" || txn.kind == "REFUND"
-    val outstanding = txn.amount - txn.returnedAmount
-
-    Dialog(onDismissRequest = vm::cancelSettleBorrowed) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(Pf.Surface, Radius.Lg)
-                .border(1.dp, Pf.Hairline, Radius.Lg)
-                .padding(Space.s4),
-            verticalArrangement = Arrangement.spacedBy(Space.s3)
-        ) {
-            Text(
-                if (isBorrowed) "Settle Borrowed Money" else "Settle Lent Money",
-                color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold
-            )
-            Text(
-                if (isBorrowed) "Repaying ${txn.borrowedFrom} (Outstanding: ₹${inr(outstanding)})"
-                else "Collecting from ${txn.borrowedFrom} (Outstanding: ₹${inr(outstanding)})",
-                color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
-            )
-            
-            PfField(
-                label = "Amount to Repay / Collect (₹)",
-                value = vm.settleBorrowedAmountDraft,
-                onValueChange = { vm.settleBorrowedAmountDraft = it },
-                numeric = true
-            )
-            
-            Column {
-                Muted(if (isBorrowed) "Paid from Account" else "Received into Account")
-                PfSelect(
-                    value = vm.settleBorrowedAccountNameDraft,
-                    options = vm.visibleAccounts.map { it.name },
-                    onSelect = { vm.settleBorrowedAccountNameDraft = it }
-                )
-            }
-            
-            Muted("Settle payment creates a transaction from/into the selected account and reduces the outstanding balance.")
-            
-            Row(
-                Modifier.fillMaxWidth().padding(top = Space.s2),
-                horizontalArrangement = Arrangement.spacedBy(Space.s2)
-            ) {
-                SecondaryButton("Cancel", vm::cancelSettleBorrowed, Modifier.weight(1f))
-                PrimaryButton(
-                    "Settle",
-                    vm::confirmSettleBorrowed,
-                    Modifier.weight(1f),
-                    enabled = (vm.settleBorrowedAmountDraft.toDoubleOrNull() ?: 0.0) > 0.0 &&
-                              (vm.settleBorrowedAmountDraft.toDoubleOrNull() ?: 0.0) <= outstanding &&
-                              vm.settleBorrowedAccountNameDraft.isNotBlank()
-                )
-            }
-        }
-    }
-}
 
 @Composable
 fun DetectedAccountDialog(vm: FinTrackViewModel) {
@@ -2304,63 +2205,7 @@ private fun LoansSection(vm: FinTrackViewModel) {
     }
 }
 
-@Composable
-private fun BorrowedLentSection(vm: FinTrackViewModel) {
-    val items = vm.borrowedLentTxns
-    if (items.isEmpty()) return
 
-    Column {
-        SectionTitle("Borrowed & Lent", Modifier.padding(bottom = Space.s3))
-        Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-            items.forEach { txn ->
-                val isMyTxn = vm.visibleAccounts.any { it.id == txn.fromAccountId || it.id == txn.toAccountId } ||
-                              vm.cards.any { it.id == txn.cardId }
-                
-                val title = if (isMyTxn) {
-                    val isBorrowed = txn.kind == "INCOME" || txn.kind == "REFUND"
-                    if (isBorrowed) "Borrowed from ${txn.borrowedFrom}" else "Lent to ${txn.borrowedFrom}"
-                } else {
-                    val isBorrowed = !(txn.kind == "INCOME" || txn.kind == "REFUND")
-                    val otherProfileName = vm.profileNames.firstOrNull { it != vm.activeProfile } ?: "Partner"
-                    if (isBorrowed) "Borrowed from $otherProfileName" else "Lent to $otherProfileName"
-                }
-
-                PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                title,
-                                color = Pf.Text,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            val returnDateText = if (txn.returnDate.isNotEmpty()) {
-                                " · Return due by ${prettyDate(txn.returnDate)}"
-                            } else ""
-                            Muted(
-                                "${inr(txn.amount)} · ${prettyDate(txn.date)}" + 
-                                    (if (txn.note.isNotEmpty()) " · ${txn.note}" else "") +
-                                    returnDateText,
-                                Modifier.padding(top = 2.dp)
-                            )
-                        }
-                        Spacer(Modifier.width(Space.s2))
-                        SecondaryButton(
-                            text = "Settle",
-                            onClick = { vm.startSettleBorrowed(txn.id) }
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun CardsSection(vm: FinTrackViewModel) {

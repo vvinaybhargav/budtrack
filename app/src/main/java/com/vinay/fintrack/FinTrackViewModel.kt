@@ -113,13 +113,16 @@ data class NewAccountDraft(
 
 data class NewCardDraft(
     val name: String = "", val owner: String = "Me", val limitText: String = "",
-    val balanceText: String = "", val minDueText: String = "", val due: String = "",
-    /** Last digits as the bank's SMS shows them, for matching card spends. */
-    val numberTail: String = "",
-    /** Bill date as the form takes it (dd-mm-yyyy), so it can be reminded about. */
-    val dueText: String = "",
-    val statementDayText: String = "20",
-    val statementAmountText: String = ""
+    val balanceText: String = "", val minDueText: String = "", val dueText: String = "",
+    val statementDayText: String = "", val statementAmountText: String = "",
+    val numberTail: String = ""
+)
+
+data class OneOffPaymentSource(
+    val id: String,
+    val name: String,
+    val isCard: Boolean,
+    val subtitle: String
 )
 
 class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
@@ -1039,6 +1042,34 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     private fun removeTxns(match: (Txn) -> Boolean) {
         val doomed = persisted.txns.filter(match)
         if (doomed.isEmpty()) return
+
+        // If any doomed txn was linked to a loan, restore the loan's tenure (unpaid)
+        doomed.forEach { t ->
+            if (t.loanId.isNotEmpty()) {
+                val l = loans.firstOrNull { it.id == t.loanId }
+                if (l != null) {
+                    update { s ->
+                        s.copy(
+                            loans = s.loans.map {
+                                if (it.id == l.id) it.copy(remainingMonths = minOf(it.totalMonths, it.remainingMonths + 1)) else it
+                            },
+                            cards = s.cards.map {
+                                if (it.id == l.cardId) it.copy(balance = (it.balance - l.monthlyEmi).coerceAtLeast(0.0)) else it
+                            }
+                        )
+                    }
+                }
+            }
+            // If deleting a credit card bill payment transaction, mark card as unpaid & restore balance
+            if (t.cardId.isNotEmpty() && t.category == "Credit Card Bill") {
+                update { s ->
+                    s.copy(cards = s.cards.map {
+                        if (it.id == t.cardId) it.copy(balance = it.balance + t.amount, paid = false) else it
+                    })
+                }
+            }
+        }
+
         update { s -> s.copy(txns = s.txns.filterNot(match)) }
         doomed.forEach { sync.deleteTxn(it.id) }
     }
@@ -1127,7 +1158,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     var oneOffAccountId by mutableStateOf("")
-    var oneOffIsCredit by mutableStateOf(false)
+    var oneOffCardId by mutableStateOf("")
+    var oneOffToAccountId by mutableStateOf("")
+    var oneOffKind by mutableStateOf("EXPENSE")
 
     /** Day-first as written here. Defaults to today so the common case is a
      *  field you never touch, but a payment from last week can be recorded. */
@@ -1137,7 +1170,78 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     val todayDayFirstText: String get() = todayDayFirst()
 
-    fun setOneOffAccount(id: String) { oneOffAccountId = id }
+    var oneOffIsCredit: Boolean
+        get() = oneOffKind == "INCOME"
+        set(v) { oneOffKind = if (v) "INCOME" else "EXPENSE" }
+
+    fun setOneOffAccount(id: String) {
+        oneOffAccountId = id
+        oneOffCardId = ""
+    }
+
+    fun setOneOffCard(id: String) {
+        oneOffCardId = id
+        oneOffAccountId = ""
+    }
+
+    fun setOneOffToAccount(id: String) {
+        oneOffToAccountId = id
+    }
+
+    val oneOffPaymentSources: List<OneOffPaymentSource>
+        get() {
+            val accs = oneOffAccountOptions.map {
+                OneOffPaymentSource(
+                    id = it.id,
+                    name = it.name,
+                    isCard = false,
+                    subtitle = "Bank A/c · Balance: ${inr(balanceOf(it))}"
+                )
+            }
+            val cds = scopedCards.map {
+                val due = if (it.dueText.isNotBlank()) " · Due: ${it.dueText}" else ""
+                OneOffPaymentSource(
+                    id = it.id,
+                    name = it.name,
+                    isCard = true,
+                    subtitle = "Credit Card · Balance: ${inr(it.balance)}$due"
+                )
+            }
+            return accs + cds
+        }
+
+    val selectedOneOffSourceName: String
+        get() {
+            if (oneOffCardId.isNotEmpty()) {
+                val c = cards.firstOrNull { it.id == oneOffCardId }
+                if (c != null) return "${c.name} (Credit Card)"
+            }
+            val acc = accounts.firstOrNull { it.id == resolvedOneOffAccount }
+            return acc?.let { "${it.name} (Bank)" } ?: "Select Payment Method"
+        }
+
+    fun selectOneOffPaymentSource(displayName: String) {
+        val src = oneOffPaymentSources.firstOrNull {
+            val full = if (it.isCard) "${it.name} (Credit Card)" else "${it.name} (Bank)"
+            full == displayName || it.name == displayName
+        }
+        if (src != null) {
+            if (src.isCard) {
+                oneOffCardId = src.id
+                oneOffAccountId = ""
+            } else {
+                oneOffAccountId = src.id
+                oneOffCardId = ""
+            }
+        }
+    }
+
+    val oneOffToAccountName: String
+        get() {
+            val acc = accounts.firstOrNull { it.id == oneOffToAccountId }
+                ?: visibleAccounts.firstOrNull { it.id != resolvedOneOffAccount }
+            return acc?.name.orEmpty()
+        }
 
     /**
      * A one-off is a payment that already happened, so it becomes a transaction
@@ -1191,30 +1295,45 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         get() = accounts.firstOrNull { it.id == resolvedOneOffAccount }?.name.orEmpty()
 
     private fun saveOneOff(amount: Double) {
-        val account = resolvedOneOffAccount
         val date = isoFromDayFirst(oneOffDateText) ?: today()
+        val kind = oneOffKind
+        val isCard = oneOffCardId.isNotEmpty() && kind == "EXPENSE"
+        val account = if (isCard) "" else resolvedOneOffAccount
+        val toAccount = if (kind == "TRANSFER") {
+            oneOffToAccountId.ifEmpty { (visibleAccounts.firstOrNull { it.id != account }?.id).orEmpty() }
+        } else if (kind == "INCOME") account else ""
+        val fromAccount = if (kind == "EXPENSE" && !isCard) account else if (kind == "TRANSFER") account else ""
+        val card = if (isCard) oneOffCardId else ""
+
         addTxn { id ->
             Txn(
                 id = id,
                 date = date,
-                kind = if (oneOffIsCredit) "INCOME" else "EXPENSE",
+                kind = kind,
                 amount = amount,
-                category = draft.category,
-                fromAccountId = if (oneOffIsCredit) "" else account,
-                toAccountId = if (oneOffIsCredit) account else "",
-                // The month it happened in, not the month you typed it in, so a
-                // backdated payment counts against the right budget.
+                category = if (kind == "TRANSFER") "Transfer" else draft.category,
+                fromAccountId = fromAccount,
+                toAccountId = toAccount,
+                cardId = card,
                 period = Ledger.cycleOf(date, cycleResetDay),
-                note = draft.note.ifEmpty { draft.category },
-                // Today's keeps the current time. A back-dated one records no
-                // time at all rather than a midnight nobody chose — the row
-                // then shows just its date, which is all that is known.
+                note = draft.note.ifEmpty { if (kind == "TRANSFER") "Transfer" else draft.category },
                 at = if (date == today()) System.currentTimeMillis() else 0L
             )
         }
+
+        if (isCard) {
+            update { s ->
+                s.copy(cards = s.cards.map {
+                    if (it.id == card) it.copy(balance = it.balance + amount, paid = false) else it
+                })
+            }
+        }
+
         draft = Draft(person = scopePerson)
         oneOffAccountId = ""
-        oneOffIsCredit = false
+        oneOffCardId = ""
+        oneOffToAccountId = ""
+        oneOffKind = "EXPENSE"
         oneOffDateText = todayDayFirst()
         tab = Tab.ENTRIES
     }
@@ -2087,11 +2206,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val loans: Double,
         val setAside: Double,
         val income: Double,
-        val borrowedRepayments: Double,
         /** A loan that makes its last payment this month, worth seeing coming. */
         val loanEnding: String
     ) {
-        val out: Double get() = Ledger.paise(recurring + loans + setAside + borrowedRepayments)
+        val out: Double get() = Ledger.paise(recurring + loans + setAside)
         val left: Double get() = Ledger.paise(income - out)
     }
 
@@ -2124,21 +2242,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val running = scopedLoans.filter { it.remainingMonths > ahead }
         val ending = scopedLoans.firstOrNull { it.remainingMonths == ahead }
 
-        // Find all borrowed transactions that are scheduled to be repaid in this projected month
-        val monthPrefix = on.substring(0, 7) // e.g. "2026-09"
-        val repayments = txns.filter { t ->
-            inBucket(t) && t.borrowedFrom.isNotEmpty() && !t.returned &&
-            (t.kind == "INCOME" || t.kind == "REFUND") &&
-            t.returnDate.startsWith(monthPrefix)
-        }.sumOf { it.amount }
-
         OutlookMonth(
             label = monthLabel(on),
             recurring = plannedRecurring,
             loans = Ledger.paise(running.sumOf { it.monthlyEmi }),
             setAside = Ledger.paise(setAside),
             income = plannedIncomeFor(bucketView, on),
-            borrowedRepayments = repayments,
             loanEnding = ending?.name.orEmpty()
         )
     }
@@ -2344,14 +2453,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 .sortedByDescending { it.sortKey }
         }
 
-    val borrowedLentTxns: List<Txn>
-        get() {
-            val myBorrowedLent = txns.filter { inBucket(it) && it.borrowedFrom.isNotEmpty() && !it.returned }
-            val otherBorrowedLent = txns.filter {
-                !inBucket(it) && it.borrowedFrom == activeProfile && !it.returned
-            }
-            return (myBorrowedLent + otherBorrowedLent).distinctBy { it.id }.sortedByDescending { it.sortKey }
-        }
+
 
     val txnChips: List<String>
         get() = txns.filter { inBucket(it) }.map { it.category }.distinct()
@@ -2435,13 +2537,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         category: String,
         loanId: String?,
         entryId: String?,
-        borrowedFrom: String,
-        returnDate: String,
-        returned: Boolean
+        cardPaymentId: String? = null
     ) {
         val t = txns.firstOrNull { it.id == txnId } ?: return
         val isIncome = t.kind == "INCOME"
-        val fromAcc = if (isIncome || t.cardId.isNotEmpty()) "" else accountId
+        val fromAcc = if (isIncome || (t.cardId.isNotEmpty() && cardPaymentId.isNullOrEmpty() && t.category != "Credit Card Bill")) "" else accountId
         val toAcc = if (isIncome && t.cardId.isEmpty()) accountId else ""
 
         val updated = t.copy(
@@ -2450,13 +2550,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             fromAccountId = fromAcc,
             toAccountId = toAcc,
             category = category,
-            borrowedFrom = borrowedFrom,
-            returnDate = returnDate,
-            returned = returned,
             accountTail = if (accountId.isNotEmpty() || t.cardId.isNotEmpty()) "" else t.accountTail
         )
         replaceTxn(updated)
-        linkTxnToCommitment(txnId, loanId, entryId)
+        linkTxnToCommitment(txnId, loanId, entryId, cardPaymentId)
         if (category.isNotBlank() && category != UNCATEGORISED) {
             val payee = payeeOf(updated)
             learnPayeeCategory(payee, category)
@@ -2465,11 +2562,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             android.widget.Toast.makeText(appContext, "Transaction saved!", android.widget.Toast.LENGTH_SHORT).show()
         }
-    }
-
-    fun setTxnBorrowedFrom(txnId: String, borrowedFrom: String) {
-        val t = txns.firstOrNull { it.id == txnId } ?: return
-        replaceTxn(t.copy(borrowedFrom = borrowedFrom))
     }
 
     fun setTxnReturned(txnId: String, returned: Boolean) {
@@ -2624,59 +2716,97 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun linkTxnToCommitment(txnId: String, loanId: String?, entryId: String?) {
+    fun linkTxnToCommitment(txnId: String, loanId: String?, entryId: String?, cardPaymentId: String? = null) {
         val txn = persisted.txns.firstOrNull { it.id == txnId } ?: return
+        val prevLoanId = txn.loanId
+        val prevEntryId = txn.entryId
+        val prevCardPaymentId = if (txn.category == "Credit Card Bill" || txn.source == CARD_PAYMENT) txn.cardId else ""
         val nextLoanId = loanId.orEmpty()
         val nextEntryId = entryId.orEmpty()
+        val nextCardPaymentId = cardPaymentId.orEmpty()
         var nextPeriod = txn.period
         var nextCategory = txn.category
+        var nextCardId = txn.cardId
+        var nextSource = txn.source
 
-        // 1. If currently linked to a borrowed transaction, revert its returned amount
-        val prevBorrowedId = txn.loanId
-        if (prevBorrowedId.isNotEmpty() && prevBorrowedId != nextLoanId) {
-            val b = persisted.txns.firstOrNull { it.id == prevBorrowedId }
-            if (b != null) {
-                val nextReturnedAmt = (b.returnedAmount - txn.amount).coerceAtLeast(0.0)
+        // 1. Handle loan unlinking (turn back to unpaid)
+        if (prevLoanId.isNotEmpty() && prevLoanId != nextLoanId) {
+            val prevLoan = loans.firstOrNull { it.id == prevLoanId }
+            if (prevLoan != null) {
                 update { s ->
-                    s.copy(txns = s.txns.map {
-                        if (it.id == b.id) it.copy(returnedAmount = nextReturnedAmt, returned = false) else it
-                    })
+                    s.copy(
+                        loans = s.loans.map {
+                            if (it.id == prevLoanId) it.copy(remainingMonths = minOf(it.totalMonths, it.remainingMonths + 1)) else it
+                        },
+                        cards = s.cards.map {
+                            if (it.id == prevLoan.cardId) it.copy(balance = (it.balance - prevLoan.monthlyEmi).coerceAtLeast(0.0)) else it
+                        }
+                    )
                 }
             }
         }
 
-        // 2. Set next period and category
-        if (nextLoanId.isNotEmpty()) {
-            val l = loans.firstOrNull { it.id == nextLoanId }
-            if (l != null) {
-                nextPeriod = cycleFor(l.person)
+        // 2. Handle loan linking (turn to paid)
+        if (nextLoanId.isNotEmpty() && prevLoanId != nextLoanId) {
+            val nextLoan = loans.firstOrNull { it.id == nextLoanId }
+            if (nextLoan != null) {
+                nextPeriod = cycleFor(nextLoan.person)
                 nextCategory = "EMI"
-            } else {
-                // Check if nextLoanId is a borrowed/lent transaction
-                val b = txns.firstOrNull { it.id == nextLoanId }
-                if (b != null) {
-                    nextPeriod = cycleFor(b.borrowedFrom)
-                    nextCategory = "Settle Debt"
-                    
-                    // Update the borrowed transaction's returnedAmount
-                    if (prevBorrowedId != nextLoanId) {
-                        val nextReturnedAmt = (b.returnedAmount + txn.amount).coerceAtMost(b.amount)
-                        update { s ->
-                            s.copy(txns = s.txns.map {
-                                if (it.id == b.id) it.copy(
-                                    returnedAmount = nextReturnedAmt,
-                                    returned = nextReturnedAmt >= b.amount
-                                ) else it
-                            })
+                update { s ->
+                    s.copy(
+                        loans = s.loans.map {
+                            if (it.id == nextLoanId) it.copy(remainingMonths = maxOf(0, it.remainingMonths - 1)) else it
+                        },
+                        cards = s.cards.map {
+                            if (it.id == nextLoan.cardId) it.copy(balance = it.balance + nextLoan.monthlyEmi, paid = false) else it
                         }
-                    }
+                    )
                 }
             }
+        }
+
+        // 3. Handle Recurring / Set Aside unlinking & linking
+        if (prevEntryId.isNotEmpty() && nextEntryId.isEmpty()) {
+            // Unlinked from entry -> reset period to normal transaction cycle so isConfirmed returns false (unpaid)
+            nextPeriod = Ledger.cycleOf(txn.date, cycleResetDay)
         } else if (nextEntryId.isNotEmpty()) {
+            // Linked to entry -> set period to entry's owner cycle so isConfirmed returns true (paid)
             val e = entries.firstOrNull { it.id == nextEntryId }
             if (e != null) {
                 nextPeriod = cycleFor(e.person)
                 nextCategory = e.category
+            }
+        }
+
+        // 4. Handle Credit Card bill payment unlinking & linking
+        if (prevCardPaymentId.isNotEmpty() && prevCardPaymentId != nextCardPaymentId) {
+            // Unlinked from card bill payment -> restore card balance and mark unpaid
+            update { s ->
+                s.copy(
+                    cards = s.cards.map {
+                        if (it.id == prevCardPaymentId) it.copy(balance = it.balance + txn.amount, paid = false) else it
+                    }
+                )
+            }
+            if (nextCardPaymentId.isEmpty() && nextLoanId.isEmpty()) {
+                nextCardId = ""
+                if (nextSource == CARD_PAYMENT) nextSource = ""
+            }
+        }
+        if (nextCardPaymentId.isNotEmpty() && prevCardPaymentId != nextCardPaymentId) {
+            // Linked to card bill payment -> reduce card balance and mark paid if zero
+            nextCardId = nextCardPaymentId
+            nextCategory = "Credit Card Bill"
+            nextSource = CARD_PAYMENT
+            update { s ->
+                s.copy(
+                    cards = s.cards.map {
+                        if (it.id == nextCardPaymentId) {
+                            val newBal = (it.balance - txn.amount).coerceAtLeast(0.0)
+                            it.copy(balance = newBal, paid = newBal <= 0.0)
+                        } else it
+                    }
+                )
             }
         }
 
@@ -2687,6 +2817,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                         t.copy(
                             loanId = nextLoanId,
                             entryId = nextEntryId,
+                            cardId = nextCardId,
+                            source = nextSource,
                             period = nextPeriod,
                             category = nextCategory
                         )
@@ -4037,63 +4169,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    var settlingBorrowedTxnId by mutableStateOf<String?>(null); private set
-    var settleBorrowedAmountDraft by mutableStateOf("")
-    var settleBorrowedAccountNameDraft by mutableStateOf("")
 
-    fun startSettleBorrowed(txnId: String) {
-        val t = txns.firstOrNull { it.id == txnId } ?: return
-        settlingBorrowedTxnId = txnId
-        val outstanding = t.amount - t.returnedAmount
-        settleBorrowedAmountDraft = outstanding.toLong().toString()
-        settleBorrowedAccountNameDraft = defaultAccount
-    }
-
-    fun cancelSettleBorrowed() {
-        settlingBorrowedTxnId = null
-    }
-
-    fun confirmSettleBorrowed() {
-        val txnId = settlingBorrowedTxnId ?: return
-        val t = txns.firstOrNull { it.id == txnId } ?: return
-        val amount = settleBorrowedAmountDraft.toDoubleOrNull() ?: 0.0
-        if (amount <= 0.0) return
-
-        val accId = persisted.accounts.firstOrNull { it.name == settleBorrowedAccountNameDraft }?.id
-            ?: persisted.accounts.firstOrNull()?.id
-            ?: ""
-
-        val isBorrowed = t.kind == "INCOME" || t.kind == "REFUND"
-        val now = today()
-        
-        val repaymentTxn = Txn(
-            id = newId("t"),
-            date = now,
-            kind = if (isBorrowed) "EXPENSE" else "INCOME",
-            amount = amount,
-            category = "Settle Debt",
-            fromAccountId = if (isBorrowed) accId else "",
-            toAccountId = if (isBorrowed) "" else accId,
-            period = Ledger.cycleOf(now, cycleResetDay),
-            note = if (isBorrowed) "Paid back ${t.borrowedFrom}" else "Received from ${t.borrowedFrom}",
-            at = System.currentTimeMillis(),
-            loanId = t.id
-        )
-
-        val nextReturnedAmt = (t.returnedAmount + amount).coerceAtMost(t.amount)
-
-        update { s ->
-            s.copy(
-                txns = (s.txns.map {
-                    if (it.id == t.id) it.copy(
-                        returnedAmount = nextReturnedAmt,
-                        returned = nextReturnedAmt >= t.amount
-                    ) else it
-                }) + repaymentTxn
-            )
-        }
-        settlingBorrowedTxnId = null
-    }
 
     fun addSmsRule(pattern: String, category: String) {
         val cleanPattern = pattern.trim()

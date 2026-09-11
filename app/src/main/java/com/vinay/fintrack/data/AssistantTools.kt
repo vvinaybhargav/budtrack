@@ -72,8 +72,6 @@ object AssistantTools {
             put("account", str("Account name."))
             put("note", str("Payee or description."))
             put("date", str("dd-MM-yyyy. Default today. MUST NOT be a future date."))
-            put("borrowed_from", str("Profile name (e.g. 'Wife') or custom name this was borrowed from / lent to."))
-            put("return_date", str("Target return date as YYYY-MM-DD."))
             required("amount")
         })
         add(tool("edit_transaction", "Change a recorded transaction.") {
@@ -83,9 +81,6 @@ object AssistantTools {
             put("account", str("New account name."))
             put("note", str("New payee or description."))
             put("date", str("New date as dd-MM-yyyy."))
-            put("borrowed_from", str("New profile/custom name this was borrowed from / lent to."))
-            put("return_date", str("New target return date as YYYY-MM-DD."))
-            put("returned", bool("True if this borrowed/lent money has been returned/settled."))
             required("id")
         })
         add(tool(
@@ -317,19 +312,19 @@ object AssistantTools {
         You can read and modify financial data accurately through your tools.
 
         CRITICAL RULES FOR INSERT, UPDATE, AND DELETE:
-        1. FUTURE EXPENSES & GOALS vs COMPLETED TRANSACTIONS:
-           - A planned expense, goal, or upcoming purchase with a future date or future need (e.g. "i need to buy spects 2500 for me on 15th sep", "plan 50000 for insurance on 10 Oct", "save 10000 for travel next month") is ALWAYS a Set Aside / Goal (`add_commitment` with `due_date` and `note`).
-           - NEVER call `add_transaction` for future dates, upcoming purchases, or plans. `add_transaction` is STRICTLY for money that was ALREADY spent, received, or transferred in the past or on today's date.
+        1. FUTURE EXPENSES, GOALS & EXPECTED INFLOWS vs COMPLETED TRANSACTIONS:
+           - A planned expense, goal, upcoming purchase, or EXPECTED MONEY FROM OTHERS (e.g. "i should be getting 25k from ajay", "ajay owes me 25k", "expecting 50000 on 10 Oct", "i need to buy spects 2500 on 15th sep") is ALWAYS added to Set Aside (`add_commitment` with `kind = "income"` for incoming receivables, or `kind = "expense"` for goals, with `note` and `due_date` if mentioned).
+           - NEVER call `add_transaction` for future dates, upcoming purchases, plans, or expected future money. `add_transaction` is STRICTLY for money that was ALREADY spent, received, or transferred in the past or on today's date.
         2. CLEAR INFORMATION ON WHERE ACTIONS ARE TAKEN:
-           - Whenever you insert, update, or delete anything, clearly tell the user EXACTLY WHERE it was added, updated, or deleted (e.g. "Added to Set Aside (Vinay): Spectacles ₹2,500 due 15 Sep 2026", "Recorded in Transactions under ICICI: Spent ₹250 on Food", "Updated in Credit Cards: ICICI Sapphiro limit ₹3,00,000", etc.).
-           - Explicitly state the destination section (Set Aside, Recurring, Transactions, Accounts, Credit Cards, Loans, Budgets), the profile (Vinay / Wife / Joint), the date, and the amount.
+           - Whenever you insert, update, or delete anything, clearly tell the user EXACTLY WHERE it was added, updated, or deleted (e.g. "Added to Set Aside (Vinay): Expected from Ajay ₹25,000", "Added to Set Aside: Spectacles ₹2,500 due 15 Sep 2026", "Recorded in Transactions under HDFC: Received ₹25,000 from Ajay", "Recorded in Transactions under ICICI: Spent ₹250 on Food", etc.).
+           - Explicitly state the destination section (Set Aside, Recurring, Transactions, Accounts, Credit Cards, Loans, Budgets), the profile (Vinay / Joint), the date, and the amount.
         3. ASKING BEFORE ACTION WHEN AMBIGUOUS:
-           - If a user's instruction is ambiguous — for example, if it is unclear whether they already made a payment or are planning to make it later, or if crucial details (which bank account, which profile, or which category) are missing and cannot be reasonably deduced — ask the user for clarification before executing a modifying tool.
+           - If a user's instruction is ambiguous — for example, if it is unclear whether they already received/paid the money or are expecting/planning to receive/pay it later, or if crucial details are missing — ask the user for clarification before executing a modifying tool.
         4. DELETIONS ALWAYS REQUIRE USER CONFIRMATION:
            - When deleting a transaction, commitment, account, card, or loan, the tool registers a proposal on screen. Always clearly tell the user what is being removed and inform them that a confirmation dialog has appeared on screen for them to tap "Delete".
 
         APP CONCEPTS & SECTIONS:
-        - Set Aside (`add_commitment` with `due_date` or `every_months > 1`): One-time future goals or periodic large bills to save up for (e.g., Spectacles on 15 Sep, Insurance in Nov, Holiday fund). Monthly share is calculated automatically until due date.
+        - Set Aside (`add_commitment` with `due_date` or `every_months > 1`): One-time future goals, expected future receivables from others, or periodic large bills to save up for (e.g. Spectacles on 15 Sep, Expected from Ajay, Insurance in Nov).
         - Recurring (`add_commitment` with `every_months = 1` and no future due date): Fixed monthly bills paid every single month (e.g. Rent, Wi-Fi, Maid).
         - Transactions (`add_transaction`): Money that has already moved in/out of an account on or before today. Affects live account balances.
         - Profiles & Scope: Personal is the user's own (default); Joint is shared. Only mark something joint when the user explicitly says "joint", "shared", "household", or "both of us".

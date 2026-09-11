@@ -43,10 +43,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.INVEST_PICKABLE
 import com.vinay.fintrack.data.inr
+import com.vinay.fintrack.data.today
+import com.vinay.fintrack.data.prettyDate
+import com.vinay.fintrack.data.addDays
+import com.vinay.fintrack.data.dayFirstOf
+import com.vinay.fintrack.data.todayDayFirst
+import com.vinay.fintrack.data.isoFromDayFirst
 import com.vinay.fintrack.data.categoryForParty
 import com.vinay.fintrack.data.UNCATEGORISED
 import java.util.Calendar
@@ -158,11 +166,13 @@ fun AddScreen(vm: FinTrackViewModel) {
         val showLoan = !isEditing && vm.addKind == "EMI_LOAN"
         val showAccount = !isEditing && vm.addKind == "BANK_ACCOUNT"
         val showCard = !isEditing && vm.addKind == "CREDIT_CARD"
-        val showGeneric = isEditing || vm.addKind !in listOf("EMI_LOAN", "BANK_ACCOUNT", "CREDIT_CARD")
+        val showOneTime = !isEditing && vm.addKind == "ONE_TIME"
+        val showGeneric = isEditing || (vm.addKind !in listOf("EMI_LOAN", "BANK_ACCOUNT", "CREDIT_CARD", "ONE_TIME"))
 
         if (showLoan) item { LoanForm(vm) }
         if (showAccount) item { AccountForm(vm) }
         if (showCard) item { CardForm(vm) }
+        if (showOneTime) item { OneTimePaymentForm(vm) }
         if (showGeneric) item { GenericForm(vm, isEditing) }
     }
 }
@@ -358,6 +368,289 @@ private fun CardForm(vm: FinTrackViewModel) {
 }
 
 @Composable
+private fun OneTimePaymentForm(vm: FinTrackViewModel) {
+    val context = LocalContext.current
+    val calendar = Calendar.getInstance()
+    val datePickerDialog = remember {
+        android.app.DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                vm.oneOffDateText = "%02d-%02d-%04d".format(dayOfMonth, month + 1, year)
+            },
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH),
+            calendar.get(Calendar.DAY_OF_MONTH)
+        )
+    }
+
+    val isToday = vm.oneOffDateText == todayDayFirst()
+    val isYesterday = vm.oneOffDateText == dayFirstOf(addDays(today(), -1))
+    val amount = vm.draft.amountText.toDoubleOrNull() ?: 0.0
+
+    Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+        // 1. Amount Input
+        HeroAmountInput(
+            amountText = vm.draft.amountText,
+            onAmountChange = { vm.draft = vm.draft.copy(amountText = it) },
+            onQuickAdd = { delta ->
+                val cur = vm.draft.amountText.toLongOrNull() ?: 0L
+                vm.draft = vm.draft.copy(amountText = (cur + delta).toString())
+            }
+        )
+
+        // 2. Transaction Type / Kind Selector (Expense / Income / Transfer)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Space.s2)
+        ) {
+            listOf(
+                Triple("EXPENSE", "💸 Expense", Pf.Accent400),
+                Triple("INCOME", "💰 Income", Color(0xFF00BFA5)),
+                Triple("TRANSFER", "🔄 Transfer", Color(0xFF64B5F6))
+            ).forEach { (k, label, tint) ->
+                val isSel = vm.oneOffKind == k
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(Radius.Pill)
+                        .background(if (isSel) tint.copy(alpha = 0.18f) else Pf.Surface2)
+                        .border(1.5.dp, if (isSel) tint else Pf.Hairline, Radius.Pill)
+                        .clickable { vm.oneOffKind = k }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        color = if (isSel) tint else Pf.Text,
+                        fontSize = 12.5.sp,
+                        fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
+        // 3. Description / Note with real-time Auto-Categorization
+        PfField(
+            label = if (vm.oneOffKind == "TRANSFER") "Transfer description (optional)" else "Description / Note",
+            value = vm.draft.note,
+            onValueChange = { noteInput ->
+                val autoCat = categoryForParty(noteInput, vm.categories, vm.smsRules)
+                val newCat = if (autoCat.isNotBlank() && autoCat != UNCATEGORISED) autoCat else vm.draft.category
+                vm.draft = vm.draft.copy(note = noteInput, category = newCat)
+            },
+            placeholder = when (vm.oneOffKind) {
+                "EXPENSE" -> "e.g. Swiggy, Uber, D-Mart groceries, Fuel, Netflix…"
+                "INCOME" -> "e.g. Freelance project, Salary bonus, Cash gift…"
+                "TRANSFER" -> "e.g. Moved to Savings, Emergency fund…"
+                else -> "Note"
+            }
+        )
+
+        // 4. Category Selector (for Expense and Income)
+        if (vm.oneOffKind != "TRANSFER") {
+            Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Muted("CATEGORY", size = 11)
+                    Text(
+                        vm.draft.category.ifEmpty { "Uncategorised" },
+                        color = Pf.Accent400,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                val topCategories = listOf("Eating Out", "Groceries", "Shopping", "Fuel", "Travel", "Utilities", "Health", "Investments")
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    topCategories.forEach { cat ->
+                        val isSel = vm.draft.category == cat
+                        Box(
+                            Modifier
+                                .clip(Radius.Pill)
+                                .background(if (isSel) Pf.Accent else Pf.Surface2)
+                                .border(1.dp, if (isSel) Pf.Accent else Pf.Hairline, Radius.Pill)
+                                .clickable { vm.draft = vm.draft.copy(category = cat) }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                cat,
+                                color = if (isSel) Color.White else Pf.Text,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+
+                PfSelect(
+                    label = "All Categories",
+                    value = vm.draft.category,
+                    options = vm.categories,
+                    onSelect = { vm.draft = vm.draft.copy(category = it) }
+                )
+            }
+        }
+
+        // 5. Payment Method / Source Picker
+        if (vm.oneOffKind == "TRANSFER") {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
+                Column(Modifier.weight(1f)) {
+                    PfSelect(
+                        label = "From Account",
+                        value = vm.oneOffAccountName,
+                        options = vm.oneOffAccountOptions.map { it.name },
+                        onSelect = { name ->
+                            vm.setOneOffAccount(vm.oneOffAccountOptions.firstOrNull { it.name == name }?.id.orEmpty())
+                        }
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    PfSelect(
+                        label = "To Account",
+                        value = vm.oneOffToAccountName,
+                        options = vm.visibleAccounts.map { it.name },
+                        onSelect = { name ->
+                            vm.setOneOffToAccount(vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty())
+                        }
+                    )
+                }
+            }
+        } else if (vm.oneOffKind == "EXPENSE") {
+            val sourceOptions = vm.oneOffPaymentSources.map {
+                if (it.isCard) "${it.name} (Credit Card)" else "${it.name} (Bank)"
+            }
+            PfSelect(
+                label = "Paid With (Bank / Credit Card)",
+                value = vm.selectedOneOffSourceName,
+                options = sourceOptions,
+                onSelect = vm::selectOneOffPaymentSource
+            )
+        } else {
+            PfSelect(
+                label = "Deposit Into (Bank Account)",
+                value = vm.oneOffAccountName,
+                options = vm.oneOffAccountOptions.map { it.name },
+                onSelect = { name ->
+                    vm.setOneOffAccount(vm.oneOffAccountOptions.firstOrNull { it.name == name }?.id.orEmpty())
+                }
+            )
+        }
+
+        // 6. Date Fast Selector
+        Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Muted("TRANSACTION DATE", size = 11)
+                val parsedIso = isoFromDayFirst(vm.oneOffDateText)
+                if (parsedIso != null) {
+                    Tag(prettyDate(parsedIso), Pf.Accent100, Pf.Accent800)
+                }
+            }
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(Radius.Pill)
+                        .background(if (isToday) Pf.Accent else Pf.Surface2)
+                        .border(1.dp, if (isToday) Pf.Accent else Pf.Hairline, Radius.Pill)
+                        .clickable { vm.oneOffDateText = todayDayFirst() }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Today",
+                        color = if (isToday) Color.White else Pf.Text,
+                        fontSize = 12.5.sp,
+                        fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
+
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(Radius.Pill)
+                        .background(if (isYesterday) Pf.Accent else Pf.Surface2)
+                        .border(1.dp, if (isYesterday) Pf.Accent else Pf.Hairline, Radius.Pill)
+                        .clickable { vm.oneOffDateText = dayFirstOf(addDays(today(), -1)) }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Yesterday",
+                        color = if (isYesterday) Color.White else Pf.Text,
+                        fontSize = 12.5.sp,
+                        fontWeight = if (isYesterday) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
+
+                Box(
+                    Modifier
+                        .weight(1.2f)
+                        .clip(Radius.Pill)
+                        .background(if (!isToday && !isYesterday) Pf.Accent else Pf.Surface2)
+                        .border(1.dp, if (!isToday && !isYesterday) Pf.Accent else Pf.Hairline, Radius.Pill)
+                        .clickable { datePickerDialog.show() }
+                        .padding(vertical = 8.dp, horizontal = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.DateRange,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp),
+                            tint = if (!isToday && !isYesterday) Color.White else Pf.Accent400
+                        )
+                        Text(
+                            if (!isToday && !isYesterday) vm.oneOffDateText else "Pick Date",
+                            color = if (!isToday && !isYesterday) Color.White else Pf.Text,
+                            fontSize = 12.sp,
+                            fontWeight = if (!isToday && !isYesterday) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+
+        // 7. For / Ledger
+        PfSelect("For / Ledger", vm.draft.person, vm.forOptions, vm::setDraftFor)
+
+        // 8. Action Button
+        val buttonText = when {
+            amount <= 0.0 -> "Enter amount"
+            vm.oneOffKind == "TRANSFER" -> "Transfer ${inr(amount)}"
+            vm.oneOffKind == "INCOME" -> "Record Income · ${inr(amount)}"
+            else -> "Record Expense · ${inr(amount)}"
+        }
+
+        PrimaryButton(
+            buttonText,
+            vm::saveDraft,
+            Modifier.fillMaxWidth(),
+            enabled = amount > 0.0 && vm.oneOffDateValid
+        )
+    }
+}
+
+@Composable
 private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
     val categoryOptions = if (!isEditing && vm.addKind == "INVESTMENT") {
         vm.categories.filter { it in INVEST_PICKABLE }.ifEmpty { vm.categories }
@@ -368,7 +661,6 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
         "RECURRING" -> "e.g. Groceries, Wi-Fi, music class…"
         "SET_ASIDE" -> "e.g. Car insurance, school fees…"
         "INVESTMENT" -> "e.g. Monthly SIP, PPF contribution…"
-        "ONE_TIME" -> "e.g. Diwali gift, appliance purchase…"
         else -> "e.g. Groceries, electricity bill…"
     }
 
@@ -382,9 +674,6 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             }
         )
 
-        // One choice, not two: "Joint" and your own name said everything the
-        // separate Person and Bucket selects said between them, and the pair
-        // could be set to combinations that meant nothing.
         PfSelect("For", vm.draft.person, vm.forOptions, vm::setDraftFor)
         if (isEditing) {
             PfSelect(
@@ -393,133 +682,93 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             )
         }
         PfSelect("Category", vm.draft.category, categoryOptions, { vm.draft = vm.draft.copy(category = it) })
-        val oneOff = !isEditing && vm.addKind == "ONE_TIME"
-        if (!oneOff) {
-            // A due date suits both: a set-aside needs it to work out the
-            // monthly share, and a recurring bill uses it to say when it is
-            // next payable rather than sitting there confirmable all month.
-            if (isEditing || vm.addKind == "SET_ASIDE" || vm.addKind == "RECURRING") {
-                val context = LocalContext.current
-                val calendar = Calendar.getInstance()
-                val datePickerDialog = remember {
-                    android.app.DatePickerDialog(
-                        context,
-                        { _, year, month, dayOfMonth ->
-                            vm.draft = vm.draft.copy(dueText = "%02d-%02d-%04d".format(dayOfMonth, month + 1, year))
-                        },
-                        calendar.get(Calendar.YEAR),
-                        calendar.get(Calendar.MONTH),
-                        calendar.get(Calendar.DAY_OF_MONTH)
-                    )
-                }
 
-                if (vm.addKind == "SET_ASIDE") {
-                    PfField(
-                        "Due date (dd/mm/yy or use calendar)",
-                        vm.draft.dueText,
-                        { vm.draft = vm.draft.copy(dueText = it) },
-                        placeholder = "e.g. 22/10/26",
-                        numeric = false,
-                        trailingIcon = {
-                            IconButton(onClick = { datePickerDialog.show() }) {
-                                Icon(
-                                    imageVector = Icons.Default.DateRange,
-                                    contentDescription = "Choose Date",
-                                    tint = Pf.Accent400
-                                )
-                            }
-                        }
-                    )
-                } else {
-                    PfField(
-                        "Due day of month (1-31)",
-                        vm.draft.dueText,
-                        { vm.draft = vm.draft.copy(dueText = it) },
-                        placeholder = "e.g. 29",
-                        numeric = true
-                    )
-                }
+        val context = LocalContext.current
+        val calendar = Calendar.getInstance()
+        val datePickerDialog = remember {
+            android.app.DatePickerDialog(
+                context,
+                { _, year, month, dayOfMonth ->
+                    vm.draft = vm.draft.copy(dueText = "%02d-%02d-%04d".format(dayOfMonth, month + 1, year))
+                },
+                calendar.get(Calendar.YEAR),
+                calendar.get(Calendar.MONTH),
+                calendar.get(Calendar.DAY_OF_MONTH)
+            )
+        }
 
-                val amount = vm.draft.amountText.toDoubleOrNull() ?: 0.0
-                val due = vm.draftDueIso
-                val setAside = isEditing || vm.addKind == "SET_ASIDE"
-                when {
-                    due.isNotEmpty() && !setAside ->
-                        Muted("Due in ${vm.draftDueIn}, then the same day each month.")
-                    due.isNotEmpty() && amount > 0 -> {
-                        val months = vm.draftInstalments
-                        Muted(
-                            "Due in ${vm.draftDueIn} — put by " +
-                                "${inr(amount / months.coerceAtLeast(1))} a month over " +
-                                "$months month${if (months == 1) "" else "s"}. Confirming that " +
-                                "on Home moves it to savings rather than spending it."
+        if (vm.addKind == "SET_ASIDE") {
+            PfField(
+                "Due date (dd/mm/yy or use calendar)",
+                vm.draft.dueText,
+                { vm.draft = vm.draft.copy(dueText = it) },
+                placeholder = "e.g. 22/10/26",
+                numeric = false,
+                trailingIcon = {
+                    IconButton(onClick = { datePickerDialog.show() }) {
+                        Icon(
+                            imageVector = Icons.Default.DateRange,
+                            contentDescription = "Choose Date",
+                            tint = Pf.Accent400
                         )
                     }
-                    due.isNotEmpty() -> Muted("Due in ${vm.draftDueIn}. Add the amount.")
-                    vm.draft.dueText.isNotBlank() ->
-                        if (setAside) Muted("Enter a valid date (dd/mm/yy) or use the calendar.")
-                        else Muted("Enter a valid day number (1-31).")
-                    setAside ->
-                        Muted("Give the due date and the full amount; the monthly " +
-                            "share is worked out from the months left based on your salary reset day.")
-                    else -> Muted("The day it comes out each month, if you know it.")
-                }
-                // Only a set-aside splits an amount over months, and only when no
-                // date is known — an older one, or a bill you would rather not pin
-                // down. A recurring bill is monthly by definition.
-                if (due.isEmpty() && setAside) {
-                    PfSelect(
-                        "Or split evenly over",
-                        periodLabel(vm.draft.periodMonths),
-                        PERIOD_OPTIONS,
-                        { vm.draft = vm.draft.copy(periodMonths = periodFromLabel(it)) }
-                    )
-                }
-            }
-            // Which account this is paid from, asked once here so confirming it
-            // later starts from the right account instead of the joint default.
-            PfSelect(
-                "Bank account",
-                vm.draftAccountName,
-                vm.visibleAccounts.map { it.name },
-                { name ->
-                    vm.draft = vm.draft.copy(
-                        accountId = vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty()
-                    )
                 }
             )
         } else {
-            // A one-off is money that already moved, so it needs an account and
-            // a direction — it becomes a transaction, not something to confirm
-            // again every month.
-            // Only accounts on the chosen side, so the account can't contradict
-            // the For choice — a transaction takes its side from its account.
-            PfSelect(
-                "Account",
-                vm.oneOffAccountName,
-                vm.oneOffAccountOptions.map { it.name },
-                { name ->
-                    vm.setOneOffAccount(
-                        vm.oneOffAccountOptions.firstOrNull { it.name == name }?.id.orEmpty()
-                    )
-                }
-            )
-            PfSelect(
-                "Direction",
-                if (vm.oneOffIsCredit) "Money in" else "Money out",
-                listOf("Money out", "Money in"),
-                { vm.oneOffIsCredit = it == "Money in" }
-            )
             PfField(
-                "Date",
-                vm.oneOffDateText,
-                { vm.oneOffDateText = it },
-                placeholder = "dd-mm-yyyy"
+                "Due day of month (1-31)",
+                vm.draft.dueText,
+                { vm.draft = vm.draft.copy(dueText = it) },
+                placeholder = "e.g. 29",
+                numeric = true
             )
-            if (!vm.oneOffDateValid) {
-                Text("Use dd-mm-yyyy, e.g. ${vm.todayDayFirstText}", color = Pf.Accent400, fontSize = 12.sp)
-            }
         }
+
+        val amount = vm.draft.amountText.toDoubleOrNull() ?: 0.0
+        val due = vm.draftDueIso
+        val setAside = isEditing || vm.addKind == "SET_ASIDE"
+        when {
+            due.isNotEmpty() && !setAside ->
+                Muted("Due in ${vm.draftDueIn}, then the same day each month.")
+            due.isNotEmpty() && amount > 0 -> {
+                val months = vm.draftInstalments
+                Muted(
+                    "Due in ${vm.draftDueIn} — put by " +
+                        "${inr(amount / months.coerceAtLeast(1))} a month over " +
+                        "$months month${if (months == 1) "" else "s"}. Confirming that " +
+                        "on Home moves it to savings rather than spending it."
+                )
+            }
+            due.isNotEmpty() -> Muted("Due in ${vm.draftDueIn}. Add the amount.")
+            vm.draft.dueText.isNotBlank() ->
+                if (setAside) Muted("Enter a valid date (dd/mm/yy) or use the calendar.")
+                else Muted("Enter a valid day number (1-31).")
+            setAside ->
+                Muted("Give the due date and the full amount; the monthly " +
+                    "share is worked out from the months left based on your salary reset day.")
+            else -> Muted("The day it comes out each month, if you know it.")
+        }
+
+        if (due.isEmpty() && setAside) {
+            PfSelect(
+                "Or split evenly over",
+                periodLabel(vm.draft.periodMonths),
+                PERIOD_OPTIONS,
+                { vm.draft = vm.draft.copy(periodMonths = periodFromLabel(it)) }
+            )
+        }
+
+        PfSelect(
+            "Bank account",
+            vm.draftAccountName,
+            vm.visibleAccounts.map { it.name },
+            { name ->
+                vm.draft = vm.draft.copy(
+                    accountId = vm.visibleAccounts.firstOrNull { it.name == name }?.id.orEmpty()
+                )
+            }
+        )
+
         PfField(
             "Note (optional)",
             vm.draft.note,
@@ -531,18 +780,10 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             placeholder = notePlaceholder
         )
         PrimaryButton(
-            when {
-                isEditing -> "Save changes"
-                oneOff -> "Record payment"
-                else -> "Save entry"
-            },
+            if (isEditing) "Save changes" else "Save entry",
             vm::saveDraft,
             Modifier.fillMaxWidth(),
-            enabled = (vm.draft.amountText.toDoubleOrNull() ?: 0.0) > 0 &&
-                (!oneOff || vm.oneOffDateValid)
+            enabled = (vm.draft.amountText.toDoubleOrNull() ?: 0.0) > 0
         )
-        if (oneOff) {
-            Muted("Goes straight to Transactions and moves the account balance.")
-        }
     }
 }

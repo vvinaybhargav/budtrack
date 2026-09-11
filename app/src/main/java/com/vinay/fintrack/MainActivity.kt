@@ -126,7 +126,6 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
         vm.editingLoanId != null ||
         vm.editingEntryId != null ||
         vm.settlingCardId != null ||
-        vm.settlingBorrowedTxnId != null ||
         vm.pendingConfirm != null ||
         vm.pendingDeletion != null
 
@@ -139,7 +138,6 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
             vm.editingLoanId != null -> vm.cancelEditLoan()
             vm.editingEntryId != null -> vm.cancelEdit()
             vm.settlingCardId != null -> vm.cancelSettleCard()
-            vm.settlingBorrowedTxnId != null -> vm.cancelSettleBorrowed()
             vm.pendingConfirm != null -> vm.cancelConfirm()
             vm.tab != Tab.HOME -> vm.tab = Tab.HOME
         }

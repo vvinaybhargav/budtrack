@@ -581,9 +581,10 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
     var selectedCategory by remember(txn.id) { mutableStateOf(txn.category) }
     var selectedLoanId by remember(txn.id) { mutableStateOf(txn.loanId) }
     var selectedEntryId by remember(txn.id) { mutableStateOf(txn.entryId) }
-    var borrowedFrom by remember(txn.id) { mutableStateOf(txn.borrowedFrom) }
-    var returnDate by remember(txn.id) { mutableStateOf(txn.returnDate) }
-    var isReturned by remember(txn.id) { mutableStateOf(txn.returned) }
+    val isInitialCardPayment = txn.category == "Credit Card Bill" || txn.source == FinTrackViewModel.CARD_PAYMENT
+    var selectedCardPaymentId by remember(txn.id) {
+        mutableStateOf(if (isInitialCardPayment) txn.cardId else "")
+    }
     val scrollState = rememberScrollState()
 
     Dialog(onDismissRequest = vm::cancelEditTxn) {
@@ -685,20 +686,11 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
             }
 
             Column {
-                Muted("Link to Commitment / Loan")
+                Muted("Link to Commitment / Loan / Card")
                 val currentLinkText = when {
                     selectedLoanId.isNotEmpty() -> {
                         val l = vm.loans.firstOrNull { it.id == selectedLoanId }
-                        if (l != null) {
-                            "Loan: ${l.name} (₹${inr(l.monthlyEmi)})"
-                        } else {
-                            val b = vm.borrowedLentTxns.firstOrNull { it.id == selectedLoanId }
-                            if (b != null) {
-                                val role = if (b.kind == "INCOME" || b.kind == "REFUND") "Borrowed from ${b.borrowedFrom}" else "Lent to ${b.borrowedFrom}"
-                                val outstanding = b.amount - b.returnedAmount
-                                "Settle Debt: $role (Outstanding ₹${inr(outstanding)})"
-                            } else "Linked Loan"
-                        }
+                        if (l != null) "Loan: ${l.name} (₹${inr(l.monthlyEmi)})" else "Linked Loan"
                     }
                     selectedEntryId.isNotEmpty() -> {
                         val e = vm.entries.firstOrNull { it.id == selectedEntryId }
@@ -707,24 +699,26 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                             "$labelPrefix: ${e.category} (₹${inr(e.monthly)})"
                         } else "Linked Recurring"
                     }
+                    selectedCardPaymentId.isNotEmpty() -> {
+                        val c = vm.cards.firstOrNull { it.id == selectedCardPaymentId }
+                        if (c != null) "Credit Card Bill: ${c.name} (₹${inr(c.balance)})" else "Linked Card Bill"
+                    }
                     else -> "None / Unlinked"
                 }
 
-                val linkOptionsMap = remember(txn.id, vm.loans, vm.entries, vm.borrowedLentTxns) {
-                    val m = mutableMapOf<String, Pair<String?, String?>>()
-                    m["None / Unlinked"] = Pair(null, null)
+                val linkOptionsMap = remember(txn.id, vm.loans, vm.entries, vm.cards) {
+                    val m = mutableMapOf<String, Triple<String?, String?, String?>>()
+                    m["None / Unlinked"] = Triple(null, null, null)
                     
                     vm.loans.filter { !vm.isLoanConfirmed(it.id) || it.id == txn.loanId }.forEach { l ->
-                        m["Loan: ${l.name} (₹${inr(l.monthlyEmi)})"] = Pair(l.id, null)
+                        m["Loan: ${l.name} (₹${inr(l.monthlyEmi)})"] = Triple(l.id, null, null)
                     }
                     vm.entries.filter { !vm.isConfirmed(it.id) || it.id == txn.entryId }.forEach { e ->
                         val labelPrefix = if (e.isSetAside) "Set aside" else "Recurring"
-                        m["$labelPrefix: ${e.category} (₹${inr(e.monthly)})"] = Pair(null, e.id)
+                        m["$labelPrefix: ${e.category} (₹${inr(e.monthly)})"] = Triple(null, e.id, null)
                     }
-                    vm.borrowedLentTxns.filter { it.id != txn.id }.forEach { b ->
-                        val outstanding = b.amount - b.returnedAmount
-                        val role = if (b.kind == "INCOME" || b.kind == "REFUND") "Borrowed from ${b.borrowedFrom}" else "Lent to ${b.borrowedFrom}"
-                        m["Settle Debt: $role (Outstanding ₹${inr(outstanding)})"] = Pair(b.id, null)
+                    vm.cards.filter { it.balance > 0.0 || (isInitialCardPayment && it.id == txn.cardId) }.forEach { c ->
+                        m["Credit Card Bill: ${c.name} (₹${inr(c.balance)})"] = Triple(null, null, c.id)
                     }
                     m
                 }
@@ -733,109 +727,12 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                     value = currentLinkText,
                     options = linkOptionsMap.keys.toList(),
                     onSelect = { selectedLabel ->
-                        val pair = linkOptionsMap[selectedLabel]
-                        selectedLoanId = pair?.first.orEmpty()
-                        selectedEntryId = pair?.second.orEmpty()
+                        val triple = linkOptionsMap[selectedLabel]
+                        selectedLoanId = triple?.first.orEmpty()
+                        selectedEntryId = triple?.second.orEmpty()
+                        selectedCardPaymentId = triple?.third.orEmpty()
                     }
                 )
-            }
-
-            Column {
-                Muted("Borrowed From / Lent To (Optional)")
-                PfField(
-                    value = borrowedFrom,
-                    onValueChange = { borrowedFrom = it },
-                    placeholder = "e.g. Wife, Friend name"
-                )
-                val chips = vm.profileNames.filter { it != vm.activeProfile }
-                if (chips.isNotEmpty()) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = Space.s1),
-                        horizontalArrangement = Arrangement.spacedBy(Space.s1)
-                    ) {
-                        chips.forEach { name ->
-                            val selected = borrowedFrom == name
-                            Text(
-                                name,
-                                modifier = Modifier
-                                    .background(if (selected) Pf.Accent else Pf.Surface2, Radius.Pill)
-                                    .clickable {
-                                        borrowedFrom = if (selected) "" else name
-                                    }
-                                    .padding(horizontal = Space.s2, vertical = 4.dp),
-                                color = if (selected) Pf.OnAccent else Pf.Text,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (borrowedFrom.isNotEmpty()) {
-                val context = LocalContext.current
-                val calendar = Calendar.getInstance()
-                
-                if (returnDate.isNotEmpty()) {
-                    val parts = returnDate.split("-")
-                    if (parts.size == 3) {
-                        calendar.set(Calendar.YEAR, parts[0].toIntOrNull() ?: calendar.get(Calendar.YEAR))
-                        calendar.set(Calendar.MONTH, (parts[1].toIntOrNull() ?: 1) - 1)
-                        calendar.set(Calendar.DAY_OF_MONTH, parts[2].toIntOrNull() ?: calendar.get(Calendar.DAY_OF_MONTH))
-                    }
-                }
-
-                val datePickerDialog = remember(txn.id, returnDate) {
-                    android.app.DatePickerDialog(
-                        context,
-                        { _, year, month, dayOfMonth ->
-                            returnDate = "%04d-%02d-%02d".format(year, month + 1, dayOfMonth)
-                        },
-                        calendar.get(Calendar.YEAR),
-                        calendar.get(Calendar.MONTH),
-                        calendar.get(Calendar.DAY_OF_MONTH)
-                    )
-                }
-
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Space.s3),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    PfField(
-                        label = "Target Return Date (Optional)",
-                        value = if (returnDate.isNotEmpty()) prettyDate(returnDate) else "",
-                        onValueChange = { /* read only */ },
-                        placeholder = "Select date...",
-                        trailingIcon = {
-                            SecondaryButton(
-                                text = "Pick Date",
-                                onClick = { datePickerDialog.show() }
-                            )
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                    
-                    if (returnDate.isNotEmpty()) {
-                        SecondaryButton(
-                            text = "Clear",
-                            onClick = { returnDate = "" }
-                        )
-                    }
-                }
-
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Space.s2),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = isReturned,
-                        onCheckedChange = { isReturned = it },
-                        colors = CheckboxDefaults.colors(checkedColor = Pf.Accent)
-                    )
-                    Text("Returned / Settled", color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                }
             }
 
             // Message source
@@ -881,9 +778,7 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                             category = selectedCategory,
                             loanId = selectedLoanId,
                             entryId = selectedEntryId,
-                            borrowedFrom = borrowedFrom,
-                            returnDate = returnDate,
-                            returned = isReturned
+                            cardPaymentId = selectedCardPaymentId
                         )
                     },
                     Modifier.weight(1.2f)

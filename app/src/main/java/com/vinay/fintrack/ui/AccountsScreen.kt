@@ -59,8 +59,7 @@ fun AccountsScreen(vm: FinTrackViewModel) {
         "Cards" to "Cards (${vm.scopedCards.size})",
         "Loans" to "Loans (${vm.scopedLoans.filter { !vm.isLoanCleared(it) }.size})",
         "Recurring" to "Recurring (${vm.commitments.size})",
-        "Set Aside" to "Set Aside (${vm.annualSetAsides.size})",
-        "Borrowed" to "Borrowed / Lent (${vm.borrowedLentTxns.size})"
+        "Set Aside" to "Set Aside (${vm.annualSetAsides.size})"
     )
 
     LazyColumn(
@@ -150,18 +149,10 @@ fun AccountsScreen(vm: FinTrackViewModel) {
                 ManageSetAsidesSection(vm)
             }
         }
-
-        // 7. Borrowed & Lent Section
-        if (selectedFilter == "All" || selectedFilter == "Borrowed") {
-            item {
-                ManageBorrowedLentSection(vm)
-            }
-        }
     }
 
     ConfirmSheet(vm)
     CardSettleSheet(vm)
-    BorrowedSettleSheet(vm)
 }
 
 @Composable
@@ -843,99 +834,4 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
     }
 }
 
-@Composable
-private fun ManageBorrowedLentSection(vm: FinTrackViewModel) {
-    val items = vm.borrowedLentTxns
-    PfCard(padding = PaddingValues(Space.s4)) {
-        Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                ) {
-                    Icon(
-                        Icons.Default.Receipt,
-                        contentDescription = null,
-                        tint = Pf.Accent,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        "Borrowed & Lent",
-                        color = Pf.Text,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Text(
-                    "${items.size} active",
-                    color = Pf.Muted,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
 
-            if (items.isEmpty()) {
-                Muted("No active borrowed or lent transactions.")
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                    items.forEach { txn ->
-                        val isMyTxn = vm.visibleAccounts.any { it.id == txn.fromAccountId || it.id == txn.toAccountId } ||
-                                      vm.cards.any { it.id == txn.cardId }
-                        val title = if (isMyTxn) {
-                            val isBorrowed = txn.kind == "INCOME" || txn.kind == "REFUND"
-                            if (isBorrowed) "Borrowed from ${txn.borrowedFrom}" else "Lent to ${txn.borrowedFrom}"
-                        } else {
-                            val isBorrowed = !(txn.kind == "INCOME" || txn.kind == "REFUND")
-                            val otherProfileName = vm.profileNames.firstOrNull { it != vm.activeProfile } ?: "Partner"
-                            if (isBorrowed) "Borrowed from $otherProfileName" else "Lent to $otherProfileName"
-                        }
-                        val returnDateText = if (txn.returnDate.isNotEmpty()) {
-                            " · Return due by ${prettyDate(txn.returnDate)}"
-                        } else ""
-
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .background(Pf.Surface2.copy(alpha = 0.6f), Radius.Md)
-                                .border(1.dp, Pf.Hairline, Radius.Md)
-                                .clickable { vm.openImportedTxn(txn.id) }
-                                .padding(Space.s3)
-                        ) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        title,
-                                        color = Pf.Text,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Muted(
-                                        "${inr(txn.amount)} · ${prettyDate(txn.date)}" +
-                                            (if (txn.note.isNotEmpty()) " · ${txn.note}" else "") +
-                                            returnDateText,
-                                        Modifier.padding(top = 2.dp)
-                                    )
-                                }
-                                Spacer(Modifier.width(Space.s2))
-                                SecondaryButton(
-                                    text = "Settle",
-                                    onClick = { vm.startSettleBorrowed(txn.id) }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}

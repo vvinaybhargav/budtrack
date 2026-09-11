@@ -486,9 +486,7 @@ class Assistant(private val vm: FinTrackViewModel) {
         val date = rawDate?.let { normalizeDateToIso(it) } ?: today()
         val note = a.str("note").orEmpty().ifEmpty { category }
         val t = vm.addTransactionDirect(
-            amount, category, credit, accountId, note, date,
-            borrowedFrom = a.str("borrowed_from").orEmpty(),
-            returnDate = a.str("return_date").orEmpty()
+            amount, category, credit, accountId, note, date
         )
         val profile = vm.activeProfile ?: "Personal"
         val kindStr = if (credit) "Received (+)" else "Spent (-)"
@@ -504,10 +502,7 @@ class Assistant(private val vm: FinTrackViewModel) {
             category = a.str("category")?.let { vm.categoryNamed(it) },
             accountId = a.str("account")?.let { vm.accountNamed(it)?.id },
             note = a.str("note"),
-            dateIso = rawDate?.let { normalizeDateToIso(it) },
-            borrowedFrom = a.str("borrowed_from"),
-            returned = a.bool("returned"),
-            returnDate = a.str("return_date")
+            dateIso = rawDate?.let { normalizeDateToIso(it) }
         ) ?: return "No transaction with that id."
         val accountName = vm.txnAccountLabel(t)
         return "Updated in **Transactions**: ${t.whenText} ${if (t.kind == "INCOME") "+" else "-"}${inr(t.amount)} · ${t.note.ifBlank { t.category }} ($accountName)."
