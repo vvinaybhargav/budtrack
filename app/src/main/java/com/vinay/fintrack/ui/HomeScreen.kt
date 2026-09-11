@@ -231,7 +231,44 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     hasPrior = true
                 }
 
-                // 5. SALARY / EXPECTED INCOME
+                // 5. BORROWED & LENT
+                val borrowedLentItems = vm.borrowedLentTxns
+                val totalBorrowed = borrowedLentItems.sumOf { it.amount }
+                if (borrowedLentItems.isNotEmpty()) {
+                    if (hasPrior) HomeSectionDivider()
+                    HomeListHeaderLabel("BORROWED & LENT · ${inr(totalBorrowed)}") {
+                        vm.accountsFilter = "Borrowed"
+                        vm.tab = Tab.ACCOUNTS
+                    }
+                    borrowedLentItems.forEachIndexed { idx, t ->
+                        if (idx > 0) Hairline()
+                        val isMyTxn = vm.visibleAccounts.any { it.id == t.fromAccountId || it.id == t.toAccountId } ||
+                                      vm.cards.any { it.id == t.cardId }
+                        val title = if (isMyTxn) {
+                            val isBorrowed = t.kind == "INCOME" || t.kind == "REFUND"
+                            if (isBorrowed) "Borrowed from ${t.borrowedFrom}" else "Lent to ${t.borrowedFrom}"
+                        } else {
+                            val isBorrowed = !(t.kind == "INCOME" || t.kind == "REFUND")
+                            val otherProfileName = vm.profileNames.firstOrNull { it != vm.activeProfile } ?: "Partner"
+                            if (isBorrowed) "Borrowed from $otherProfileName" else "Lent to $otherProfileName"
+                        }
+                        val returnPart = if (t.returnDate.isNotEmpty()) "due ${prettyDate(t.returnDate)}" else null
+                        val datePart = prettyDate(t.date)
+                        val notePart = t.note.ifBlank { null }
+                        val subtitle = listOfNotNull(datePart, returnPart, notePart).joinToString(" · ")
+
+                        HomeCompactRow(
+                            title = "${idx + 1}. $title",
+                            subtitle = subtitle,
+                            amount = inr(t.amount),
+                            amountColor = Pf.Text,
+                            onClick = { vm.startSettleBorrowed(t.id) }
+                        )
+                    }
+                    hasPrior = true
+                }
+
+                // 6. SALARY / EXPECTED INCOME
                 if (upcomingSalary > 0.0) {
                     if (hasPrior) HomeSectionDivider()
                     HomeListHeaderLabel("SALARY · ${inr(upcomingSalary)}")

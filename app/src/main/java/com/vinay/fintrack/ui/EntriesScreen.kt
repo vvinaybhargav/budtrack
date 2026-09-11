@@ -73,6 +73,8 @@ import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.today
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.inr
+import com.vinay.fintrack.data.categoryForParty
+import com.vinay.fintrack.data.UNCATEGORISED
 
 @Composable
 private fun CategoryAvatar(category: String, kind: String, modifier: Modifier = Modifier) {
@@ -614,7 +616,13 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
 
             PfField(
                 value = note,
-                onValueChange = { note = it },
+                onValueChange = {
+                    note = it
+                    val autoCat = categoryForParty(it, vm.categories, vm.smsRules)
+                    if (autoCat.isNotBlank() && autoCat != UNCATEGORISED) {
+                        selectedCategory = autoCat
+                    }
+                },
                 label = "Description",
                 placeholder = txn.category
             )

@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.Sms
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -74,12 +75,14 @@ import com.vinay.fintrack.data.today
 
 @Composable
 fun SettingsScreen(vm: FinTrackViewModel) {
-    var selectedSalaryProfile by remember(vm.activeProfile) {
-        mutableStateOf(vm.activeProfile ?: vm.profileNames.firstOrNull() ?: "Me")
-    }
+    val profile = "Vinay"
     var showSalaryOverrides by remember { mutableStateOf(false) }
     var showManageCategories by remember { mutableStateOf(false) }
+    var showMoreSettings by remember { mutableStateOf(false) }
     var showSmsLog by remember { mutableStateOf(false) }
+
+    val salAmount = vm.salaryAmountFor(profile)
+    val salResetDay = vm.salaryResetDayFor(profile)
 
     LazyColumn(
         Modifier.fillMaxWidth(),
@@ -96,157 +99,20 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                     fontWeight = FontWeight.ExtraBold
                 )
                 Spacer(Modifier.height(2.dp))
-                Muted("Active profile: ${vm.activeProfile ?: "Personal"} · Preferences & Sync", size = 13)
+                Muted("Personalize your budget, security & preferences", size = 13)
             }
         }
 
         // ════════════════════════════════════════════════════════════════
-        // SECTION 1: PROFILE & SECURITY
+        // 1. SALARY & PAYDAY CARD
         // ════════════════════════════════════════════════════════════════
-        item { SettingsSectionLabel("PROFILE & SECURITY") }
-
-        // 1. Profiles Card (Active profile focused)
         item {
-            PfCard(padding = PaddingValues(Space.s4)) {
-                SettingHeader(
-                    icon = Icons.Default.Person,
-                    title = "Profiles",
-                    subtitle = "Manage & switch user profile",
-                    action = {
-                        SecondaryButton("Switch", vm::switchProfile)
-                    }
-                )
-
-                // Active Profile Hero Pill
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(Pf.Accent.copy(alpha = 0.12f), Radius.Md)
-                        .border(1.dp, Pf.Accent.copy(alpha = 0.3f), Radius.Md)
-                        .padding(Space.s3)
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Space.s3)
-                        ) {
-                            Box(
-                                Modifier
-                                    .size(36.dp)
-                                    .background(Pf.Accent, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    (vm.activeProfile ?: "U").take(1).uppercase(),
-                                    color = Color.White,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Column {
-                                Text(
-                                    vm.activeProfile ?: "Personal",
-                                    color = Pf.Text,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Muted("Currently Active Profile", size = 11)
-                            }
-                        }
-                        Tag("Active", Pf.Accent2_100, Pf.Accent2_800)
-                    }
-                }
-
-                // Other Profiles List (if any)
-                val otherProfiles = vm.profileNames.filter { it != vm.activeProfile }
-                if (otherProfiles.isNotEmpty() || vm.renamingProfile != null) {
-                    Spacer(Modifier.height(Space.s3))
-                    Muted("All Profiles", size = 12)
-                    Column(
-                        Modifier.padding(top = Space.s1),
-                        verticalArrangement = Arrangement.spacedBy(Space.s2)
-                    ) {
-                        vm.profileNames.forEach { name ->
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                            ) {
-                                if (vm.renamingProfile == name) {
-                                    PfField(
-                                        value = vm.renameText,
-                                        onValueChange = vm::editRenameText,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    PrimaryButton("Save", vm::saveRenameProfile)
-                                    SecondaryButton("Cancel", vm::cancelRenameProfile)
-                                } else {
-                                    Text(name, Modifier.weight(1f), color = Pf.Text, fontSize = 14.sp)
-                                    if (name == vm.activeProfile) Tag("You", Pf.Accent100, Pf.Accent800)
-                                    SmallIcon(Icons.Default.Edit, "Rename profile", true) {
-                                        vm.startRenameProfile(name)
-                                    }
-                                    if (name != vm.activeProfile) {
-                                        SmallIcon(Icons.Default.Delete, "Remove profile", true) {
-                                            vm.removeProfile(name)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if (vm.profileMsg.isNotEmpty()) {
-                    Muted(vm.profileMsg, Modifier.padding(top = Space.s2))
-                }
-            }
-        }
-
-        // 2. Salary & Payday Card (SCOPED TO ACTIVE PROFILE)
-        item {
-            val profile = selectedSalaryProfile
-            val salAmount = vm.salaryAmountFor(profile)
-            val salResetDay = vm.salaryResetDayFor(profile)
-
             PfCard(padding = PaddingValues(Space.s4)) {
                 SettingHeader(
                     icon = Icons.Default.Payments,
                     title = "Salary & Payday",
-                    subtitle = "Monthly income & budget cycle for $profile"
+                    subtitle = "Monthly income & budget cycle"
                 )
-
-                // Profile Selector Chips (if more than 1 profile exists)
-                if (vm.profileNames.size > 1) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = Space.s3),
-                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                    ) {
-                        vm.profileNames.forEach { p ->
-                            val isSel = selectedSalaryProfile == p
-                            Box(
-                                Modifier
-                                    .clip(Radius.Pill)
-                                    .background(if (isSel) Pf.Accent else Pf.Surface2)
-                                    .border(1.dp, if (isSel) Pf.Accent else Pf.Hairline, Radius.Pill)
-                                    .clickable { selectedSalaryProfile = p }
-                                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    if (p == vm.activeProfile) "$p (Active)" else p,
-                                    color = if (isSel) Color.White else Pf.Text,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                    }
-                }
 
                 // Core Salary & Reset Day Row
                 Row(
@@ -276,7 +142,7 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                 }
 
                 Muted(
-                    "Cycle turns over on day $salResetDay. Used to project available savings for $profile.",
+                    "Cycle turns over on day $salResetDay. Used to project available savings.",
                     Modifier.padding(top = Space.s2)
                 )
 
@@ -337,7 +203,7 @@ fun SettingsScreen(vm: FinTrackViewModel) {
 
                         nextMonths.forEach { (yearMonth, displayLabel, _) ->
                             val override = vm.getSalaryOverride(profile, yearMonth)
-                            val amountVal = override?.amount ?: salAmount
+                            val amountText = override?.amount?.toLong()?.toString().orEmpty()
                             val resetDayVal = override?.resetDay ?: salResetDay
 
                             Row(
@@ -357,19 +223,28 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                                         value = resetDayVal.toString(),
                                         options = (1..28).map { it.toString() },
                                         onSelect = { day ->
-                                            vm.setSalaryOverride(profile, yearMonth, amountVal, day.toIntOrNull() ?: 1)
+                                            val d = day.toIntOrNull() ?: salResetDay
+                                            if (override != null) {
+                                                vm.setSalaryOverride(profile, yearMonth, override.amount, d)
+                                            } else if (salAmount > 0.0) {
+                                                vm.setSalaryOverride(profile, yearMonth, salAmount, d)
+                                            }
                                         }
                                     )
                                 }
                                 Column(Modifier.weight(1.4f)) {
                                     PfField(
-                                        value = if (amountVal > 0.0) amountVal.toLong().toString() else "",
+                                        value = amountText,
                                         onValueChange = { amtText ->
                                             val amt = amtText.toDoubleOrNull()
-                                            vm.setSalaryOverride(profile, yearMonth, amt, resetDayVal)
+                                            if (amt == null || amt <= 0.0) {
+                                                vm.removeSalaryOverride(profile, yearMonth)
+                                            } else {
+                                                vm.setSalaryOverride(profile, yearMonth, amt, resetDayVal)
+                                            }
                                         },
                                         numeric = true,
-                                        placeholder = "Amount"
+                                        placeholder = if (salAmount > 0.0) "Default: ₹${salAmount.toLong()}" else "Amount"
                                     )
                                 }
                             }
@@ -379,13 +254,15 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        // 3. App Lock Card
+        // ════════════════════════════════════════════════════════════════
+        // 2. APP LOCK CARD
+        // ════════════════════════════════════════════════════════════════
         item {
             PfCard(padding = PaddingValues(Space.s4)) {
                 SettingHeader(
                     icon = Icons.Default.Lock,
                     title = "App Lock",
-                    subtitle = "PIN protection for ${vm.activeProfile.orEmpty()}",
+                    subtitle = "PIN protection",
                     action = {
                         GhostButton("Lock now", vm::lockNow)
                     }
@@ -421,11 +298,8 @@ fun SettingsScreen(vm: FinTrackViewModel) {
         }
 
         // ════════════════════════════════════════════════════════════════
-        // SECTION 2: PREFERENCES & BUDGETING
+        // 3. DEFAULT ACCOUNT CARD
         // ════════════════════════════════════════════════════════════════
-        item { SettingsSectionLabel("PREFERENCES & BUDGETING") }
-
-        // 4. Default Account Card
         item {
             PfCard(padding = PaddingValues(Space.s4)) {
                 SettingHeader(
@@ -441,7 +315,9 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        // 5. Categories Card (COMPACT CHIPS + COLLAPSIBLE MANAGER)
+        // ════════════════════════════════════════════════════════════════
+        // 4. CATEGORIES CARD
+        // ════════════════════════════════════════════════════════════════
         item {
             PfCard(padding = PaddingValues(Space.s4)) {
                 SettingHeader(
@@ -529,7 +405,9 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        // 6. Budgets Card
+        // ════════════════════════════════════════════════════════════════
+        // 5. BUDGETS CARD
+        // ════════════════════════════════════════════════════════════════
         item {
             PfCard(padding = PaddingValues(Space.s4)) {
                 SettingHeader(
@@ -613,97 +491,161 @@ fun SettingsScreen(vm: FinTrackViewModel) {
         }
 
         // ════════════════════════════════════════════════════════════════
-        // SECTION 3: AUTOMATION & SYNC
+        // 6. MORE SETTINGS (ADVANCED & INTEGRATIONS)
         // ════════════════════════════════════════════════════════════════
-        item { SettingsSectionLabel("AUTOMATION & SYNC") }
-
-        // 7. Bank SMS Import Section
-        item { SmsImportSection(vm, showSmsLog) { showSmsLog = it } }
-
-        // 8. SMS Rules Section
-        item { SmsRulesSection(vm) }
-
-        // 9. Sync & Integrations Card
         item {
             PfCard(padding = PaddingValues(Space.s4)) {
-                SettingHeader(
-                    icon = Icons.Default.Sync,
-                    title = "Sync & Integrations",
-                    subtitle = "Cloud database & AI configuration"
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-                    DebouncedField(
-                        label = "Firebase Config (apiKey, projectId, appId…)",
-                        value = vm.firebaseConfigText,
-                        onSettled = vm::setFirebaseConfig,
-                        placeholder = "Paste values separated by commas",
-                        singleLine = false,
-                        allowBlank = true
-                    )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(Radius.Sm)
+                        .clickable { showMoreSettings = !showMoreSettings }
+                        .padding(vertical = Space.s1),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.s3),
+                        modifier = Modifier.weight(1f, fill = false)
                     ) {
-                        Muted("Firestore Cloud Sync")
-                        when (vm.syncStatus) {
-                            SyncStatus.LIVE -> Tag("Live", Pf.Accent2_100, Pf.Accent2_800)
-                            SyncStatus.CONNECTING -> Tag("Connecting…", Pf.Neutral100, Pf.Neutral800)
-                            SyncStatus.ERROR -> Tag("Error", Pf.Accent100, Pf.Accent800)
-                            SyncStatus.OFF -> OutlineTag("Not connected")
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(Pf.Accent700.copy(alpha = 0.25f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = Pf.Accent400,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                "More Settings",
+                                color = Pf.Text,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "SMS import, sync, AI key & sample data",
+                                color = Pf.Muted,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
-                    if (vm.syncError.isNotEmpty()) {
-                        Text(vm.syncError, color = Pf.Accent400, fontSize = 12.sp)
-                    }
-                    PrimaryButton("Connect", vm::applyFirebaseConfig)
-                    Muted(
-                        if (vm.syncConfigLooksValid) "Reads OK — ${vm.syncConfigSummary}"
-                        else "Need at least apiKey, projectId and appId."
+                    Icon(
+                        if (showMoreSettings) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = Pf.Accent400,
+                        modifier = Modifier.size(22.dp)
                     )
-
-                    Spacer(Modifier.height(Space.s1))
-                    Hairline()
-                    Spacer(Modifier.height(Space.s1))
-
-                    DebouncedField(
-                        label = "OpenAI API Key (for Smart Assistant)",
-                        value = vm.openaiKeyText,
-                        onSettled = vm::setOpenaiKey,
-                        placeholder = "sk-…",
-                        allowBlank = true
-                    )
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Muted("OpenAI Assistant")
-                        if (vm.openaiKeyText.isNotBlank()) Tag("Configured", Pf.Accent100, Pf.Accent800)
-                        else OutlineTag("Not set")
-                    }
                 }
-            }
-        }
 
-        // 10. Sample Data Card (if any)
-        if (vm.sampleDataCount > 0) {
-            item {
-                PfCard(padding = PaddingValues(Space.s4)) {
-                    SettingHeader(
-                        icon = Icons.Default.CleaningServices,
-                        title = "Sample Data",
-                        subtitle = "Clear starter demonstration data"
-                    )
-                    Muted(
-                        "${vm.sampleDataCount} made-up record(s) from first launch. " +
-                            "They inflate every figure once your own numbers are in."
-                    )
-                    Row(Modifier.padding(top = Space.s3)) {
-                        SecondaryButton("Remove sample data", { vm.clearSamples() })
-                    }
-                    if (vm.sampleNote.isNotEmpty()) {
-                        Muted(vm.sampleNote, Modifier.padding(top = Space.s2))
+                if (showMoreSettings) {
+                    Column(
+                        Modifier.padding(top = Space.s3),
+                        verticalArrangement = Arrangement.spacedBy(Space.s4)
+                    ) {
+                        Hairline()
+
+                        // SMS Import
+                        SmsImportSection(vm, showSmsLog) { showSmsLog = it }
+
+                        // SMS Rules
+                        SmsRulesSection(vm)
+
+                        // Firestore & OpenAI Sync Card
+                        PfCard(
+                            Modifier.fillMaxWidth(),
+                            padding = PaddingValues(Space.s3)
+                        ) {
+                            SettingHeader(
+                                icon = Icons.Default.Sync,
+                                title = "Sync & Integrations",
+                                subtitle = "Cloud database & AI configuration"
+                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+                                DebouncedField(
+                                    label = "Firebase Config (apiKey, projectId, appId…)",
+                                    value = vm.firebaseConfigText,
+                                    onSettled = vm::setFirebaseConfig,
+                                    placeholder = "Paste values separated by commas",
+                                    singleLine = false,
+                                    allowBlank = true
+                                )
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Muted("Firestore Cloud Sync")
+                                    when (vm.syncStatus) {
+                                        SyncStatus.LIVE -> Tag("Live", Pf.Accent2_100, Pf.Accent2_800)
+                                        SyncStatus.CONNECTING -> Tag("Connecting…", Pf.Neutral100, Pf.Neutral800)
+                                        SyncStatus.ERROR -> Tag("Error", Pf.Accent100, Pf.Accent800)
+                                        SyncStatus.OFF -> OutlineTag("Not connected")
+                                    }
+                                }
+                                if (vm.syncError.isNotEmpty()) {
+                                    Text(vm.syncError, color = Pf.Accent400, fontSize = 12.sp)
+                                }
+                                PrimaryButton("Connect", vm::applyFirebaseConfig)
+                                Muted(
+                                    if (vm.syncConfigLooksValid) "Reads OK — ${vm.syncConfigSummary}"
+                                    else "Need at least apiKey, projectId and appId."
+                                )
+
+                                Spacer(Modifier.height(Space.s1))
+                                Hairline()
+                                Spacer(Modifier.height(Space.s1))
+
+                                DebouncedField(
+                                    label = "OpenAI API Key (for Smart Assistant)",
+                                    value = vm.openaiKeyText,
+                                    onSettled = vm::setOpenaiKey,
+                                    placeholder = "sk-…",
+                                    allowBlank = true
+                                )
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Muted("OpenAI Assistant")
+                                    if (vm.openaiKeyText.isNotBlank()) Tag("Configured", Pf.Accent100, Pf.Accent800)
+                                    else OutlineTag("Not set")
+                                }
+                            }
+                        }
+
+                        // Sample Data Card (if any)
+                        if (vm.sampleDataCount > 0) {
+                            PfCard(
+                                Modifier.fillMaxWidth(),
+                                padding = PaddingValues(Space.s3)
+                            ) {
+                                SettingHeader(
+                                    icon = Icons.Default.CleaningServices,
+                                    title = "Sample Data",
+                                    subtitle = "Clear starter demonstration data"
+                                )
+                                Muted(
+                                    "${vm.sampleDataCount} made-up record(s) from first launch. " +
+                                        "They inflate every figure once your own numbers are in."
+                                )
+                                Row(Modifier.padding(top = Space.s3)) {
+                                    SecondaryButton("Remove sample data", { vm.clearSamples() })
+                                }
+                                if (vm.sampleNote.isNotEmpty()) {
+                                    Muted(vm.sampleNote, Modifier.padding(top = Space.s2))
+                                }
+                            }
+                        }
                     }
                 }
             }

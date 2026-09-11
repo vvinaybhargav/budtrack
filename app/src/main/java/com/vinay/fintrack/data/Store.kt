@@ -21,7 +21,7 @@ data class PersistedState(
     val budgetRollover: Boolean = false,
     /** Joint isn't one of these — it's a view you switch to on Home, not
      *  something you sign in to. */
-    val profiles: Map<String, String> = mapOf("Me" to "1234", "Wife" to "1234"),
+    val profiles: Map<String, String> = mapOf("Vinay" to "1234"),
     val categories: List<String> = Seed.categoriesMedium,
     val defaultAccount: String = "ICICI Joint",
     val firebaseConfigText: String = "",
@@ -37,7 +37,7 @@ data class PersistedState(
     val importedRefs: Set<String> = emptySet(),
     /** Profile this device signs in as, so the picker is skipped on launch.
      *  Device-local: the other phone belongs to the other person. */
-    val lastProfile: String = "",
+    val lastProfile: String = "Vinay",
     /** Day of the month a new cycle starts, for pay that does not arrive on the
      *  1st. Set-asides and confirmations follow it. */
     val cycleResetDay: Int = 1,

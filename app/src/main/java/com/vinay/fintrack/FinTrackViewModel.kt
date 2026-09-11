@@ -443,14 +443,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * Only the picker is skipped — the PIN still stands. Repeating the choice
      * every launch on a phone that belongs to one person was the pointless part.
      */
-    private val rememberedProfile: String? =
-        persisted.lastProfile.takeIf { it.isNotEmpty() && it in persisted.profiles.keys }
+    private val rememberedProfile: String =
+        persisted.lastProfile.ifEmpty { "Vinay" }
 
-    // Straight in when this phone already knows whose it is, unless the PIN has
-    // been asked for explicitly in Settings.
-    var isLocked by mutableStateOf(rememberedProfile == null); private set
-    var pinStep by mutableStateOf(if (rememberedProfile != null) "enter" else "pick"); private set
-    var activeProfile by mutableStateOf(rememberedProfile); private set
+    var isLocked by mutableStateOf(persisted.profiles[rememberedProfile]?.isNotEmpty() == true)
+    var pinStep by mutableStateOf("enter")
+    var activeProfile by mutableStateOf<String?>(rememberedProfile)
     var pinInput by mutableStateOf(""); private set
     var pinError by mutableStateOf(false); private set
 
@@ -762,18 +760,23 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         return persisted.salaryOverrides["${profile}_$yearMonth"]
     }
 
+    fun removeSalaryOverride(profile: String, yearMonth: String) {
+        update { s ->
+            val key = "${profile}_$yearMonth"
+            s.copy(salaryOverrides = s.salaryOverrides - key)
+        }
+    }
+
     fun setSalaryOverride(profile: String, yearMonth: String, amount: Double?, resetDay: Int?) {
         update { s ->
             val key = "${profile}_$yearMonth"
-            val current = s.salaryOverrides[key]
-            val defaultAmt = s.salaries[profile] ?: 0.0
-            val defaultDay = s.salaryDays[profile] ?: s.cycleResetDay
-            
-            if (amount == null && resetDay == null) {
+            if (amount == null || amount <= 0.0) {
                 s.copy(salaryOverrides = s.salaryOverrides - key)
             } else {
+                val current = s.salaryOverrides[key]
+                val defaultDay = s.salaryDays[profile] ?: s.cycleResetDay
                 val nextOverride = SalaryOverride(
-                    amount = amount ?: current?.amount ?: defaultAmt,
+                    amount = amount,
                     resetDay = resetDay ?: current?.resetDay ?: defaultDay
                 )
                 s.copy(salaryOverrides = s.salaryOverrides + (key to nextOverride))

@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.sp
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.INVEST_PICKABLE
 import com.vinay.fintrack.data.inr
+import com.vinay.fintrack.data.categoryForParty
+import com.vinay.fintrack.data.UNCATEGORISED
 import java.util.Calendar
 
 private data class AddKindItem(val key: String, val label: String, val icon: ImageVector)
@@ -518,7 +520,16 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
                 Text("Use dd-mm-yyyy, e.g. ${vm.todayDayFirstText}", color = Pf.Accent400, fontSize = 12.sp)
             }
         }
-        PfField("Note (optional)", vm.draft.note, { vm.draft = vm.draft.copy(note = it) }, placeholder = notePlaceholder)
+        PfField(
+            "Note (optional)",
+            vm.draft.note,
+            { noteInput ->
+                val autoCat = categoryForParty(noteInput, vm.categories, vm.smsRules)
+                val newCat = if (autoCat.isNotBlank() && autoCat != UNCATEGORISED) autoCat else vm.draft.category
+                vm.draft = vm.draft.copy(note = noteInput, category = newCat)
+            },
+            placeholder = notePlaceholder
+        )
         PrimaryButton(
             when {
                 isEditing -> "Save changes"
