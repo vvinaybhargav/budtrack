@@ -902,7 +902,7 @@ private fun ManageBorrowedLentSection(vm: FinTrackViewModel) {
                                 .fillMaxWidth()
                                 .background(Pf.Surface2.copy(alpha = 0.6f), Radius.Md)
                                 .border(1.dp, Pf.Hairline, Radius.Md)
-                                .clickable { vm.openEditTxn(txn) }
+                                .clickable { vm.openImportedTxn(txn.id) }
                                 .padding(Space.s3)
                         ) {
                             Row(
