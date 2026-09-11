@@ -22,17 +22,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
@@ -58,6 +60,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,50 +74,126 @@ import com.vinay.fintrack.data.today
 
 @Composable
 fun SettingsScreen(vm: FinTrackViewModel) {
+    var selectedSalaryProfile by remember(vm.activeProfile) {
+        mutableStateOf(vm.activeProfile ?: vm.profileNames.firstOrNull() ?: "Me")
+    }
+    var showSalaryOverrides by remember { mutableStateOf(false) }
+    var showManageCategories by remember { mutableStateOf(false) }
+    var showSmsLog by remember { mutableStateOf(false) }
+
     LazyColumn(
         Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(Space.s4),
+        contentPadding = PaddingValues(bottom = 90.dp, top = Space.s3, start = Space.s4, end = Space.s4),
         verticalArrangement = Arrangement.spacedBy(Space.s4)
     ) {
-        // 1. Profiles Card
+        // Top Title
+        item {
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    "Settings",
+                    color = Pf.Text,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(Modifier.height(2.dp))
+                Muted("Active profile: ${vm.activeProfile ?: "Personal"} · Preferences & Sync", size = 13)
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // SECTION 1: PROFILE & SECURITY
+        // ════════════════════════════════════════════════════════════════
+        item { SettingsSectionLabel("PROFILE & SECURITY") }
+
+        // 1. Profiles Card (Active profile focused)
         item {
             PfCard(padding = PaddingValues(Space.s4)) {
                 SettingHeader(
                     icon = Icons.Default.Person,
                     title = "Profiles",
-                    subtitle = "Manage & switch user accounts",
+                    subtitle = "Manage & switch user profile",
                     action = {
                         SecondaryButton("Switch", vm::switchProfile)
                     }
                 )
-                Muted("Each profile tracks independent transactions. Joint overview is toggleable on Home.")
-                Column(
-                    Modifier.padding(top = Space.s3),
-                    verticalArrangement = Arrangement.spacedBy(Space.s2)
+
+                // Active Profile Hero Pill
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Pf.Accent.copy(alpha = 0.12f), Radius.Md)
+                        .border(1.dp, Pf.Accent.copy(alpha = 0.3f), Radius.Md)
+                        .padding(Space.s3)
                 ) {
-                    vm.profileNames.forEach { name ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                         Row(
-                            Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                            horizontalArrangement = Arrangement.spacedBy(Space.s3)
                         ) {
-                            if (vm.renamingProfile == name) {
-                                PfField(
-                                    value = vm.renameText,
-                                    onValueChange = vm::editRenameText,
-                                    modifier = Modifier.weight(1f)
+                            Box(
+                                Modifier
+                                    .size(36.dp)
+                                    .background(Pf.Accent, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    (vm.activeProfile ?: "U").take(1).uppercase(),
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
-                                PrimaryButton("Save", vm::saveRenameProfile)
-                                SecondaryButton("Cancel", vm::cancelRenameProfile)
-                            } else {
-                                Text(name, Modifier.weight(1f), color = Pf.Text, fontSize = 14.sp)
-                                if (name == vm.activeProfile) Tag("You", Pf.Accent100, Pf.Accent800)
-                                SmallIcon(Icons.Default.Edit, "Rename profile", true) {
-                                    vm.startRenameProfile(name)
-                                }
-                                if (name != vm.activeProfile) {
-                                    SmallIcon(Icons.Default.Delete, "Remove profile", true) {
-                                        vm.removeProfile(name)
+                            }
+                            Column {
+                                Text(
+                                    vm.activeProfile ?: "Personal",
+                                    color = Pf.Text,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Muted("Currently Active Profile", size = 11)
+                            }
+                        }
+                        Tag("Active", Pf.Accent2_100, Pf.Accent2_800)
+                    }
+                }
+
+                // Other Profiles List (if any)
+                val otherProfiles = vm.profileNames.filter { it != vm.activeProfile }
+                if (otherProfiles.isNotEmpty() || vm.renamingProfile != null) {
+                    Spacer(Modifier.height(Space.s3))
+                    Muted("All Profiles", size = 12)
+                    Column(
+                        Modifier.padding(top = Space.s1),
+                        verticalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        vm.profileNames.forEach { name ->
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                            ) {
+                                if (vm.renamingProfile == name) {
+                                    PfField(
+                                        value = vm.renameText,
+                                        onValueChange = vm::editRenameText,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    PrimaryButton("Save", vm::saveRenameProfile)
+                                    SecondaryButton("Cancel", vm::cancelRenameProfile)
+                                } else {
+                                    Text(name, Modifier.weight(1f), color = Pf.Text, fontSize = 14.sp)
+                                    if (name == vm.activeProfile) Tag("You", Pf.Accent100, Pf.Accent800)
+                                    SmallIcon(Icons.Default.Edit, "Rename profile", true) {
+                                        vm.startRenameProfile(name)
+                                    }
+                                    if (name != vm.activeProfile) {
+                                        SmallIcon(Icons.Default.Delete, "Remove profile", true) {
+                                            vm.removeProfile(name)
+                                        }
                                     }
                                 }
                             }
@@ -126,7 +206,180 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        // 2. Lock Card
+        // 2. Salary & Payday Card (SCOPED TO ACTIVE PROFILE)
+        item {
+            val profile = selectedSalaryProfile
+            val salAmount = vm.salaryAmountFor(profile)
+            val salResetDay = vm.salaryResetDayFor(profile)
+
+            PfCard(padding = PaddingValues(Space.s4)) {
+                SettingHeader(
+                    icon = Icons.Default.Payments,
+                    title = "Salary & Payday",
+                    subtitle = "Monthly income & budget cycle for $profile"
+                )
+
+                // Profile Selector Chips (if more than 1 profile exists)
+                if (vm.profileNames.size > 1) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = Space.s3),
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        vm.profileNames.forEach { p ->
+                            val isSel = selectedSalaryProfile == p
+                            Box(
+                                Modifier
+                                    .clip(Radius.Pill)
+                                    .background(if (isSel) Pf.Accent else Pf.Surface2)
+                                    .border(1.dp, if (isSel) Pf.Accent else Pf.Hairline, Radius.Pill)
+                                    .clickable { selectedSalaryProfile = p }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    if (p == vm.activeProfile) "$p (Active)" else p,
+                                    color = if (isSel) Color.White else Pf.Text,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Core Salary & Reset Day Row
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s3)
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Muted("Pay Day / Reset Day")
+                        PfSelect(
+                            value = salResetDay.toString(),
+                            options = (1..28).map { it.toString() },
+                            onSelect = { vm.setSalaryDate(profile, it.toIntOrNull() ?: 1) }
+                        )
+                    }
+                    Column(Modifier.weight(1.3f)) {
+                        Muted("Monthly Salary (₹)")
+                        PfField(
+                            value = if (salAmount > 0.0) salAmount.toLong().toString() else "",
+                            onValueChange = {
+                                val amt = it.toDoubleOrNull() ?: 0.0
+                                vm.setSalaryAmountFor(profile, amt)
+                            },
+                            numeric = true,
+                            placeholder = "e.g. 50000"
+                        )
+                    }
+                }
+
+                Muted(
+                    "Cycle turns over on day $salResetDay. Used to project available savings for $profile.",
+                    Modifier.padding(top = Space.s2)
+                )
+
+                Spacer(Modifier.height(Space.s3))
+                Hairline()
+                Spacer(Modifier.height(Space.s1))
+
+                // Collapsible 3-Month Overrides Toggle
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(Radius.Sm)
+                        .clickable { showSalaryOverrides = !showSalaryOverrides }
+                        .padding(vertical = Space.s2),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            "3-Month Salary Overrides",
+                            color = Pf.Text,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Muted("Adjust bonus or variable income for upcoming months", size = 11)
+                    }
+                    Icon(
+                        if (showSalaryOverrides) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = Pf.Accent400,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // Collapsible Overrides Form
+                if (showSalaryOverrides) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(Pf.Surface2.copy(alpha = 0.5f), Radius.Md)
+                            .border(1.dp, Pf.Hairline, Radius.Md)
+                            .padding(Space.s3),
+                        verticalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        val nextMonths = (1..3).map { ahead ->
+                            val d = Ledger.addMonths(today(), ahead)
+                            val yr = d.substring(0, 4)
+                            val monthInt = d.substring(5, 7).toInt()
+                            val monthLabel = when (monthInt) {
+                                1 -> "Jan"; 2 -> "Feb"; 3 -> "Mar"; 4 -> "Apr"
+                                5 -> "May"; 6 -> "Jun"; 7 -> "Jul"; 8 -> "Aug"
+                                9 -> "Sep"; 10 -> "Oct"; 11 -> "Nov"; 12 -> "Dec"
+                                else -> ""
+                            }
+                            val yearMonth = "%s-%02d".format(yr, monthInt)
+                            Triple(yearMonth, "$monthLabel $yr", monthLabel)
+                        }
+
+                        nextMonths.forEach { (yearMonth, displayLabel, _) ->
+                            val override = vm.getSalaryOverride(profile, yearMonth)
+                            val amountVal = override?.amount ?: salAmount
+                            val resetDayVal = override?.resetDay ?: salResetDay
+
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    displayLabel,
+                                    color = Pf.Text,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.width(75.dp)
+                                )
+                                Column(Modifier.weight(1f)) {
+                                    PfSelect(
+                                        value = resetDayVal.toString(),
+                                        options = (1..28).map { it.toString() },
+                                        onSelect = { day ->
+                                            vm.setSalaryOverride(profile, yearMonth, amountVal, day.toIntOrNull() ?: 1)
+                                        }
+                                    )
+                                }
+                                Column(Modifier.weight(1.4f)) {
+                                    PfField(
+                                        value = if (amountVal > 0.0) amountVal.toLong().toString() else "",
+                                        onValueChange = { amtText ->
+                                            val amt = amtText.toDoubleOrNull()
+                                            vm.setSalaryOverride(profile, yearMonth, amt, resetDayVal)
+                                        },
+                                        numeric = true,
+                                        placeholder = "Amount"
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. App Lock Card
         item {
             PfCard(padding = PaddingValues(Space.s4)) {
                 SettingHeader(
@@ -167,257 +420,12 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        // 3. Categories Card
-        item {
-            PfCard(padding = PaddingValues(Space.s4)) {
-                SettingHeader(
-                    icon = Icons.Default.Category,
-                    title = "Categories",
-                    subtitle = "Organize transaction categories"
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                    vm.categories.forEachIndexed { i, cat ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                        ) {
-                            if (vm.editingCategory == cat) {
-                                PfField(
-                                    value = vm.categoryDraftText,
-                                    onValueChange = { vm.categoryDraftText = it },
-                                    modifier = Modifier.weight(1f)
-                                )
-                                PrimaryButton("Save", vm::saveCategory)
-                            } else {
-                                Text(cat, Modifier.weight(1f), color = Pf.Text, fontSize = 14.sp)
-                                SmallIcon(Icons.Default.ArrowUpward, "Move up", i > 0) { vm.moveCategory(i, -1) }
-                                SmallIcon(Icons.Default.ArrowDownward, "Move down", i < vm.categories.size - 1) { vm.moveCategory(i, 1) }
-                                SmallIcon(Icons.Default.Edit, "Rename", true) { vm.startEditCategory(cat) }
-                                SmallIcon(Icons.Default.Delete, "Remove", true) { vm.removeCategory(cat) }
-                            }
-                        }
-                    }
-                }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(top = Space.s3),
-                    horizontalArrangement = Arrangement.spacedBy(Space.s2),
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    PfField(
-                        value = vm.newCategoryText,
-                        onValueChange = { vm.newCategoryText = it },
-                        placeholder = "New category",
-                        modifier = Modifier.weight(1f)
-                    )
-                    PrimaryButton("Add", vm::addCategory, enabled = vm.newCategoryText.isNotBlank())
-                }
-            }
-        }
+        // ════════════════════════════════════════════════════════════════
+        // SECTION 2: PREFERENCES & BUDGETING
+        // ════════════════════════════════════════════════════════════════
+        item { SettingsSectionLabel("PREFERENCES & BUDGETING") }
 
-        // 4. Budgets Card
-        item {
-            PfCard(padding = PaddingValues(Space.s4)) {
-                SettingHeader(
-                    icon = Icons.Default.PieChart,
-                    title = "Budgets",
-                    subtitle = "Monthly spending caps per category"
-                )
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = Space.s2),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Rollover leftover", color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        Muted("Underspend carries over to next month")
-                    }
-                    if (vm.budgetRollover) {
-                        SecondaryButton("On", { vm.setBudgetRollover(false) })
-                    } else {
-                        SecondaryButton("Off", { vm.setBudgetRollover(true) })
-                    }
-                }
-                Column(
-                    Modifier.padding(top = Space.s2),
-                    verticalArrangement = Arrangement.spacedBy(Space.s2)
-                ) {
-                    vm.budgets.forEach { (cat, limit) ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                        ) {
-                            Text(cat, Modifier.weight(1f), color = Pf.Text, fontSize = 14.sp)
-                            DebouncedField(
-                                value = limit.toLong().toString(),
-                                onSettled = { v ->
-                                    v.toDoubleOrNull()?.takeIf { it > 0 }?.let { vm.setBudget(cat, it) }
-                                },
-                                numeric = true,
-                                modifier = Modifier.width(110.dp)
-                            )
-                            SmallIcon(Icons.Default.Delete, "Remove budget", true) { vm.removeBudget(cat) }
-                        }
-                    }
-                }
-                if (vm.budgetableCategories.isNotEmpty()) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(top = Space.s3),
-                        horizontalArrangement = Arrangement.spacedBy(Space.s2),
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            PfSelect(
-                                value = vm.budgetDraftCategory,
-                                options = vm.budgetableCategories,
-                                onSelect = { vm.budgetDraftCategory = it }
-                            )
-                        }
-                        PfField(
-                            value = vm.budgetDraftAmount,
-                            onValueChange = { vm.budgetDraftAmount = it },
-                            placeholder = "Limit",
-                            numeric = true,
-                            modifier = Modifier.width(110.dp)
-                        )
-                        PrimaryButton(
-                            "Add",
-                            vm::addBudgetFromDraft,
-                            enabled = vm.budgetDraftCategory.isNotBlank() && vm.budgetDraftAmount.isNotBlank()
-                        )
-                    }
-                }
-            }
-        }
-
-        // 5. Salary Settings Card
-        item {
-            PfCard(padding = PaddingValues(Space.s4)) {
-                SettingHeader(
-                    icon = Icons.Default.Payments,
-                    title = "Salary & Payday",
-                    subtitle = "Monthly income & turnover cycle"
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(Space.s4)) {
-                    vm.profileNames.forEach { profile ->
-                        val salAmount = vm.salaryAmountFor(profile)
-                        val salResetDay = vm.salaryResetDayFor(profile)
-                        
-                        Column {
-                            Text("Profile: $profile", color = Pf.Accent400, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = Space.s2))
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(Space.s3)
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Muted("Pay Day (Reset)")
-                                    PfSelect(
-                                        value = salResetDay.toString(),
-                                        options = (1..28).map { it.toString() },
-                                        onSelect = { vm.setSalaryDate(profile, it.toIntOrNull() ?: 1) }
-                                    )
-                                }
-                                Column(Modifier.weight(1f)) {
-                                    Muted("Monthly Salary")
-                                    PfField(
-                                        value = if (salAmount > 0.0) salAmount.toLong().toString() else "",
-                                        onValueChange = {
-                                            val amt = it.toDoubleOrNull() ?: 0.0
-                                            vm.setSalaryAmountFor(profile, amt)
-                                        },
-                                        numeric = true,
-                                        placeholder = "e.g. 120000"
-                                    )
-                                }
-                            }
-                            Muted(
-                                "Month turns over on this day. Used to project outlook savings for $profile."
-                            )
-
-                            Column(Modifier.padding(top = Space.s3)) {
-                                Text(
-                                    "Salary Overrides (Next 3 Months)",
-                                    color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(bottom = Space.s2)
-                                )
-                                val nextMonths = (1..3).map { ahead ->
-                                    val d = Ledger.addMonths(today(), ahead)
-                                    val yr = d.substring(0, 4)
-                                    val monthInt = d.substring(5, 7).toInt()
-                                    val monthLabel = when (monthInt) {
-                                        1 -> "Jan"
-                                        2 -> "Feb"
-                                        3 -> "Mar"
-                                        4 -> "Apr"
-                                        5 -> "May"
-                                        6 -> "Jun"
-                                        7 -> "Jul"
-                                        8 -> "Aug"
-                                        9 -> "Sep"
-                                        10 -> "Oct"
-                                        11 -> "Nov"
-                                        12 -> "Dec"
-                                        else -> ""
-                                    }
-                                    val yearMonth = "%s-%02d".format(yr, monthInt)
-                                    val displayLabel = "$monthLabel $yr"
-                                    Triple(yearMonth, displayLabel, monthLabel)
-                                }
-
-                                nextMonths.forEach { (yearMonth, displayLabel, _) ->
-                                    val override = vm.getSalaryOverride(profile, yearMonth)
-                                    val amountVal = override?.amount ?: salAmount
-                                    val resetDayVal = override?.resetDay ?: salResetDay
-                                    
-                                    Row(
-                                        Modifier.fillMaxWidth().padding(bottom = Space.s2),
-                                        horizontalArrangement = Arrangement.spacedBy(Space.s3),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            displayLabel,
-                                            color = Pf.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                                            modifier = Modifier.width(90.dp)
-                                        )
-                                        Column(Modifier.weight(1f)) {
-                                            Muted("Pay Day")
-                                            PfSelect(
-                                                value = resetDayVal.toString(),
-                                                options = (1..28).map { it.toString() },
-                                                onSelect = { day ->
-                                                    vm.setSalaryOverride(profile, yearMonth, amountVal, day.toIntOrNull() ?: 1)
-                                                }
-                                            )
-                                        }
-                                        Column(Modifier.weight(1.5f)) {
-                                            Muted("Amount (₹)")
-                                            PfField(
-                                                value = if (amountVal > 0.0) amountVal.toLong().toString() else "",
-                                                onValueChange = { amtText ->
-                                                    val amt = amtText.toDoubleOrNull()
-                                                    vm.setSalaryOverride(profile, yearMonth, amt, resetDayVal)
-                                                },
-                                                numeric = true,
-                                                placeholder = "Amount"
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 6. Default Account Card
+        // 4. Default Account Card
         item {
             PfCard(padding = PaddingValues(Space.s4)) {
                 SettingHeader(
@@ -433,26 +441,202 @@ fun SettingsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        // 7. SMS Import Section Card
-        item { SmsImportSection(vm) }
+        // 5. Categories Card (COMPACT CHIPS + COLLAPSIBLE MANAGER)
+        item {
+            PfCard(padding = PaddingValues(Space.s4)) {
+                SettingHeader(
+                    icon = Icons.Default.Category,
+                    title = "Categories",
+                    subtitle = "${vm.categories.size} categories configured"
+                )
 
-        // 8. SMS Rules Section Card
+                // Compact Flow View of Categories
+                OptInFlowRowCategories(vm)
+
+                Spacer(Modifier.height(Space.s2))
+
+                // Quick Add Category Bar
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    PfField(
+                        value = vm.newCategoryText,
+                        onValueChange = { vm.newCategoryText = it },
+                        placeholder = "New category name…",
+                        modifier = Modifier.weight(1f)
+                    )
+                    PrimaryButton("Add", vm::addCategory, enabled = vm.newCategoryText.isNotBlank())
+                }
+
+                Spacer(Modifier.height(Space.s2))
+                Hairline()
+                Spacer(Modifier.height(Space.s1))
+
+                // Expandable Full Category Manager (Reorder / Rename / Delete)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(Radius.Sm)
+                        .clickable { showManageCategories = !showManageCategories }
+                        .padding(vertical = Space.s2),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (showManageCategories) "Hide Category Manager ▲" else "Reorder & Edit Categories (${vm.categories.size}) ▼",
+                        color = Pf.Accent400,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                if (showManageCategories) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(Pf.Surface2.copy(alpha = 0.5f), Radius.Md)
+                            .border(1.dp, Pf.Hairline, Radius.Md)
+                            .padding(Space.s3),
+                        verticalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        vm.categories.forEachIndexed { i, cat ->
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                            ) {
+                                if (vm.editingCategory == cat) {
+                                    PfField(
+                                        value = vm.categoryDraftText,
+                                        onValueChange = { vm.categoryDraftText = it },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    PrimaryButton("Save", vm::saveCategory)
+                                } else {
+                                    Text(cat, Modifier.weight(1f), color = Pf.Text, fontSize = 13.sp)
+                                    SmallIcon(Icons.Default.ArrowUpward, "Move up", i > 0) { vm.moveCategory(i, -1) }
+                                    SmallIcon(Icons.Default.ArrowDownward, "Move down", i < vm.categories.size - 1) { vm.moveCategory(i, 1) }
+                                    SmallIcon(Icons.Default.Edit, "Rename", true) { vm.startEditCategory(cat) }
+                                    SmallIcon(Icons.Default.Delete, "Remove", true) { vm.removeCategory(cat) }
+                                }
+                            }
+                            if (i < vm.categories.size - 1) Hairline()
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. Budgets Card
+        item {
+            PfCard(padding = PaddingValues(Space.s4)) {
+                SettingHeader(
+                    icon = Icons.Default.PieChart,
+                    title = "Budgets",
+                    subtitle = "Monthly category spending caps"
+                )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = Space.s2),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Rollover leftover", color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Muted("Underspend carries over to next month", size = 11)
+                    }
+                    if (vm.budgetRollover) {
+                        SecondaryButton("On", { vm.setBudgetRollover(false) })
+                    } else {
+                        SecondaryButton("Off", { vm.setBudgetRollover(true) })
+                    }
+                }
+
+                if (vm.budgets.isNotEmpty()) {
+                    Column(
+                        Modifier.padding(top = Space.s2),
+                        verticalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        vm.budgets.forEach { (cat, limit) ->
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                            ) {
+                                Text(cat, Modifier.weight(1f), color = Pf.Text, fontSize = 14.sp)
+                                DebouncedField(
+                                    value = limit.toLong().toString(),
+                                    onSettled = { v ->
+                                        v.toDoubleOrNull()?.takeIf { it > 0 }?.let { vm.setBudget(cat, it) }
+                                    },
+                                    numeric = true,
+                                    modifier = Modifier.width(110.dp)
+                                )
+                                SmallIcon(Icons.Default.Delete, "Remove budget", true) { vm.removeBudget(cat) }
+                            }
+                        }
+                    }
+                }
+
+                if (vm.budgetableCategories.isNotEmpty()) {
+                    Spacer(Modifier.height(Space.s2))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            PfSelect(
+                                value = vm.budgetDraftCategory,
+                                options = vm.budgetableCategories,
+                                onSelect = { vm.budgetDraftCategory = it }
+                            )
+                        }
+                        PfField(
+                            value = vm.budgetDraftAmount,
+                            onValueChange = { vm.budgetDraftAmount = it },
+                            placeholder = "Limit",
+                            numeric = true,
+                            modifier = Modifier.width(100.dp)
+                        )
+                        PrimaryButton(
+                            "Add",
+                            vm::addBudgetFromDraft,
+                            enabled = vm.budgetDraftCategory.isNotBlank() && vm.budgetDraftAmount.isNotBlank()
+                        )
+                    }
+                }
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // SECTION 3: AUTOMATION & SYNC
+        // ════════════════════════════════════════════════════════════════
+        item { SettingsSectionLabel("AUTOMATION & SYNC") }
+
+        // 7. Bank SMS Import Section
+        item { SmsImportSection(vm, showSmsLog) { showSmsLog = it } }
+
+        // 8. SMS Rules Section
         item { SmsRulesSection(vm) }
 
-        // 9. Sync & AI Card
+        // 9. Sync & Integrations Card
         item {
             PfCard(padding = PaddingValues(Space.s4)) {
                 SettingHeader(
                     icon = Icons.Default.Sync,
                     title = "Sync & Integrations",
-                    subtitle = "Cloud ledger & AI API configuration"
+                    subtitle = "Cloud database & AI configuration"
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
                     DebouncedField(
-                        label = "Firebase config — apiKey, projectId, storageBucket, messagingSenderId, appId",
+                        label = "Firebase Config (apiKey, projectId, appId…)",
                         value = vm.firebaseConfigText,
                         onSettled = vm::setFirebaseConfig,
-                        placeholder = "paste the values, separated by commas",
+                        placeholder = "Paste values separated by commas",
                         singleLine = false,
                         allowBlank = true
                     )
@@ -461,7 +645,7 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Muted("Firestore")
+                        Muted("Firestore Cloud Sync")
                         when (vm.syncStatus) {
                             SyncStatus.LIVE -> Tag("Live", Pf.Accent2_100, Pf.Accent2_800)
                             SyncStatus.CONNECTING -> Tag("Connecting…", Pf.Neutral100, Pf.Neutral800)
@@ -477,8 +661,13 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                         if (vm.syncConfigLooksValid) "Reads OK — ${vm.syncConfigSummary}"
                         else "Need at least apiKey, projectId and appId."
                     )
+
+                    Spacer(Modifier.height(Space.s1))
+                    Hairline()
+                    Spacer(Modifier.height(Space.s1))
+
                     DebouncedField(
-                        label = "OpenAI API key — for Smart Add",
+                        label = "OpenAI API Key (for Smart Assistant)",
                         value = vm.openaiKeyText,
                         onSettled = vm::setOpenaiKey,
                         placeholder = "sk-…",
@@ -489,7 +678,7 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Muted("OpenAI")
+                        Muted("OpenAI Assistant")
                         if (vm.openaiKeyText.isNotBlank()) Tag("Configured", Pf.Accent100, Pf.Accent800)
                         else OutlineTag("Not set")
                     }
@@ -517,6 +706,38 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                         Muted(vm.sampleNote, Modifier.padding(top = Space.s2))
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionLabel(title: String) {
+    Text(
+        text = title,
+        color = Pf.Accent400,
+        fontSize = 11.5.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.sp,
+        modifier = Modifier.padding(start = Space.s1, top = Space.s2, bottom = Space.s1)
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun OptInFlowRowCategories(vm: FinTrackViewModel) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        vm.categories.forEach { cat ->
+            Box(
+                Modifier
+                    .background(Pf.Surface2, Radius.Pill)
+                    .border(1.dp, Pf.Hairline, Radius.Pill)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(cat, color = Pf.Text, fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
         }
     }
@@ -579,11 +800,6 @@ private fun SettingHeader(
 }
 
 @Composable
-private fun Heading(text: String) {
-    Text(text, Modifier.padding(bottom = Space.s2), color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
-}
-
-@Composable
 private fun SmallIcon(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
@@ -601,35 +817,24 @@ private fun SmallIcon(
 }
 
 /**
- * Bank SMS import. Unlike reading a receipt image, the message states which
- * account moved the money, so a transaction lands on the right one rather than
- * a guess — and it covers card, ATM and EMI debits too, not just UPI.
+ * Bank SMS import section.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SmsImportSection(vm: FinTrackViewModel) {
+private fun SmsImportSection(
+    vm: FinTrackViewModel,
+    showSmsLog: Boolean,
+    onToggleSmsLog: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val activity = context as? Activity
     var hasPermission by remember { mutableStateOf(hasSmsPermission(context)) }
     var canNotify by remember { mutableStateOf(hasNotifyPermission(context)) }
 
-    /**
-     * Android's three states, which the app has to tell apart:
-     *   GRANTED    — nothing to do.
-     *   ASKABLE    — the prompt will appear.
-     *   BLOCKED    — declined for good; the prompt no longer appears at all, so
-     *                only the system settings page can turn it on.
-     *
-     * shouldShowRequestPermissionRationale is what distinguishes the last two,
-     * and only after a first attempt — before that it is false for a permission
-     * never requested, which is why the attempt has to be recorded.
-     */
     val asked = vm.smsAsked
     val blocked = asked && !hasPermission && activity != null &&
         !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.READ_SMS)
 
-    // Coming back from the settings page: without this the screen still says
-    // access is missing until the app is restarted.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -646,8 +851,6 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
         vm.markSmsAsked()
-        // Only the SMS grants decide this. Notifications are asked for in the
-        // same breath, and turning those down is no reason to call import off.
         hasPermission = hasSmsPermission(context)
         canNotify = hasNotifyPermission(context)
         if (hasPermission) vm.setSmsImport(true)
@@ -673,8 +876,6 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
             else OutlineTag("Off")
         }
 
-        // Wraps: three buttons side by side ran off the edge of the screen and
-        // the last one was unreadable.
         FlowRow(
             Modifier.padding(top = Space.s3),
             horizontalArrangement = Arrangement.spacedBy(Space.s2),
@@ -698,19 +899,17 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
             } else {
                 PrimaryButton("Turn on", { vm.setSmsImport(true) })
             }
+
             if (hasPermission && vm.smsImportOn) {
                 SecondaryButton(
                     if (vm.scanning) "Reading…" else "Import past 60 days",
                     { vm.backfillSms() },
                     enabled = !vm.scanning
                 )
-                // For imports made before the account digits were filled in.
                 SecondaryButton("Re-check accounts", { vm.rematchImports() })
             }
         }
 
-        // SMS access granted before notifications existed as a separate ask, so
-        // there has to be a way to catch up without turning the feature off.
         if (hasPermission && !canNotify) {
             Column(Modifier.padding(top = Space.s3)) {
                 Muted("Notifications are off, so imports happen silently.")
@@ -722,29 +921,22 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
             }
         }
 
-        // One line that says exactly where you are, rather than a button that
-        // silently does nothing.
         if (!hasPermission) {
             Column(Modifier.padding(top = Space.s2)) {
                 Muted(
                     when {
                         blocked -> "Android won't ask again. Two steps in app info:"
                         asked -> "Declined. Nothing is read until you allow it."
-                        else -> "Messages are read on this phone only. Amount, payee " +
-                            "and reference are kept — nothing else."
+                        else -> "Messages are read on this phone only. Amount, payee and reference are kept — nothing else."
                     }
                 )
-                // Android blocks SMS outright for apps not installed from a
-                // store, and hides the unblock in an overflow menu. Nobody
-                // finds "Allow restricted settings" without being told.
                 if (blocked) {
                     Column(Modifier.padding(top = Space.s1)) {
                         Muted("1. Tap ⋮ at the top right → Allow restricted settings")
                         Muted("2. Permissions → SMS → Allow")
                     }
                     Muted(
-                        "That first step exists because the app was installed from a " +
-                            "file rather than a store. It is asked once per install.",
+                        "That first step exists because the app was installed from a file rather than a store.",
                         Modifier.padding(top = Space.s2)
                     )
                 }
@@ -756,42 +948,58 @@ private fun SmsImportSection(vm: FinTrackViewModel) {
         }
         Muted("${vm.importedCount} imported from SMS", Modifier.padding(top = Space.s1))
 
-        // Without this, a message that didn't import is indistinguishable from
-        // one that never arrived.
+        // Collapsible SMS Debug Log
         if (vm.smsLog.isNotEmpty()) {
-            Column(Modifier.padding(top = Space.s3)) {
-                Muted("Recent messages")
-                vm.smsLog.take(8).forEach { line ->
-                    Text(
-                        line,
-                        Modifier.padding(top = 2.dp),
-                        color = Pf.Muted,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
+            Spacer(Modifier.height(Space.s2))
+            Hairline()
+            Spacer(Modifier.height(Space.s1))
+
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(Radius.Sm)
+                    .clickable { onToggleSmsLog(!showSmsLog) }
+                    .padding(vertical = Space.s1),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (showSmsLog) "Hide SMS Log ▲" else "View Recent SMS Messages (${vm.smsLog.size}) ▼",
+                    color = Pf.Accent400,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            if (showSmsLog) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Pf.Surface2, Radius.Md)
+                        .border(1.dp, Pf.Hairline, Radius.Md)
+                        .padding(Space.s3)
+                ) {
+                    vm.smsLog.take(8).forEach { line ->
+                        Text(
+                            line,
+                            Modifier.padding(top = 2.dp),
+                            color = Pf.Muted,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
             }
         }
-        Muted(
-            "Set each account's last digits on Home, or every message lands on " +
-                "the default account.",
-            Modifier.padding(top = Space.s2)
-        )
     }
 }
 
-/** Below Android 13 the manifest entry is the whole story. */
 private fun hasNotifyPermission(context: android.content.Context): Boolean =
     android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU ||
         ContextCompat.checkSelfPermission(
             context, Manifest.permission.POST_NOTIFICATIONS
         ) == PackageManager.PERMISSION_GRANTED
 
-/**
- * Asked for together, since they are one feature: reading the bank's message,
- * and telling you what it became. Notifications only became a permission in
- * Android 13 — requesting it below that fails the whole batch.
- */
 private fun smsPermissions(): Array<String> {
     val base = arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS)
     return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
@@ -815,7 +1023,7 @@ private fun SmsRulesSection(vm: FinTrackViewModel) {
         SettingHeader(
             icon = Icons.Default.Rule,
             title = "Saved Categorisation Rules",
-            subtitle = "Merchant keyword mapping rules"
+            subtitle = "${rules.size} merchant keyword mapping rules"
         )
         Muted("SMS patterns mapped to categories. Tap the trash icon to delete a rule.")
 
