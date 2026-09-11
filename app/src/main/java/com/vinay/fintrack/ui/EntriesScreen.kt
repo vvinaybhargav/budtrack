@@ -73,6 +73,7 @@ import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.today
 import com.vinay.fintrack.FinTrackViewModel
 import com.vinay.fintrack.data.inr
+import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.categoryForParty
 import com.vinay.fintrack.data.UNCATEGORISED
 
@@ -581,7 +582,7 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
     var selectedCategory by remember(txn.id) { mutableStateOf(txn.category) }
     var selectedLoanId by remember(txn.id) { mutableStateOf(txn.loanId) }
     var selectedEntryId by remember(txn.id) { mutableStateOf(txn.entryId) }
-    val isInitialCardPayment = txn.category == "Credit Card Bill" || txn.source == FinTrackViewModel.CARD_PAYMENT
+    val isInitialCardPayment = txn.category == "Credit Card Bill" || txn.source == Ledger.CARD_PAYMENT
     var selectedCardPaymentId by remember(txn.id) {
         mutableStateOf(if (isInitialCardPayment) txn.cardId else "")
     }
