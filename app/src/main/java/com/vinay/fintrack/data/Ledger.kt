@@ -320,14 +320,6 @@ object Ledger {
     }
 
     /**
-     * How many monthly instalments are left before a bill falls due.
-     *
-     * Counted from this month up to, but not including, the month it is due:
-     * decided in August for a bill due in January, that is August through
-     * December — five. The due month itself is left out so the money is there
-     * before the day rather than on it, and being early costs nothing while
-     * being short costs the whole point of saving up.
-    /**
      * Calculates the number of salary paydays that fall between [startIso] and [dueIso] (inclusive).
      *
      * Example: Payday is 6th of month (resetDay = 6).
