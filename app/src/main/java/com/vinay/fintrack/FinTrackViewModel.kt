@@ -868,6 +868,33 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      *  out of it. */
     fun setAsidePot(e: Entry): Double = Ledger.setAsidePot(persisted.txns, e.id)
 
+    fun setAsideMonthBucket(e: Entry): Int {
+        // 0 = Current cycle / month, 1 = Next month, 2 = Month after next, 3+ = Later
+        val resetDay = salaryResetDayFor(e.person)
+        val nextPayday = Ledger.nextSalaryDate(today(), resetDay)
+        val start = if (e.startDate.isNotEmpty()) e.startDate else today()
+        val due = if (e.dueDate.isNotEmpty()) e.dueDate else e.nextDue
+        
+        val paydays = Ledger.allPaydayDatesBetween(start, due, resetDay)
+        if (paydays.isEmpty()) return 0
+        
+        val firstPayday = paydays.first()
+        if (firstPayday <= nextPayday) return 0
+        
+        val nextPayday2 = Ledger.nextSalaryDate(Ledger.addMonths(nextPayday, 1), resetDay)
+        if (firstPayday <= nextPayday2) return 1
+        
+        val nextPayday3 = Ledger.nextSalaryDate(Ledger.addMonths(nextPayday, 2), resetDay)
+        if (firstPayday <= nextPayday3) return 2
+        
+        return 3
+    }
+
+    fun isSetAsideActiveThisMonth(e: Entry): Boolean {
+        if (e.closed || !e.isSetAside) return false
+        return setAsideMonthBucket(e) == 0
+    }
+
     /**
      * Whether the bill can be paid out of what has been saved for it.
      *

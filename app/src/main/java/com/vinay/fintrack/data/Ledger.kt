@@ -433,6 +433,101 @@ object Ledger {
     }
 
     /**
+     * Returns the upcoming salary payday ISO date (YYYY-MM-DD) on or after [todayIso].
+     */
+    fun nextSalaryDate(todayIso: String, resetDay: Int = 1): String {
+        val parts = todayIso.split("-")
+        if (parts.size < 3) return todayIso
+        val y = parts[0].toIntOrNull() ?: return todayIso
+        val m = parts[1].toIntOrNull() ?: return todayIso
+        
+        val cal = java.util.Calendar.getInstance()
+        cal.set(java.util.Calendar.YEAR, y)
+        cal.set(java.util.Calendar.MONTH, m - 1)
+        val maxDayThisMonth = cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+        val dayThisMonth = minOf(resetDay, maxDayThisMonth)
+        
+        val thisMonthPayday = "%04d-%02d-%02d".format(y, m, dayThisMonth)
+        if (thisMonthPayday >= todayIso) {
+            return thisMonthPayday
+        }
+        val nextMonthDate = addMonths(todayIso, 1)
+        val partsNext = nextMonthDate.split("-")
+        val nextY = partsNext[0].toIntOrNull() ?: y
+        val nextM = partsNext[1].toIntOrNull() ?: m
+        cal.set(java.util.Calendar.YEAR, nextY)
+        cal.set(java.util.Calendar.MONTH, nextM - 1)
+        val maxDayNextMonth = cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+        val dayNextMonth = minOf(resetDay, maxDayNextMonth)
+        return "%04d-%02d-%02d".format(nextY, nextM, dayNextMonth)
+    }
+
+    /**
+     * Returns all ISO payday dates (YYYY-MM-DD) between [startIso] and [dueIso].
+     */
+    fun allPaydayDatesBetween(startIso: String, dueIso: String, resetDay: Int = 1): List<String> {
+        if (dueIso.isEmpty()) return emptyList()
+        val start = if (startIso.isNotBlank()) startIso else today()
+        if (start > dueIso) return emptyList()
+        
+        val partsStart = start.split("-")
+        val partsDue = dueIso.split("-")
+        if (partsStart.size < 3 || partsDue.size < 3) return emptyList()
+        
+        val startYear = partsStart[0].toIntOrNull() ?: return emptyList()
+        val startMonth = partsStart[1].toIntOrNull() ?: return emptyList()
+        val endYear = partsDue[0].toIntOrNull() ?: return emptyList()
+        val endMonth = partsDue[1].toIntOrNull() ?: return emptyList()
+        
+        val list = mutableListOf<String>()
+        var currYear = startYear
+        var currMonth = startMonth
+        val endLimit = endYear * 12 + endMonth
+        
+        while (currYear * 12 + currMonth <= endLimit) {
+            val calendar = java.util.Calendar.getInstance()
+            calendar.set(java.util.Calendar.YEAR, currYear)
+            calendar.set(java.util.Calendar.MONTH, currMonth - 1)
+            val maxDay = calendar.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+            val day = minOf(resetDay, maxDay)
+            
+            val paydayIso = "%04d-%02d-%02d".format(currYear, currMonth, day)
+            if (paydayIso >= start && paydayIso <= dueIso) {
+                list.add(paydayIso)
+            }
+            if (currMonth == 12) {
+                currMonth = 1
+                currYear++
+            } else {
+                currMonth++
+            }
+        }
+        return list
+    }
+
+    fun monthLabel(iso: String): String {
+        val parts = iso.split("-")
+        if (parts.size < 2) return iso
+        val names = listOf(
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+        )
+        val month = parts[1].toIntOrNull()?.minus(1)?.coerceIn(0, 11) ?: return iso
+        return "${names[month]} ${parts[0]}"
+    }
+
+    fun fullMonthName(iso: String): String {
+        val parts = iso.split("-")
+        if (parts.size < 2) return iso
+        val names = listOf(
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        )
+        val month = parts[1].toIntOrNull()?.minus(1)?.coerceIn(0, 11) ?: return iso
+        return names[month]
+    }
+
+    /**
      * "5 months, 17 days" — how far off a date is, in the terms you'd say it.
      *
      * Whole months are counted first by advancing the month and keeping the

@@ -879,137 +879,55 @@ private fun formatYearMonth(ym: String): String {
 
 @Composable
 private fun SalarySection(vm: FinTrackViewModel, profile: String) {
-    val defaultSalary = vm.salaryAmountFor(profile)
     val defaultResetDay = vm.salaryResetDayFor(profile)
-    var mainSalaryText by remember(defaultSalary) {
-        mutableStateOf(if (defaultSalary > 0.0) defaultSalary.toLong().toString() else "")
-    }
-    var show3MonthOverrides by remember { mutableStateOf(false) }
 
     PfCard(padding = PaddingValues(Space.s4)) {
         SettingHeader(
             icon = Icons.Default.Payments,
-            title = "Monthly Salary & Payday",
-            subtitle = "Base income used for budget & surplus projections"
+            title = "Payday & Salary Settings",
+            subtitle = "Choose payday reset cycle and upcoming monthly salaries"
         )
 
         Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-            // Row 1: Salary amount and Payday reset
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Space.s3),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Salary input
-                Column(Modifier.weight(1.3f)) {
-                    Muted("Base Salary (₹)")
-                    Spacer(Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = mainSalaryText,
-                        onValueChange = { input ->
-                            val clean = input.filter { it.isDigit() }
-                            mainSalaryText = clean
-                            val amt = clean.toDoubleOrNull() ?: 0.0
-                            vm.setSalaryAmountFor(profile, amt)
-                        },
-                        placeholder = { Text("0", color = Pf.Muted, fontSize = 14.sp) },
-                        singleLine = true,
-                        shape = Radius.Sm,
-                        textStyle = androidx.compose.ui.text.TextStyle(color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                        trailingIcon = {
-                            if (mainSalaryText.isNotEmpty()) {
-                                IconButton(
-                                    onClick = {
-                                        mainSalaryText = ""
-                                        vm.setSalaryAmountFor(profile, 0.0)
-                                    },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Close,
-                                        contentDescription = "Clear salary",
-                                        tint = Pf.Muted,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Pf.Surface2,
-                            unfocusedContainerColor = Pf.Surface2,
-                            focusedBorderColor = Pf.Accent,
-                            unfocusedBorderColor = Pf.Hairline,
-                            cursorColor = Pf.Accent,
-                            focusedTextColor = Pf.Text,
-                            unfocusedTextColor = Pf.Text
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                // Payday Day selector
-                Column(Modifier.weight(0.9f)) {
-                    Muted("Payday / Reset")
-                    Spacer(Modifier.height(4.dp))
-                    PfSelect(
-                        value = "${defaultResetDay}th",
-                        options = (1..28).map { "${it}th" },
-                        onSelect = { selected ->
-                            val day = selected.removeSuffix("th").toIntOrNull() ?: 1
-                            vm.setSalaryDate(profile, day)
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+            // Payday selector
+            Column(Modifier.fillMaxWidth()) {
+                Muted("Payday / Reset Day of Month")
+                Spacer(Modifier.height(4.dp))
+                PfSelect(
+                    value = "${defaultResetDay}th of each month",
+                    options = (1..28).map { "${it}th of each month" },
+                    onSelect = { selected ->
+                        val day = selected.substringBefore("th").toIntOrNull() ?: 1
+                        vm.setSalaryDate(profile, day)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(4.dp))
+                Muted("Budget, dues, and cash flow reset on the ${defaultResetDay}th of each month.")
             }
-
-            Muted(
-                if (defaultSalary > 0.0) "Budget and projections start fresh on the ${defaultResetDay}th of each month."
-                else "Enter your base take-home salary to track monthly cash flow and savings."
-            )
 
             Spacer(Modifier.height(Space.s1))
             Hairline()
 
-            // Expandable 3-Month Salary Overrides
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(Radius.Sm)
-                    .clickable { show3MonthOverrides = !show3MonthOverrides }
-                    .padding(vertical = Space.s1),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
+            // Upcoming 3 Months Salary Section
+            Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+                Column {
                     Text(
-                        if (show3MonthOverrides) "Hide Upcoming 3 Months Overrides ▲" else "Upcoming 3 Months Salary Overrides ▼",
+                        "Upcoming 3 Months Salary",
                         color = Pf.Accent400,
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "Set custom salary for bonus/variable months",
+                        "Set salary for each upcoming month. Leave blank (or clear) if none.",
                         color = Pf.Muted,
-                        fontSize = 11.sp
+                        fontSize = 11.5.sp
                     )
                 }
-            }
 
-            if (show3MonthOverrides) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(Pf.Surface2.copy(alpha = 0.5f), Radius.Md)
-                        .border(1.dp, Pf.Hairline, Radius.Md)
-                        .padding(Space.s3),
-                    verticalArrangement = Arrangement.spacedBy(Space.s3)
-                ) {
-                    val months = (1..3).map { Ledger.addMonths(today(), it).take(7) }
-                    months.forEach { ym ->
-                        SalaryOverrideMonthItem(vm, profile, ym, defaultSalary)
-                    }
+                val months = (1..3).map { Ledger.addMonths(today(), it).take(7) }
+                months.forEach { ym ->
+                    SalaryOverrideMonthItem(vm, profile, ym)
                 }
             }
         }
@@ -1020,13 +938,12 @@ private fun SalarySection(vm: FinTrackViewModel, profile: String) {
 private fun SalaryOverrideMonthItem(
     vm: FinTrackViewModel,
     profile: String,
-    yearMonth: String,
-    defaultSalary: Double
+    yearMonth: String
 ) {
     val override = vm.getSalaryOverride(profile, yearMonth)
-    val hasOverride = override != null && override.amount > 0.0
+    val hasSalary = override != null && override.amount > 0.0
     var draftText by remember(override?.amount) {
-        mutableStateOf(if (hasOverride) override!!.amount.toLong().toString() else "")
+        mutableStateOf(if (hasSalary) override!!.amount.toLong().toString() else "")
     }
 
     val displayMonth = formatYearMonth(yearMonth)
@@ -1035,8 +952,8 @@ private fun SalaryOverrideMonthItem(
         Modifier
             .fillMaxWidth()
             .clip(Radius.Sm)
-            .background(if (hasOverride) Pf.Accent.copy(alpha = 0.08f) else Pf.Surface)
-            .border(1.dp, if (hasOverride) Pf.Accent.copy(alpha = 0.35f) else Pf.Hairline, Radius.Sm)
+            .background(if (hasSalary) Pf.Accent.copy(alpha = 0.08f) else Pf.Surface)
+            .border(1.dp, if (hasSalary) Pf.Accent.copy(alpha = 0.35f) else Pf.Hairline, Radius.Sm)
             .padding(Space.s3)
     ) {
         Column(
@@ -1056,14 +973,14 @@ private fun SalaryOverrideMonthItem(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        if (hasOverride) "Custom override: ₹${inr(override!!.amount)}" else "Using default: ₹${inr(defaultSalary)}",
-                        color = if (hasOverride) Pf.Accent400 else Pf.Muted,
+                        if (hasSalary) "Salary: ₹${inr(override!!.amount)}" else "No salary set (₹0)",
+                        color = if (hasSalary) Pf.Accent400 else Pf.Muted,
                         fontSize = 11.5.sp,
-                        fontWeight = if (hasOverride) FontWeight.SemiBold else FontWeight.Normal
+                        fontWeight = if (hasSalary) FontWeight.SemiBold else FontWeight.Normal
                     )
                 }
 
-                if (hasOverride) {
+                if (hasSalary) {
                     Row(
                         Modifier
                             .clip(Radius.Sm)
@@ -1078,12 +995,12 @@ private fun SalaryOverrideMonthItem(
                     ) {
                         Icon(
                             Icons.Default.Close,
-                            contentDescription = "Reset to Default",
+                            contentDescription = "Clear salary",
                             tint = Pf.Rose,
                             modifier = Modifier.size(13.dp)
                         )
                         Text(
-                            "Reset to Default",
+                            "Clear",
                             color = Pf.Rose,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
@@ -1106,7 +1023,7 @@ private fun SalaryOverrideMonthItem(
                 },
                 placeholder = {
                     Text(
-                        "Enter custom salary (e.g. 75000)",
+                        "Enter salary for $displayMonth (leave blank if none)",
                         color = Pf.Muted.copy(alpha = 0.6f),
                         fontSize = 12.5.sp
                     )

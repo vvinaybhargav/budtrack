@@ -75,8 +75,18 @@ fun HomeScreen(vm: FinTrackViewModel) {
     val totalLoanEmis = pendingLoans.sumOf { it.monthlyEmi }
     val pendingRecurring = vm.commitments.filter { !vm.isConfirmed(it.id) }
     val totalRecurring = pendingRecurring.sumOf { it.monthly }
-    val pendingSetAsides = vm.annualSetAsides.filter { vm.setAsideLeft(it) > 0.0 }
-    val totalSetAsidePending = pendingSetAsides.sumOf { vm.setAsideLeft(it) }
+
+    // Partition Set Asides by active cycle/month:
+    val pendingSetAsidesThisMonth = vm.annualSetAsides.filter { vm.isSetAsideActiveThisMonth(it) && vm.setAsideLeft(it) > 0.0 }
+    val totalSetAsidePending = pendingSetAsidesThisMonth.sumOf { vm.setAsideLeft(it) }
+
+    val nextMonthDateIso = Ledger.addMonths(today(), 1)
+    val nextMonthName = Ledger.fullMonthName(nextMonthDateIso)
+    val nextMonthSetAsides = vm.annualSetAsides.filter { vm.setAsideMonthBucket(it) == 1 && !it.closed }
+
+    val monthAfterDateIso = Ledger.addMonths(today(), 2)
+    val monthAfterName = Ledger.fullMonthName(monthAfterDateIso)
+    val monthAfterSetAsides = vm.annualSetAsides.filter { vm.setAsideMonthBucket(it) == 2 && !it.closed }
 
     val otherExpenses = totalCardDues + totalLoanEmis + totalRecurring + totalSetAsidePending
     val upcomingSalary = vm.scopedUpcomingSalary
@@ -205,26 +215,25 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     hasPrior = true
                 }
 
-                // 4. SET ASIDE (Pending this month only)
-                if (pendingSetAsides.isNotEmpty()) {
+                // 4. CURRENT MONTH SET ASIDE (Active in This Cycle)
+                if (pendingSetAsidesThisMonth.isNotEmpty()) {
                     if (hasPrior) HomeSectionDivider()
                     HomeListHeaderLabel("SET ASIDE · ${inr(totalSetAsidePending)}") {
                         vm.accountsFilter = "Set Aside"
                         vm.tab = Tab.ACCOUNTS
                     }
-                    pendingSetAsides.forEachIndexed { idx, e ->
+                    pendingSetAsidesThisMonth.forEachIndexed { idx, e ->
                         if (idx > 0) Hairline()
                         val left = vm.setAsideLeft(e)
                         val pot = vm.setAsidePot(e)
                         val fraction = safeFraction(pot, e.amount)
                         val pct = (fraction * 100).toInt()
-                        val monthsLeftPart = if (e.nextDue.isNotEmpty()) {
-                            val n = Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))
-                            "$n mo left · due ${prettyDate(e.nextDue)}"
-                        } else {
-                            "every ${e.everyMonths} mo"
-                        }
-                        val subtitle = "${inr(pot)} of ${inr(e.amount)} saved ($pct%) · $monthsLeftPart"
+                        val resetDay = vm.salaryResetDayFor(e.person)
+                        val nextPayday = Ledger.nextSalaryDate(today(), resetDay)
+                        val daysToPayday = Ledger.daysBetween(today(), nextPayday)
+                        val n = Ledger.instalmentsUntil(today(), e.nextDue, resetDay)
+                        val duePart = if (daysToPayday <= 0) "due today" else "due on payday in $daysToPayday days (${prettyDate(nextPayday)})"
+                        val subtitle = "${inr(pot)} of ${inr(e.amount)} saved ($pct%) · $duePart · $n mo left"
 
                         HomeCompactSetAsideRow(
                             index = idx + 1,
@@ -234,6 +243,64 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             fraction = fraction,
                             pct = pct,
                             onClick = { vm.requestConfirm(e) }
+                        )
+                    }
+                    hasPrior = true
+                }
+
+                // 4b. NEXT MONTH SET ASIDE (Starts Next Month e.g. November)
+                if (nextMonthSetAsides.isNotEmpty()) {
+                    if (hasPrior) HomeSectionDivider()
+                    val totalNextMonth = nextMonthSetAsides.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
+                    HomeListHeaderLabel("SET ASIDE ($nextMonthName) · ${inr(totalNextMonth)}/mo") {
+                        vm.accountsFilter = "Set Aside"
+                        vm.tab = Tab.ACCOUNTS
+                    }
+                    nextMonthSetAsides.forEachIndexed { idx, e ->
+                        if (idx > 0) Hairline()
+                        val resetDay = vm.salaryResetDayFor(e.person)
+                        val start = if (e.startDate.isNotEmpty()) e.startDate else today()
+                        val firstPayday = Ledger.allPaydayDatesBetween(start, e.nextDue, resetDay).firstOrNull() ?: e.nextDue
+                        val daysToStart = Ledger.daysBetween(today(), firstPayday)
+                        val n = Ledger.instalmentsBetween(start, e.nextDue, resetDay)
+                        val monthlyAmt = e.monthly(resetDay)
+                        val subtitle = "Starts on ${prettyDate(firstPayday)} (in $daysToStart days) · $n mo split · Total: ${inr(e.amount)}"
+
+                        HomeCompactRow(
+                            title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
+                            subtitle = subtitle,
+                            amount = inr(monthlyAmt),
+                            amountColor = Pf.Muted,
+                            onClick = { vm.openEditEntry(e) }
+                        )
+                    }
+                    hasPrior = true
+                }
+
+                // 4c. MONTH AFTER NEXT SET ASIDE (Starts in 2 Months e.g. December)
+                if (monthAfterSetAsides.isNotEmpty()) {
+                    if (hasPrior) HomeSectionDivider()
+                    val totalMonthAfter = monthAfterSetAsides.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
+                    HomeListHeaderLabel("SET ASIDE ($monthAfterName) · ${inr(totalMonthAfter)}/mo") {
+                        vm.accountsFilter = "Set Aside"
+                        vm.tab = Tab.ACCOUNTS
+                    }
+                    monthAfterSetAsides.forEachIndexed { idx, e ->
+                        if (idx > 0) Hairline()
+                        val resetDay = vm.salaryResetDayFor(e.person)
+                        val start = if (e.startDate.isNotEmpty()) e.startDate else today()
+                        val firstPayday = Ledger.allPaydayDatesBetween(start, e.nextDue, resetDay).firstOrNull() ?: e.nextDue
+                        val daysToStart = Ledger.daysBetween(today(), firstPayday)
+                        val n = Ledger.instalmentsBetween(start, e.nextDue, resetDay)
+                        val monthlyAmt = e.monthly(resetDay)
+                        val subtitle = "Starts in $monthAfterName (${prettyDate(firstPayday)}) · $n mo split · Total: ${inr(e.amount)}"
+
+                        HomeCompactRow(
+                            title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
+                            subtitle = subtitle,
+                            amount = inr(monthlyAmt),
+                            amountColor = Pf.Muted,
+                            onClick = { vm.openEditEntry(e) }
                         )
                     }
                     hasPrior = true
