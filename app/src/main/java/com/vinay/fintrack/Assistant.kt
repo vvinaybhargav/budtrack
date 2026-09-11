@@ -510,19 +510,21 @@ class Assistant(private val vm: FinTrackViewModel) {
 
     private fun addCommitment(a: JsonObject): String {
         val amount = a.num("amount") ?: return "I need an amount."
-        val type = when (a.str("kind")) {
+        val kindStr = a.str("kind").orEmpty()
+        val type = when (kindStr) {
             "savings" -> "SAVINGS"
-            "income" -> "INCOME"
+            "income" -> "SAVINGS"
             else -> "EXPENSE"
         }
         val rawDue = a.str("due_date").orEmpty()
         val isoDue = if (rawDue.isNotBlank()) normalizeDateToIso(rawDue) ?: rawDue else ""
-        val categoryName = a.str("category")?.let { vm.categoryNamed(it) } ?: "Other"
+        val categoryName = a.str("category")?.let { vm.categoryNamed(it) } ?: if (kindStr == "income") "Receivable" else "Other"
         val note = a.str("note").orEmpty()
+        val everyMonths = a.int("every_months") ?: (if (isoDue.isEmpty() && kindStr in listOf("income", "savings")) 12 else 1)
         val e = vm.addCommitmentDirect(
             amount = amount,
             category = categoryName,
-            everyMonths = a.int("every_months") ?: 1,
+            everyMonths = everyMonths,
             type = type,
             joint = a.bool("joint") ?: false,
             note = note,
@@ -531,10 +533,10 @@ class Assistant(private val vm: FinTrackViewModel) {
         val side = if (e.bucket == "JOINT") "Joint" else "Personal"
         val label = e.note.ifBlank { e.category }
         return when {
-            e.nextDue.isNotEmpty() ->
+            e.isSetAside && e.nextDue.isNotEmpty() ->
                 "Added to **Set Aside** for ${e.person} ($side side): $label ${inr(e.amount)} due ${prettyDate(e.nextDue)} — ${inr(e.monthly)} a month over the ${Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))} month(s) left."
-            e.everyMonths > 1 ->
-                "Added to **Set Aside** for ${e.person} ($side side): $label ${inr(e.amount)} every ${e.everyMonths} months — ${inr(e.monthly)} to set aside each month."
+            e.isSetAside ->
+                "Added to **Set Aside** for ${e.person} ($side side): $label ${inr(e.amount)} (Goal/Receivable) — ${inr(e.monthly)} to put by each month."
             else ->
                 "Added to **Recurring** for ${e.person} ($side side): $label ${inr(e.amount)} every month (${inr(e.amount * 12)}/year)."
         }

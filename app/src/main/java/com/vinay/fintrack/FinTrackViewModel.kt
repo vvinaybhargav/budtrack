@@ -2132,7 +2132,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         scopedLoansFor(view).sumOf { it.monthlyEmi }
 
     fun annualSetAsidesFor(view: String): List<Entry> =
-        scopedEntriesFor(view).filter { it.isSetAside && it.type != "INCOME" }
+        scopedEntriesFor(view).filter { it.isSetAside && it.category != "Salary" }
 
     fun annualSetAsideDoneFor(view: String): Double =
         annualSetAsidesFor(view).sumOf { setAsideDone(it).coerceAtMost(it.monthly) }
@@ -3762,17 +3762,22 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val person = if (joint) "Joint" else activeProfile ?: "Me"
         val bucket = if (joint) "JOINT" else "PERSONAL"
         val isoDue = if (dueDate.isNotBlank()) normalizeDateToIso(dueDate) ?: dueDate else ""
+        val isTargetOrGoal = isoDue.isNotEmpty() || everyMonths > 1 || type == "SAVINGS" || type == "INCOME" || note.isNotBlank()
+        val entryType = if (type == "INCOME" || type == "SAVINGS") "SAVINGS" else type
+        val finalEveryMonths = if (everyMonths <= 1 && isoDue.isEmpty() && (type == "SAVINGS" || type == "INCOME")) 12 else everyMonths.coerceIn(1, 12)
+        val finalFrequency = if (finalEveryMonths >= 12 || isoDue.isNotEmpty() || isTargetOrGoal) "ANNUAL" else "MONTHLY"
+
         val entry = Entry(
             id = newId("e"),
             person = person,
-            type = type,
+            type = entryType,
             bucket = bucket,
-            category = category.ifBlank { "Other" },
+            category = category.ifBlank { if (type == "INCOME") "Receivable" else "Other" },
             amount = amount,
-            frequency = if (everyMonths >= 12 || isoDue.isNotEmpty()) "ANNUAL" else "MONTHLY",
+            frequency = finalFrequency,
             note = note,
             accountId = defaultAccountFor(person, bucket),
-            periodMonths = everyMonths.coerceIn(1, 12),
+            periodMonths = finalEveryMonths,
             dueDate = isoDue
         )
         update { s -> s.copy(entries = s.entries + entry) }

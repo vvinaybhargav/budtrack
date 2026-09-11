@@ -62,7 +62,7 @@ data class Entry(
     }
 
     /** Anything that isn't simple monthly or has a target due date needs putting aside. */
-    val isSetAside: Boolean get() = frequency != "ONE_TIME" && (everyMonths > 1 || dueDate.isNotEmpty())
+    val isSetAside: Boolean get() = frequency != "ONE_TIME" && (everyMonths > 1 || dueDate.isNotEmpty() || frequency == "ANNUAL" || type == "SAVINGS")
 }
 
 @Serializable
