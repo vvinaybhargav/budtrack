@@ -68,7 +68,7 @@ private const val ALERT_PCT = 0.90f
 @Composable
 fun HomeScreen(vm: FinTrackViewModel) {
     val totalBankBalances = vm.scopedAccounts.sumOf { vm.balanceOf(it) }
-    val pendingCards = vm.scopedCards.filter { !it.paid && it.balance > 0.0 }
+    val pendingCards = vm.scopedCards.filter { it.balance > 0.0 }
     val totalCardDues = pendingCards.sumOf { it.balance }
     val pendingLoans = vm.scopedLoans.filter { !vm.isLoanCleared(it) && !vm.isLoanConfirmed(it.id) }
     val totalLoanEmis = pendingLoans.sumOf { it.monthlyEmi }
@@ -130,7 +130,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             title = "${idx + 1}. $cleanName",
                             subtitle = subtitle,
                             amount = inr(c.balance),
-                            amountColor = Pf.Text
+                            amountColor = Pf.Text,
+                            onClick = { vm.startSettleCard(c.id) }
                         )
                     }
                     hasPrior = true
@@ -147,7 +148,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             title = "${idx + 1}. ${l.name}",
                             subtitle = subtitle,
                             amount = inr(l.monthlyEmi),
-                            amountColor = Pf.Text
+                            amountColor = Pf.Text,
+                            onClick = { vm.confirmLoan(l) }
                         )
                     }
                     hasPrior = true
@@ -165,7 +167,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
                             subtitle = subtitle,
                             amount = inr(e.monthly),
-                            amountColor = Pf.Text
+                            amountColor = Pf.Text,
+                            onClick = { vm.requestConfirm(e) }
                         )
                     }
                     hasPrior = true
@@ -190,7 +193,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
                             subtitle = subtitle,
                             amount = inr(left),
-                            amountColor = Pf.Text
+                            amountColor = Pf.Text,
+                            onClick = { vm.requestConfirm(e) }
                         )
                     }
                     hasPrior = true
@@ -266,11 +270,13 @@ private fun HomeCompactRow(
     title: String,
     subtitle: String,
     amount: String,
-    amountColor: Color
+    amountColor: Color,
+    onClick: (() -> Unit)? = null
 ) {
     Row(
         Modifier
             .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(vertical = 9.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically

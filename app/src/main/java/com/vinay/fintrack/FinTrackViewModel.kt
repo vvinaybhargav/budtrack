@@ -1722,19 +1722,21 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
         val statementDay = cardDraft.statementDayText.toIntOrNull() ?: 20
         val statementAmount = cardDraft.statementAmountText.toDoubleOrNull() ?: 0.0
-        val tail = cardDraft.numberTail.trim()
+        val newBal = cardDraft.balanceText.toDoubleOrNull() ?: 0.0
+        val isPaid = if (newBal > 0.0) false else true
         update { s ->
             val updatedCards = s.cards.map {
                 if (it.id == id) it.copy(
                     name = cardDraft.name, owner = cardDraft.owner,
                     limit = cardDraft.limitText.toDoubleOrNull() ?: 0.0,
-                    balance = cardDraft.balanceText.toDoubleOrNull() ?: 0.0,
+                    balance = newBal,
                     minDue = cardDraft.minDueText.toDoubleOrNull() ?: 0.0,
                     due = cardDraft.due,
                     numberTail = tail,
                     dueDate = resolvedDueDate,
                     statementDay = statementDay,
-                    statementAmount = statementAmount
+                    statementAmount = statementAmount,
+                    paid = isPaid
                 ) else it
             }
             val updatedTxns = if (tail.isNotEmpty()) {
@@ -3463,14 +3465,16 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         paid: Boolean?
     ): Card? {
         val c = cards.firstOrNull { it.id == id } ?: return null
+        val nextBal = balance ?: c.balance
+        val nextPaid = paid ?: if (nextBal > 0.0 && balance != null) false else c.paid
         val updated = c.copy(
             name = newName ?: c.name,
             limit = limit ?: c.limit,
-            balance = balance ?: c.balance,
+            balance = nextBal,
             minDue = minDue ?: c.minDue,
             dueDate = dueDate ?: c.dueDate,
             numberTail = tail ?: c.numberTail,
-            paid = paid ?: c.paid
+            paid = nextPaid
         )
         update { s -> s.copy(cards = s.cards.map { if (it.id == id) updated else it }) }
         return updated
@@ -3705,7 +3709,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     ): Card {
         val c = Card(
             id = newId("cc"), name = name, owner = activeProfile ?: "Me", limit = limit,
-            balance = balance, minDue = minDue, due = due, numberTail = tail
+            balance = balance, minDue = minDue, due = due, numberTail = tail,
+            paid = balance <= 0.0
         )
         update { s -> s.copy(cards = s.cards + c) }
         return c
