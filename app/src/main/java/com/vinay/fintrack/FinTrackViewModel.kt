@@ -2392,10 +2392,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val income: Double,
         val dateIso: String = "",
         /** A loan that makes its last payment this month, worth seeing coming. */
-        val loanEnding: String = ""
+        val loanEnding: String = "",
+        val openingBalance: Double = 0.0
     ) {
         val out: Double get() = Ledger.paise(recurring + loans + setAside)
-        val left: Double get() = Ledger.paise(income - out)
+        val monthNet: Double get() = Ledger.paise(income - out)
+        val left: Double get() = Ledger.paise(openingBalance + income - out)
     }
 
     /**
@@ -2403,45 +2405,56 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      *
      * Displays accurate projection for the upcoming months based on configured
      * salaries (including monthly overrides), active loans, set-asides and recurring bills.
+     * Leftovers carry forward rolling from month to month (current month -> month 1 -> month 2 -> month 3).
      */
-    fun outlook(months: Int = 3): List<OutlookMonth> = (1..months).map { ahead ->
-        val person = activeProfile.orEmpty()
-        val on = upcomingPaydayDate(person, ahead)
-        val onYm = on.take(7)
+    fun outlook(months: Int = 3, startingLeftover: Double = 0.0): List<OutlookMonth> {
+        var rollingCarryOver = startingLeftover
+        return (1..months).map { ahead ->
+            val person = activeProfile.orEmpty()
+            val on = upcomingPaydayDate(person, ahead)
+            val onYm = on.take(7)
 
-        val setAside = annualSetAsides.sumOf { e ->
-            if (e.dueDate.isEmpty()) {
-                Ledger.monthlyShare(e.amount, e.everyMonths)
-            } else {
-                val resetDay = salaryResetDayFor(e.person, on)
-                val start = if (e.startDate.isNotEmpty()) e.startDate else today()
-                val paydays = Ledger.allPaydayDatesBetween(start, e.dueDate, resetDay)
-                val isActiveInOnMonth = paydays.any { it.startsWith(onYm) }
-                if (isActiveInOnMonth) {
-                    e.monthly(resetDay)
+            val setAside = annualSetAsides.sumOf { e ->
+                if (e.dueDate.isEmpty()) {
+                    Ledger.monthlyShare(e.amount, e.everyMonths)
                 } else {
-                    0.0
+                    val resetDay = salaryResetDayFor(e.person, on)
+                    val start = if (e.startDate.isNotEmpty()) e.startDate else today()
+                    val paydays = Ledger.allPaydayDatesBetween(start, e.dueDate, resetDay)
+                    val isActiveInOnMonth = paydays.any { it.startsWith(onYm) }
+                    if (isActiveInOnMonth) {
+                        e.monthly(resetDay)
+                    } else {
+                        0.0
+                    }
                 }
             }
-        }
-        val running = scopedLoans.filter { it.remainingMonths >= ahead && it.isStarted(on, salaryResetDayFor(it.person, on)) }
-        val ending = scopedLoans.firstOrNull { it.remainingMonths == ahead && it.isStarted(on, salaryResetDayFor(it.person, on)) }
+            val running = scopedLoans.filter { it.remainingMonths >= ahead && it.isStarted(on, salaryResetDayFor(it.person, on)) }
+            val ending = scopedLoans.firstOrNull { it.remainingMonths == ahead && it.isStarted(on, salaryResetDayFor(it.person, on)) }
 
-        val income = if (bucketView == "JOINT") {
-            profileNames.sumOf { upcomingSalaryFor(it, ahead) }
-        } else {
-            upcomingSalaryFor(person, ahead)
-        }
+            val income = if (bucketView == "JOINT") {
+                profileNames.sumOf { upcomingSalaryFor(it, ahead) }
+            } else {
+                upcomingSalaryFor(person, ahead)
+            }
 
-        OutlookMonth(
-            label = monthLabel(on),
-            recurring = plannedRecurring,
-            loans = Ledger.paise(running.sumOf { it.monthlyEmi }),
-            setAside = Ledger.paise(setAside),
-            income = income,
-            dateIso = on,
-            loanEnding = ending?.name.orEmpty()
-        )
+            val out = Ledger.paise(plannedRecurring + running.sumOf { it.monthlyEmi } + setAside)
+            val monthNet = Ledger.paise(income - out)
+            val closingLeftover = Ledger.paise(rollingCarryOver + monthNet)
+            val prevCarryOver = rollingCarryOver
+            rollingCarryOver = closingLeftover
+
+            OutlookMonth(
+                label = monthLabel(on),
+                recurring = plannedRecurring,
+                loans = Ledger.paise(running.sumOf { it.monthlyEmi }),
+                setAside = Ledger.paise(setAside),
+                income = income,
+                dateIso = on,
+                loanEnding = ending?.name.orEmpty(),
+                openingBalance = prevCarryOver
+            )
+        }
     }
 
     val missingSetupItems: List<MissingConfigItem>
@@ -2533,20 +2546,71 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             return list
         }
 
+    var setupFixItem by mutableStateOf<MissingConfigItem?>(null)
+
+    fun openSetupFix(item: MissingConfigItem) {
+        setupFixItem = item
+        when (item.entityType) {
+            "Account" -> accounts.firstOrNull { it.id == item.entityId }?.let { startEditAccount(it) }
+            "Card" -> cards.firstOrNull { it.id == item.entityId }?.let { startEditCard(it) }
+            "Loan" -> loans.firstOrNull { it.id == item.entityId }?.let { startEditLoan(it) }
+            else -> entries.firstOrNull { it.id == item.entityId }?.let { e ->
+                val startFormatted = if (e.startDate.isNotEmpty()) dayFirstOf(e.startDate) else todayDayFirst()
+                val dueFormatted = if (e.dueDate.isNotEmpty()) dayFirstOf(e.dueDate) else ""
+                val startMonthKey = if (e.startDate.isNotEmpty()) e.startDate.take(7) else today().take(7)
+                draft = Draft(
+                    person = e.person,
+                    type = e.type,
+                    category = e.category,
+                    amountText = if (e.amount > 0) e.amount.toLong().toString() else "",
+                    frequency = e.frequency,
+                    note = e.note,
+                    accountId = e.accountId,
+                    periodMonths = e.everyMonths,
+                    startMonth = startMonthKey,
+                    startDateText = startFormatted,
+                    dueText = dueFormatted
+                )
+            }
+        }
+    }
+
+    fun closeSetupFix() {
+        setupFixItem = null
+        cancelEditAccount()
+        cancelEditCard()
+        cancelEditLoan()
+    }
+
+    fun saveSetupEntry(id: String) {
+        val amt = draft.amountText.toDoubleOrNull() ?: 0.0
+        update { s ->
+            s.copy(entries = s.entries.map {
+                if (it.id == id) it.copy(
+                    category = draft.category.ifEmpty { it.category },
+                    amount = if (amt > 0) amt else it.amount,
+                    dueDate = draftDueIso.ifEmpty { it.dueDate },
+                    accountId = draft.accountId.ifEmpty { it.accountId }
+                ) else it
+            })
+        }
+        closeSetupFix()
+    }
+
     fun editAccountById(id: String) {
-        accounts.firstOrNull { it.id == id }?.let { startEditAccount(it) }
+        accounts.firstOrNull { it.id == id }?.let { openSetupFix(MissingConfigItem("Account", it.id, it.name, emptyList())) }
     }
 
     fun editCardById(id: String) {
-        cards.firstOrNull { it.id == id }?.let { startEditCard(it) }
+        cards.firstOrNull { it.id == id }?.let { openSetupFix(MissingConfigItem("Card", it.id, it.name, emptyList())) }
     }
 
     fun editLoanById(id: String) {
-        loans.firstOrNull { it.id == id }?.let { startEditLoan(it) }
+        loans.firstOrNull { it.id == id }?.let { openSetupFix(MissingConfigItem("Loan", it.id, it.name, emptyList())) }
     }
 
     fun editEntryById(id: String) {
-        entries.firstOrNull { it.id == id }?.let { openEditEntry(it) }
+        entries.firstOrNull { it.id == id }?.let { openSetupFix(MissingConfigItem("Recurring", it.id, it.category, emptyList())) }
     }
 
     fun getSixMonthOutlook(): SixMonthOutlook {

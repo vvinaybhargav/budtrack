@@ -284,7 +284,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
         // 4. UPCOMING 3 MONTHS FORECAST (Cash Flow Projection)
         item {
-            Upcoming3MonthsSection(vm)
+            Upcoming3MonthsSection(vm, netBalance)
         }
     }
 
@@ -622,8 +622,8 @@ private fun AfterAllExpensesCard(
 }
 
 @Composable
-private fun Upcoming3MonthsSection(vm: FinTrackViewModel) {
-    val outlookMonths = vm.outlook(3)
+private fun Upcoming3MonthsSection(vm: FinTrackViewModel, startingLeftover: Double = 0.0) {
+    val outlookMonths = vm.outlook(3, startingLeftover)
     if (outlookMonths.isEmpty()) return
 
     Column(
@@ -640,7 +640,7 @@ private fun Upcoming3MonthsSection(vm: FinTrackViewModel) {
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.height(2.dp))
-            Muted("Projected monthly cash flow from salary and fixed commitments", size = 11)
+            Muted("Rolling cash flow carried forward from current net balance through the next 3 months", size = 11)
         }
 
         outlookMonths.forEachIndexed { idx, month ->
@@ -699,13 +699,31 @@ private fun Upcoming3MonthsSection(vm: FinTrackViewModel) {
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
-                            Muted("Projected Leftover", size = 10)
+                            Muted("Net Projected Leftover", size = 10)
                         }
                     }
 
                     Hairline()
 
-                    // Breakdown Rows: Salary, Loans, Set Asides, Recurring
+                    // 1. Carried over from preceding month
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(6.dp).background(if (month.openingBalance >= 0) Pf.Accent else Color(0xFFEF4444), CircleShape))
+                            Muted(if (idx == 0) "Carried from Current Month" else "Carried from Month ${idx}", size = 12)
+                        }
+                        Text(
+                            if (vm.balanceHidden) "••••••" else if (month.openingBalance >= 0) "+${inr(month.openingBalance)}" else "-${inr(Math.abs(month.openingBalance))}",
+                            color = if (month.openingBalance >= 0) Pf.Accent else Color(0xFFEF4444),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    // 2. Expected Salary
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,

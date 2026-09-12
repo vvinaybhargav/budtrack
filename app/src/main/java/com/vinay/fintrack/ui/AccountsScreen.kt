@@ -49,6 +49,9 @@ import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.today
 import com.vinay.fintrack.data.MissingConfigItem
+import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Close
 
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Tune
@@ -57,7 +60,12 @@ import androidx.compose.material.icons.filled.Tune
 fun AccountsScreen(vm: FinTrackViewModel) {
     val selectedFilter = vm.accountsFilter
 
-    val pastCount = vm.pastClosedLoans.size + vm.pastClosedSetAsides.size + vm.pastClosedRecurring.size
+    val confirmedLoansCount = vm.scopedLoans.count { vm.isLoanConfirmed(it.id) }
+    val confirmedBillsCount = vm.commitments.count { vm.isConfirmed(it.id) }
+    val settledCardsCount = vm.scopedCards.count { it.paid || it.balance == 0.0 }
+    val pastCount = vm.pastClosedLoans.size + vm.pastClosedSetAsides.size + vm.pastClosedRecurring.size +
+            confirmedLoansCount + confirmedBillsCount + settledCardsCount
+
     val filterOptions = listOf(
         "All" to "All",
         "Banks" to "Banks (${vm.scopedAccounts.size})",
@@ -171,6 +179,7 @@ fun AccountsScreen(vm: FinTrackViewModel) {
 
     ConfirmSheet(vm)
     CardSettleSheet(vm)
+    SetupFixDialog(vm)
 }
 
 @Composable
@@ -869,12 +878,21 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
 
 @Composable
 private fun ManagePastPaymentsSection(vm: FinTrackViewModel) {
+    val confirmedLoans = vm.scopedLoans.filter { vm.isLoanConfirmed(it.id) }
+    val confirmedRecurring = vm.commitments.filter { vm.isConfirmed(it.id) }
+    val settledCards = vm.scopedCards.filter { it.paid || it.balance == 0.0 }
     val pastLoans = vm.pastClosedLoans
     val pastSetAsides = vm.pastClosedSetAsides
     val pastRecurring = vm.pastClosedRecurring
-    val totalPast = pastLoans.size + pastSetAsides.size + pastRecurring.size
+    val recentPaymentTxns = vm.txns.filter {
+        it.loanId.isNotEmpty() || it.entryId.isNotEmpty() || it.cardId.isNotEmpty() || it.category in listOf("EMI", "Credit Card Bill")
+    }.sortedByDescending { it.date }.take(10)
 
-    var isExpanded by remember { mutableStateOf(false) }
+    val totalPast = confirmedLoans.size + confirmedRecurring.size + settledCards.size +
+            pastLoans.size + pastSetAsides.size + pastRecurring.size + recentPaymentTxns.size
+
+    val isFilterPast = vm.accountsFilter == "Past"
+    var isExpanded by remember(isFilterPast) { mutableStateOf(isFilterPast || totalPast > 0) }
 
     Column {
         Row(
@@ -922,17 +940,159 @@ private fun ManagePastPaymentsSection(vm: FinTrackViewModel) {
         if (totalPast == 0) {
             PfCard(padding = PaddingValues(Space.s4)) {
                 Text(
-                    "No completed payments yet. When you pay off a loan or finish saving for a set-aside goal, it will appear here.",
+                    "No completed payments yet. When you pay off a loan, confirm a bill or EMI, or settle a card, it will appear here.",
                     color = Pf.Muted,
                     fontSize = 13.sp
                 )
             }
         } else if (isExpanded) {
             Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                // 1. Paid off Loans
+                // 1. Confirmed Loans this cycle
+                if (confirmedLoans.isNotEmpty()) {
+                    Text(
+                        "LOANS PAID THIS CYCLE",
+                        color = Pf.Muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(top = Space.s2)
+                    )
+                    confirmedLoans.forEach { l ->
+                        PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f).padding(end = Space.s2)) {
+                                    Text(
+                                        l.name,
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    val tenurePart = "${l.totalMonths - l.remainingMonths} of ${l.totalMonths} months paid"
+                                    val subtitle = listOfNotNull(tenurePart, inr(l.monthlyEmi), if (l.person == "Joint") "Joint" else null).joinToString(" · ")
+                                    Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
+                                }
+                                Tag("✓ Paid this cycle", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+                            }
+                        }
+                    }
+                }
+
+                // 2. Confirmed Recurring bills this cycle
+                if (confirmedRecurring.isNotEmpty()) {
+                    Text(
+                        "RECURRING BILLS PAID THIS CYCLE",
+                        color = Pf.Muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(top = Space.s2)
+                    )
+                    confirmedRecurring.forEach { e ->
+                        PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f).padding(end = Space.s2)) {
+                                    Text(
+                                        e.note.ifEmpty { e.category },
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text("${inr(e.amount)} · ${e.person}", color = Pf.Muted, fontSize = 12.sp)
+                                }
+                                Tag("✓ Paid this cycle", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+                            }
+                        }
+                    }
+                }
+
+                // 3. Settled Credit Cards
+                if (settledCards.isNotEmpty()) {
+                    Text(
+                        "SETTLED CREDIT CARDS",
+                        color = Pf.Muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(top = Space.s2)
+                    )
+                    settledCards.forEach { c ->
+                        PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f).padding(end = Space.s2)) {
+                                    Text(
+                                        c.name,
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    val tailPart = if (c.numberTail.isNotBlank()) "••••${c.numberTail}" else null
+                                    val subtitle = listOfNotNull(tailPart, if (c.owner == "Joint") "Joint" else null).joinToString(" · ")
+                                    Text(subtitle.ifEmpty { "Card" }, color = Pf.Muted, fontSize = 12.sp)
+                                }
+                                Tag("✓ Settled / ₹0 Due", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+                            }
+                        }
+                    }
+                }
+
+                // 4. Recent Payment Transactions / History
+                if (recentPaymentTxns.isNotEmpty()) {
+                    Text(
+                        "RECENT PAYMENT RECORDS",
+                        color = Pf.Muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(top = Space.s2)
+                    )
+                    recentPaymentTxns.forEach { t ->
+                        val accName = vm.accounts.firstOrNull { it.id == t.fromAccountId }?.name.orEmpty()
+                        PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f).padding(end = Space.s2)) {
+                                    Text(
+                                        t.note.ifEmpty { t.category },
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    val subtitle = listOfNotNull(
+                                        prettyDate(t.date),
+                                        accName.ifEmpty { null }
+                                    ).joinToString(" · ")
+                                    Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
+                                }
+                                Text(
+                                    "-${inr(t.amount)}",
+                                    color = Pf.Text,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 5. Paid off Loans (Tenure complete)
                 if (pastLoans.isNotEmpty()) {
                     Text(
-                        "PAID OFF LOANS",
+                        "PAID OFF LOANS (ARCHIVED)",
                         color = Pf.Muted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -972,7 +1132,7 @@ private fun ManagePastPaymentsSection(vm: FinTrackViewModel) {
                     }
                 }
 
-                // 2. Completed Set Asides
+                // 6. Completed Set Asides
                 if (pastSetAsides.isNotEmpty()) {
                     Text(
                         "COMPLETED SET ASIDES",
@@ -1015,7 +1175,7 @@ private fun ManagePastPaymentsSection(vm: FinTrackViewModel) {
                     }
                 }
 
-                // 3. Inactive / Closed Recurring
+                // 7. Inactive / Closed Recurring
                 if (pastRecurring.isNotEmpty()) {
                     Text(
                         "CLOSED RECURRING BILLS",
@@ -1130,14 +1290,7 @@ private fun IncompleteSetupSection(vm: FinTrackViewModel) {
                     PfCard(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                when (item.entityType) {
-                                    "Account" -> vm.editAccountById(item.entityId)
-                                    "Card" -> vm.editCardById(item.entityId)
-                                    "Loan" -> vm.editLoanById(item.entityId)
-                                    else -> vm.editEntryById(item.entityId)
-                                }
-                            },
+                            .clickable { vm.openSetupFix(item) },
                         padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
                         shape = Radius.Md
                     ) {
@@ -1174,7 +1327,8 @@ private fun IncompleteSetupSection(vm: FinTrackViewModel) {
 
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                modifier = Modifier.clickable { vm.openSetupFix(item) }
                             ) {
                                 Text(
                                     "Fix →",
@@ -1185,6 +1339,246 @@ private fun IncompleteSetupSection(vm: FinTrackViewModel) {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SetupFixDialog(vm: FinTrackViewModel) {
+    val item = vm.setupFixItem ?: return
+
+    Dialog(onDismissRequest = vm::closeSetupFix) {
+        PfCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = Space.s2),
+            padding = PaddingValues(Space.s4),
+            shape = Radius.Lg
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Space.s3)
+            ) {
+                // Header
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        Box(
+                            Modifier
+                                .size(28.dp)
+                                .background(Color(0xFFFFA726).copy(alpha = 0.15f), Radius.Sm),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Tune, null, Modifier.size(16.dp), tint = Color(0xFFFFA726))
+                        }
+                        Column {
+                            Text(
+                                "Configure ${item.entityType}",
+                                color = Pf.Text,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                item.name,
+                                color = Pf.Muted,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                    IconButton(onClick = vm::closeSetupFix, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, "Close", tint = Pf.Muted)
+                    }
+                }
+
+                // Missing fields indicators
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    item.missingFields.forEach { msg ->
+                        Text("• $msg", color = Color(0xFFFFA726), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+
+                Hairline()
+
+                // Form fields based on entityType
+                when (item.entityType) {
+                    "Account" -> {
+                        PfField(
+                            label = "Account Name",
+                            value = vm.accountDraft.name,
+                            onValueChange = { vm.accountDraft = vm.accountDraft.copy(name = it) },
+                            placeholder = "e.g. HDFC Salary Account"
+                        )
+                        PfField(
+                            label = "Current Balance (₹)",
+                            value = vm.accountDraft.balanceText,
+                            onValueChange = { vm.accountDraft = vm.accountDraft.copy(balanceText = it) },
+                            numeric = true
+                        )
+                        PfField(
+                            label = "Last 3-4 Digits (for SMS auto-sync)",
+                            value = vm.accountDraft.numberTail,
+                            onValueChange = { vm.accountDraft = vm.accountDraft.copy(numberTail = it) },
+                            placeholder = "e.g. 1234",
+                            numeric = true
+                        )
+                    }
+                    "Card" -> {
+                        PfField(
+                            label = "Card Name",
+                            value = vm.cardDraft.name,
+                            onValueChange = { vm.cardDraft = vm.cardDraft.copy(name = it) }
+                        )
+                        PfField(
+                            label = "Last 4 Digits (for SMS auto-sync)",
+                            value = vm.cardDraft.numberTail,
+                            onValueChange = { vm.cardDraft = vm.cardDraft.copy(numberTail = it) },
+                            placeholder = "e.g. 5678",
+                            numeric = true
+                        )
+                        PfField(
+                            label = "Credit Limit (₹)",
+                            value = vm.cardDraft.limitText,
+                            onValueChange = { vm.cardDraft = vm.cardDraft.copy(limitText = it) },
+                            numeric = true
+                        )
+                        PfField(
+                            label = "Current Balance / Due (₹)",
+                            value = vm.cardDraft.balanceText,
+                            onValueChange = { vm.cardDraft = vm.cardDraft.copy(balanceText = it) },
+                            numeric = true
+                        )
+                        PfField(
+                            label = "Payment Due Day of Month (1-31)",
+                            value = vm.cardDraft.dueText,
+                            onValueChange = { vm.cardDraft = vm.cardDraft.copy(dueText = it) },
+                            placeholder = "e.g. 18",
+                            numeric = true
+                        )
+                        PfField(
+                            label = "Statement Day of Month (1-31)",
+                            value = vm.cardDraft.statementDayText,
+                            onValueChange = { vm.cardDraft = vm.cardDraft.copy(statementDayText = it) },
+                            placeholder = "e.g. 1",
+                            numeric = true
+                        )
+                    }
+                    "Loan" -> {
+                        PfField(
+                            label = "Loan / EMI Name",
+                            value = vm.loanDraft.name,
+                            onValueChange = { vm.loanDraft = vm.loanDraft.copy(name = it) }
+                        )
+                        PfField(
+                            label = "Monthly EMI Amount (₹)",
+                            value = vm.loanDraft.emiText,
+                            onValueChange = { vm.loanDraft = vm.loanDraft.copy(emiText = it) },
+                            numeric = true
+                        )
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                            Box(Modifier.weight(1f)) {
+                                PfField(
+                                    label = "Total Months",
+                                    value = vm.loanDraft.totalMonthsText,
+                                    onValueChange = { vm.loanDraft = vm.loanDraft.copy(totalMonthsText = it) },
+                                    numeric = true
+                                )
+                            }
+                            Box(Modifier.weight(1f)) {
+                                PfField(
+                                    label = "Remaining",
+                                    value = vm.loanDraft.remainingMonthsText,
+                                    onValueChange = { vm.loanDraft = vm.loanDraft.copy(remainingMonthsText = it) },
+                                    numeric = true
+                                )
+                            }
+                        }
+                        Column {
+                            Muted("Payment Account", size = 12)
+                            Spacer(Modifier.height(4.dp))
+                            PfSelect(
+                                value = vm.accounts.firstOrNull { it.id == vm.loanDraft.accountId }?.name.orEmpty().ifEmpty { "Select Account" },
+                                options = vm.accounts.map { it.name },
+                                onSelect = { selName ->
+                                    val selAcc = vm.accounts.firstOrNull { it.name == selName }
+                                    vm.loanDraft = vm.loanDraft.copy(accountId = selAcc?.id.orEmpty(), cardId = "")
+                                }
+                            )
+                        }
+                    }
+                    else -> {
+                        PfField(
+                            label = "Category / Note",
+                            value = vm.draft.category,
+                            onValueChange = { vm.draft = vm.draft.copy(category = it) }
+                        )
+                        PfField(
+                            label = "Amount (₹)",
+                            value = vm.draft.amountText,
+                            onValueChange = { vm.draft = vm.draft.copy(amountText = it) },
+                            numeric = true
+                        )
+                        PfField(
+                            label = "Target Date (DD/MM/YYYY)",
+                            value = vm.draft.dueText,
+                            onValueChange = { vm.draft = vm.draft.copy(dueText = it) },
+                            placeholder = "e.g. 15/10/2026"
+                        )
+                        Column {
+                            Muted("Payment Account", size = 12)
+                            Spacer(Modifier.height(4.dp))
+                            PfSelect(
+                                value = vm.accounts.firstOrNull { it.id == vm.draft.accountId }?.name.orEmpty().ifEmpty { "Select Account" },
+                                options = vm.accounts.map { it.name },
+                                onSelect = { selName ->
+                                    val selAcc = vm.accounts.firstOrNull { it.name == selName }
+                                    vm.draft = vm.draft.copy(accountId = selAcc?.id.orEmpty())
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(Space.s2))
+
+                // Actions
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    SecondaryButton(text = "Cancel", onClick = vm::closeSetupFix, modifier = Modifier.weight(1f))
+                    PrimaryButton(
+                        text = "Save Details",
+                        onClick = {
+                            when (item.entityType) {
+                                "Account" -> {
+                                    vm.saveAccount()
+                                    vm.closeSetupFix()
+                                }
+                                "Card" -> {
+                                    vm.saveCard()
+                                    vm.closeSetupFix()
+                                }
+                                "Loan" -> {
+                                    vm.saveLoan()
+                                    vm.closeSetupFix()
+                                }
+                                else -> {
+                                    vm.saveSetupEntry(item.entityId)
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1.5f)
+                    )
                 }
             }
         }
