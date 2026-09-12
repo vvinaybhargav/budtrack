@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PieChart
@@ -46,6 +47,7 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import com.vinay.fintrack.sms.FinTrackNotificationListener
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -615,7 +617,7 @@ private fun SmallIcon(
 }
 
 /**
- * Bank SMS import section.
+ * Bank SMS and UPI Notification Auto-Tracking section.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -626,18 +628,20 @@ private fun SmsImportSection(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
-    var hasPermission by remember { mutableStateOf(hasSmsPermission(context)) }
+    var hasNotifAccess by remember { mutableStateOf(FinTrackNotificationListener.isNotificationAccessGranted(context)) }
+    var hasSmsPerm by remember { mutableStateOf(hasSmsPermission(context)) }
     var canNotify by remember { mutableStateOf(hasNotifyPermission(context)) }
 
     val asked = vm.smsAsked
-    val blocked = asked && !hasPermission && activity != null &&
+    val blocked = asked && !hasSmsPerm && activity != null &&
         !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.READ_SMS)
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                hasPermission = hasSmsPermission(context)
+                hasNotifAccess = FinTrackNotificationListener.isNotificationAccessGranted(context)
+                hasSmsPerm = hasSmsPermission(context)
                 canNotify = hasNotifyPermission(context)
             }
         }
@@ -649,18 +653,18 @@ private fun SmsImportSection(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
         vm.markSmsAsked()
-        hasPermission = hasSmsPermission(context)
+        hasSmsPerm = hasSmsPermission(context)
         canNotify = hasNotifyPermission(context)
-        if (hasPermission) vm.setSmsImport(true)
+        if (hasSmsPerm) vm.setSmsImport(true)
     }
 
     PfCard(padding = PaddingValues(Space.s4)) {
         SettingHeader(
-            icon = Icons.Default.Sms,
-            title = "Bank SMS Import",
-            subtitle = "Automatic tracking from SMS alerts"
+            icon = Icons.Default.NotificationsActive,
+            title = "Bank SMS & UPI Auto-Tracking",
+            subtitle = "Real-time tracking for Bank SMS, GPay, PhonePe, Paytm & CRED"
         )
-        Muted("Records payments from your bank's alerts — UPI, card, ATM and EMI.")
+        Muted("Catches transaction alerts from Bank SMS and UPI apps in real time without manual entry.")
 
         Row(
             Modifier
@@ -669,9 +673,13 @@ private fun SmsImportSection(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Muted("Automatic import")
-            if (vm.smsImportOn && hasPermission) Tag("On", Pf.Accent2_100, Pf.Accent2_800)
-            else OutlineTag("Off")
+            Muted("Tracking Status")
+            when {
+                vm.smsImportOn && hasNotifAccess -> Tag("Active (SMS + UPI)", Pf.Accent2_100, Pf.Accent2_800)
+                vm.smsImportOn && hasSmsPerm -> Tag("Active (SMS only)", Pf.Accent2_100, Pf.Accent2_800)
+                vm.smsImportOn -> Tag("Permission Needed", Pf.Neutral100, Pf.Neutral800)
+                else -> OutlineTag("Paused")
+            }
         }
 
         FlowRow(
@@ -679,64 +687,50 @@ private fun SmsImportSection(
             horizontalArrangement = Arrangement.spacedBy(Space.s2),
             verticalArrangement = Arrangement.spacedBy(Space.s2)
         ) {
-            if (!hasPermission && !blocked) {
-                PrimaryButton("Allow SMS access", onClick = {
-                    permissionLauncher.launch(smsPermissions())
-                })
-            } else if (!hasPermission) {
-                PrimaryButton("Open permissions", onClick = {
-                    context.startActivity(
-                        Intent(
-                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                            Uri.fromParts("package", context.packageName, null)
-                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
+            if (!hasNotifAccess) {
+                PrimaryButton("Enable Live Tracking (SMS & UPI)", onClick = {
+                    FinTrackNotificationListener.openNotificationAccessSettings(context)
                 })
             } else if (vm.smsImportOn) {
-                SecondaryButton("Turn off", { vm.setSmsImport(false) })
+                SecondaryButton("Pause auto-tracking", { vm.setSmsImport(false) })
+                GhostButton("Tracking Access Settings", onClick = {
+                    FinTrackNotificationListener.openNotificationAccessSettings(context)
+                })
             } else {
-                PrimaryButton("Turn on", { vm.setSmsImport(true) })
+                PrimaryButton("Resume auto-tracking", { vm.setSmsImport(true) })
             }
 
-            if (hasPermission && vm.smsImportOn) {
+            if (hasSmsPerm) {
                 SecondaryButton(
-                    if (vm.scanning) "Reading…" else "Import past 60 days",
+                    if (vm.scanning) "Reading…" else "Import past 60 days (SMS)",
                     { vm.backfillSms() },
                     enabled = !vm.scanning
                 )
                 SecondaryButton("Re-check accounts", { vm.rematchImports() })
+            } else if (!blocked) {
+                SecondaryButton("Allow SMS for past 60d import", onClick = {
+                    permissionLauncher.launch(smsPermissions())
+                })
             }
         }
 
-        if (hasPermission && !canNotify) {
+        if (hasNotifAccess) {
+            Column(Modifier.padding(top = Space.s2)) {
+                Muted("✓ Live tracking active: Bank SMS, Google Pay, PhonePe, Paytm & CRED alerts are logged automatically.")
+            }
+        } else {
+            Column(Modifier.padding(top = Space.s2)) {
+                Muted("Enable Live Tracking to allow FinTrack to parse incoming Bank SMS and UPI payment banners. 100% private, processed on device.")
+            }
+        }
+
+        if ((hasNotifAccess || hasSmsPerm) && !canNotify) {
             Column(Modifier.padding(top = Space.s3)) {
-                Muted("Notifications are off, so imports happen silently.")
+                Muted("Posting notifications is off, so recorded expenses happen silently.")
                 Row(Modifier.padding(top = Space.s2)) {
-                    SecondaryButton("Notify me on import", onClick = {
+                    SecondaryButton("Notify me when expense is recorded", onClick = {
                         permissionLauncher.launch(smsPermissions())
                     })
-                }
-            }
-        }
-
-        if (!hasPermission) {
-            Column(Modifier.padding(top = Space.s2)) {
-                Muted(
-                    when {
-                        blocked -> "Android won't ask again. Two steps in app info:"
-                        asked -> "Declined. Nothing is read until you allow it."
-                        else -> "Messages are read on this phone only. Amount, payee and reference are kept — nothing else."
-                    }
-                )
-                if (blocked) {
-                    Column(Modifier.padding(top = Space.s1)) {
-                        Muted("1. Tap ⋮ at the top right → Allow restricted settings")
-                        Muted("2. Permissions → SMS → Allow")
-                    }
-                    Muted(
-                        "That first step exists because the app was installed from a file rather than a store.",
-                        Modifier.padding(top = Space.s2)
-                    )
                 }
             }
         }
@@ -744,9 +738,9 @@ private fun SmsImportSection(
         if (vm.scanNote.isNotEmpty()) {
             Muted(vm.scanNote, Modifier.padding(top = Space.s2))
         }
-        Muted("${vm.importedCount} imported from SMS", Modifier.padding(top = Space.s1))
+        Muted("${vm.importedCount} imported transaction(s)", Modifier.padding(top = Space.s1))
 
-        // Collapsible SMS Debug Log
+        // Collapsible Debug Log
         if (vm.smsLog.isNotEmpty()) {
             Spacer(Modifier.height(Space.s2))
             Hairline()
@@ -762,7 +756,7 @@ private fun SmsImportSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    if (showSmsLog) "Hide SMS Log ▲" else "View Recent SMS Messages (${vm.smsLog.size}) ▼",
+                    if (showSmsLog) "Hide Import Log ▲" else "View Recent Captured Alerts (${vm.smsLog.size}) ▼",
                     color = Pf.Accent400,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold

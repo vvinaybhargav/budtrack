@@ -57,6 +57,18 @@
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
+
+        <!-- Catches incoming Bank SMS & UPI notifications (Google Pay, PhonePe, Paytm, CRED)
+             for 100% Google Play compliant real-time expense tracking. -->
+        <service
+            android:name=".sms.FinTrackNotificationListener"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

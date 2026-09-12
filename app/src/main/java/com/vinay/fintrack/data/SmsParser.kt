@@ -30,9 +30,9 @@ data class ParsedSms(
      *  moment the app happened to read the message. */
     val receivedAt: Long = 0L
 ) {
-    /** A reference, or failing that the account, is what separates a real
+    /** A reference, account tail, or valid merchant is what separates a real
      *  transaction message from an advert that happens to mention rupees. */
-    val isUsable: Boolean get() = amount > 0 && (ref.isNotEmpty() || accountTail.isNotEmpty())
+    val isUsable: Boolean get() = amount > 0 && (ref.isNotEmpty() || accountTail.isNotEmpty() || party.isNotEmpty())
 
     /**
      * Stable id for de-duplication when the bank omits a reference.
@@ -48,9 +48,9 @@ data class ParsedSms(
             if (isCredit) "|c" else "|d"
 }
 
-private val AMOUNT = Regex("""(?:rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
-private val DEBIT_WORDS = listOf("debited", "debit", "sent", "paid", "withdrawn", "spent", "purchase")
-private val CREDIT_WORDS = listOf("credited", "credit", "received", "deposited", "refund", "reversed", "reversal")
+private val AMOUNT = Regex("""(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
+private val DEBIT_WORDS = listOf("debited", "debit", "sent", "paid", "withdrawn", "spent", "purchase", "payment of", "transferred", "transfer to")
+private val CREDIT_WORDS = listOf("credited", "credit", "received", "deposited", "refund", "reversed", "reversal", "money added", "cashback")
 
 /** A credit that is money coming back rather than money earned. Netted off the
  *  spending it reverses instead of counted as income. */
@@ -65,8 +65,8 @@ private val REF = Regex(
     RegexOption.IGNORE_CASE
 )
 private val VPA = Regex("""(?:to|from)\s+(?:vpa\s+)?([A-Za-z0-9._-]+@[A-Za-z]+)""", RegexOption.IGNORE_CASE)
-private val TO_NAME = Regex("""\b(?:to|towards)\s+([A-Za-z][A-Za-z0-9 .&'-]{2,40}?)(?=\s+on\b|[.;,]|$)""", RegexOption.IGNORE_CASE)
-private val FROM_NAME = Regex("""\bfrom\s+([A-Za-z][A-Za-z0-9 .&'-]{2,40}?)(?=\s+on\b|[.;,]|$)""", RegexOption.IGNORE_CASE)
+private val TO_NAME = Regex("""\b(?:to|towards|for payment to)\s+([A-Za-z][A-Za-z0-9 .&'-]{2,40}?)(?=\s+on\b|\s+via\b|\s+using\b|\s+successfully\b|\s+was\b|[.;,]|$)""", RegexOption.IGNORE_CASE)
+private val FROM_NAME = Regex("""\bfrom\s+([A-Za-z][A-Za-z0-9 .&'-]{2,40}?)(?=\s+on\b|\s+via\b|\s+using\b|\s+successfully\b|\s+was\b|[.;,]|$)""", RegexOption.IGNORE_CASE)
 
 /** ICICI's shape: "Acct XX391 debited for Rs 914.00 on 12-Aug-26; Eastern
  *  Power D credited." The payee is named before the word, not after a "to". */
@@ -77,7 +77,7 @@ private val CREDITED_NAME = Regex(
 
 /** Card spends: "spent on Card XX4321 at SWIGGY on 09-08-26". */
 private val AT_NAME = Regex(
-    """\bat\s+([A-Za-z][A-Za-z0-9 .&'-]{2,40}?)(?=\s+on\b|[.;,]|$)""",
+    """\bat\s+([A-Za-z][A-Za-z0-9 .&'-]{2,40}?)(?=\s+on\b|\s+via\b|\s+using\b|\s+successfully\b|\s+was\b|[.;,]|$)""",
     RegexOption.IGNORE_CASE
 )
 
@@ -330,7 +330,9 @@ fun looksLikeBankSender(sender: String): Boolean {
 
 private val BANK_CODES = listOf(
     "HDFC", "ICICI", "SBI", "AXIS", "KOTAK", "YESBNK", "IDFC", "INDUS",
-    "PNB", "BOB", "CANBNK", "UNION", "FEDBNK", "RBL", "AUBANK", "BANK", "UPI"
+    "PNB", "BOB", "CANBNK", "UNION", "FEDBNK", "RBL", "AUBANK", "BANK", "UPI",
+    "GPAY", "GOOGLE PAY", "PHONEPE", "PAYTM", "CRED", "BHIM", "AMAZON PAY",
+    "SLICE", "JUPITER", "FI MONEY", "MOBIKWIK", "MESSAGES"
 )
 
 /** True when two yyyy-MM-dd dates are at most [days] apart. */
