@@ -802,6 +802,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun salaryAmountFor(profile: String): Double =
         persisted.salaries[profile] ?: 0.0
 
+    fun salaryFor(profile: String): Double = salaryAmountFor(profile)
+
     fun setSalaryAmountFor(profile: String, amount: Double) {
         update { s -> s.copy(salaries = s.salaries + (profile to amount)) }
     }

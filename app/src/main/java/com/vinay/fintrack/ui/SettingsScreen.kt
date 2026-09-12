@@ -924,7 +924,7 @@ private fun SalaryOverrideMonthItem(
                 when {
                     isCustom -> Pf.Accent.copy(alpha = 0.35f)
                     isExplicitZero -> Pf.Rose.copy(alpha = 0.35f)
-                    else -> Pf.Hairline,
+                    else -> Pf.Hairline
                 },
                 Radius.Sm
             )
