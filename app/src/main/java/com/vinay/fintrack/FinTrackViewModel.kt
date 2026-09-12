@@ -2407,9 +2407,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * salaries (including monthly overrides), active loans, set-asides and recurring bills.
      * Leftovers carry forward rolling from month to month (current month -> month 1 -> month 2 -> month 3).
      */
-    fun outlook(months: Int = 3, startingLeftover: Double = 0.0): List<OutlookMonth> {
+    fun outlook(aheadRange: IntRange, startingLeftover: Double = 0.0): List<OutlookMonth> {
         var rollingCarryOver = startingLeftover
-        return (1..months).map { ahead ->
+        return aheadRange.map { ahead ->
             val person = activeProfile.orEmpty()
             val on = upcomingPaydayDate(person, ahead)
             val onYm = on.take(7)
@@ -2455,6 +2455,63 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 openingBalance = prevCarryOver
             )
         }
+    }
+
+    fun outlook(months: Int = 3, startingLeftover: Double = 0.0): List<OutlookMonth> =
+        outlook(1..months, startingLeftover)
+
+    var confirmingLoanId by mutableStateOf<String?>(null); private set
+    var loanConfirmAmountDraft by mutableStateOf("")
+    var loanConfirmAccountNameDraft by mutableStateOf("")
+
+    fun startConfirmLoan(l: Loan) {
+        confirmingLoanId = l.id
+        loanConfirmAmountDraft = l.monthlyEmi.toLong().toString()
+        val defaultAcc = if (l.onCard) {
+            cards.firstOrNull { it.id == l.cardId }?.name.orEmpty()
+        } else {
+            accounts.firstOrNull { it.id == l.accountId }?.name
+                ?: visibleAccounts.firstOrNull()?.name.orEmpty()
+        }
+        loanConfirmAccountNameDraft = defaultAcc
+    }
+
+    fun cancelConfirmLoan() { confirmingLoanId = null }
+
+    fun commitConfirmLoan() {
+        val id = confirmingLoanId ?: return
+        val l = loans.firstOrNull { it.id == id } ?: return
+        val amt = loanConfirmAmountDraft.toDoubleOrNull() ?: l.monthlyEmi
+
+        if (isLoanConfirmed(l.id)) {
+            confirmLoan(l)
+            confirmingLoanId = null
+            return
+        }
+
+        val chosenAcc = accounts.firstOrNull { it.name == loanConfirmAccountNameDraft }
+        val from = if (l.onCard) "" else (chosenAcc?.id ?: l.accountId.ifEmpty { defaultAccountFor(l.person, "JOINT") })
+
+        addTxn { seq ->
+            Txn(
+                id = seq, date = today(), kind = "EXPENSE", amount = amt,
+                category = "EMI", fromAccountId = from, cardId = l.cardId, loanId = l.id,
+                period = cycleFor(l.person), note = l.name,
+                at = System.currentTimeMillis()
+            )
+        }
+        update { s ->
+            s.copy(
+                loans = s.loans.map {
+                    if (it.id == l.id) it.copy(remainingMonths = maxOf(0, it.remainingMonths - 1)) else it
+                },
+                cards = s.cards.map {
+                    if (it.id == l.cardId) it.copy(balance = it.balance + amt, paid = false)
+                    else it
+                }
+            )
+        }
+        confirmingLoanId = null
     }
 
     val missingSetupItems: List<MissingConfigItem>

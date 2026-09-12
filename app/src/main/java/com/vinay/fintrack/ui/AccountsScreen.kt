@@ -179,6 +179,7 @@ fun AccountsScreen(vm: FinTrackViewModel) {
 
     ConfirmSheet(vm)
     CardSettleSheet(vm)
+    LoanConfirmSheet(vm)
     SetupFixDialog(vm)
 }
 
@@ -617,7 +618,7 @@ private fun ManageLoansSection(vm: FinTrackViewModel) {
                                     Modifier
                                         .background(Pf.Surface2, Radius.Pill)
                                         .border(1.dp, Pf.Hairline, Radius.Pill)
-                                        .clickable { vm.confirmLoan(l) }
+                                        .clickable { vm.startConfirmLoan(l) }
                                         .padding(horizontal = 10.dp, vertical = 3.dp)
                                 ) {
                                     Text(

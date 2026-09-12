@@ -82,8 +82,14 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
     val futureSetAsidesMap = vm.futureSetAsidesGrouped()
 
+    val upcomingSalary = if (vm.bucketView == "JOINT") {
+        vm.profileNames.sumOf { vm.upcomingSalaryFor(it, 1) }
+    } else {
+        vm.upcomingSalaryFor(vm.activeProfile.orEmpty(), 1)
+    }
+
     val otherExpenses = totalCardDues + totalLoanEmis + totalRecurring + totalSetAsidePending
-    val netBalance = totalBankBalances - otherExpenses
+    val netBalance = totalBankBalances - otherExpenses + upcomingSalary
 
     LazyColumn(
         Modifier.fillMaxWidth(),
@@ -96,12 +102,13 @@ fun HomeScreen(vm: FinTrackViewModel) {
         // Alert if SMS transactions need account link
         item { UnmatchedAccountAlert(vm) }
 
-        // 2. HERO CARD: Current Month Net Balance (Bank Balances - Current Month Expenses)
+        // 2. HERO CARD: Net Balance (Bank Balances - Current Month Expenses + Upcoming 1 Salary)
         item {
             AfterAllExpensesCard(
                 netBalance = netBalance,
                 bankBalances = totalBankBalances,
                 otherExpenses = otherExpenses,
+                upcomingSalary = upcomingSalary,
                 balanceHidden = vm.balanceHidden,
                 onToggleVisibility = vm::toggleBalanceVisible,
                 onBankBalancesClick = {
@@ -259,9 +266,26 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             subtitle = subtitle,
                             amount = inr(l.monthlyEmi),
                             amountColor = Pf.Text,
-                            onClick = { vm.confirmLoan(l) }
+                            onClick = { vm.startConfirmLoan(l) }
                         )
                     }
+                    hasPrior = true
+                }
+
+                // 5. SALARY / EXPECTED INCOME
+                if (upcomingSalary > 0.0) {
+                    if (hasPrior) HomeSectionDivider()
+                    HomeListHeaderLabel("NEXT SALARY · ${inr(upcomingSalary)}")
+                    val salDay = vm.salaryResetDayFor(vm.activeProfile.orEmpty())
+                    val nextDate = vm.upcomingPaydayDate(vm.activeProfile.orEmpty(), 1)
+                    val monthName = Ledger.fullMonthName(nextDate)
+                    val subtitle = if (vm.bucketView == "JOINT") "Expected Income · Joint (${prettyDate(nextDate)})" else "Expected Income · Pay Day: ${salDay}th $monthName (${prettyDate(nextDate)})"
+                    HomeCompactRow(
+                        title = if (vm.bucketView == "JOINT") "Next Month Salary" else "${vm.activeProfile ?: "Personal"} Salary",
+                        subtitle = subtitle,
+                        amount = inr(upcomingSalary),
+                        amountColor = Color(0xFF10B981)
+                    )
                     hasPrior = true
                 }
 
@@ -282,14 +306,15 @@ fun HomeScreen(vm: FinTrackViewModel) {
             }
         }
 
-        // 4. UPCOMING 3 MONTHS FORECAST (Cash Flow Projection)
+        // 4. UPCOMING MONTHS 2 & 3 FORECAST (Cash Flow Projection)
         item {
-            Upcoming3MonthsSection(vm, netBalance)
+            UpcomingMonths2And3Section(vm, netBalance)
         }
     }
 
     ConfirmSheet(vm)
     CardSettleSheet(vm)
+    LoanConfirmSheet(vm)
 }
 
 @Composable
@@ -511,6 +536,7 @@ private fun AfterAllExpensesCard(
     netBalance: Double,
     bankBalances: Double,
     otherExpenses: Double,
+    upcomingSalary: Double = 0.0,
     balanceHidden: Boolean,
     onToggleVisibility: () -> Unit,
     onBankBalancesClick: (() -> Unit)? = null,
@@ -533,7 +559,7 @@ private fun AfterAllExpensesCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "CURRENT MONTH NET (AFTER EXPENSES)",
+                "ESTIMATED NET (AFTER EXPENSES & SALARY)",
                 color = Color(0xFF9CA3AF),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
@@ -591,17 +617,17 @@ private fun AfterAllExpensesCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Text("—", color = Color(0xFF9CA3AF), fontSize = 13.sp, modifier = Modifier.padding(horizontal = Space.s2))
+            Text("—", color = Color(0xFF9CA3AF), fontSize = 13.sp, modifier = Modifier.padding(horizontal = Space.s1))
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .clip(Radius.Sm)
                     .then(if (onExpensesClick != null) Modifier.clickable { onExpensesClick() } else Modifier)
                     .padding(vertical = 2.dp),
-                horizontalAlignment = Alignment.End
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    "Pending Expenses ↗",
+                    "Expenses ↗",
                     color = Color(0xFF9CA3AF),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium,
@@ -617,13 +643,39 @@ private fun AfterAllExpensesCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+            if (upcomingSalary > 0.0) {
+                Text("+", color = Color(0xFF10B981), fontSize = 13.sp, modifier = Modifier.padding(horizontal = Space.s1))
+                Column(
+                    modifier = Modifier
+                        .weight(1.1f)
+                        .padding(vertical = 2.dp),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    Text(
+                        "Next Salary",
+                        color = Color(0xFF10B981),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        if (balanceHidden) "••••••" else inr(upcomingSalary),
+                        color = Color(0xFF10B981),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun Upcoming3MonthsSection(vm: FinTrackViewModel, startingLeftover: Double = 0.0) {
-    val outlookMonths = vm.outlook(3, startingLeftover)
+private fun UpcomingMonths2And3Section(vm: FinTrackViewModel, startingLeftover: Double = 0.0) {
+    val outlookMonths = vm.outlook(2..3, startingLeftover)
     if (outlookMonths.isEmpty()) return
 
     Column(
@@ -634,16 +686,17 @@ private fun Upcoming3MonthsSection(vm: FinTrackViewModel, startingLeftover: Doub
     ) {
         Column {
             Text(
-                "Upcoming 3 Months Outlook",
+                "Upcoming Months 2 & 3 Outlook",
                 color = Pf.Text,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.height(2.dp))
-            Muted("Rolling cash flow carried forward from current net balance through the next 3 months", size = 11)
+            Muted("Projected cash flow carried forward into Month 2 and Month 3", size = 11)
         }
 
         outlookMonths.forEachIndexed { idx, month ->
+            val monthNumber = idx + 2
             PfCard(
                 modifier = Modifier.fillMaxWidth(),
                 padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
@@ -667,7 +720,7 @@ private fun Upcoming3MonthsSection(vm: FinTrackViewModel, startingLeftover: Doub
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    "${idx + 1}",
+                                    "$monthNumber",
                                     color = Pf.Accent400,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
@@ -713,7 +766,7 @@ private fun Upcoming3MonthsSection(vm: FinTrackViewModel, startingLeftover: Doub
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(6.dp).background(if (month.openingBalance >= 0) Pf.Accent else Color(0xFFEF4444), CircleShape))
-                            Muted(if (idx == 0) "Carried from Current Month" else "Carried from Month ${idx}", size = 12)
+                            Muted(if (idx == 0) "Carried from Month 1 (Net)" else "Carried from Month 2", size = 12)
                         }
                         Text(
                             if (vm.balanceHidden) "••••••" else if (month.openingBalance >= 0) "+${inr(month.openingBalance)}" else "-${inr(Math.abs(month.openingBalance))}",
@@ -807,10 +860,10 @@ private fun Upcoming3MonthsSection(vm: FinTrackViewModel, startingLeftover: Doub
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Muted("Total Planned Outflows", size = 11)
+                        Muted("Total Fixed Commitments", size = 11)
                         Text(
-                            if (vm.balanceHidden) "••••••" else "−${inr(month.out)}",
-                            color = Pf.Muted,
+                            if (vm.balanceHidden) "••••••" else inr(month.out),
+                            color = Pf.Text,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -976,7 +1029,84 @@ fun CardSettleSheet(vm: FinTrackViewModel) {
     }
 }
 
+@Composable
+fun LoanConfirmSheet(vm: FinTrackViewModel) {
+    val loanId = vm.confirmingLoanId ?: return
+    val loan = vm.loans.firstOrNull { it.id == loanId } ?: return
+    val isPaid = vm.isLoanConfirmed(loan.id)
 
+    Dialog(onDismissRequest = vm::cancelConfirmLoan) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(Pf.Surface, Radius.Lg)
+                .border(1.dp, Pf.Hairline, Radius.Lg)
+                .padding(Space.s4),
+            verticalArrangement = Arrangement.spacedBy(Space.s3)
+        ) {
+            Text(
+                if (isPaid) "Loan EMI Already Paid" else "Record Loan EMI Payment",
+                color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold
+            )
+            Text(
+                "${loan.name} (${loan.person}) · ${loan.remainingMonths} mo remaining",
+                color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+            )
+
+            if (isPaid) {
+                Muted("This loan EMI (₹${inr(loan.monthlyEmi)}) was already marked as paid for this month cycle.")
+                Row(
+                    Modifier.fillMaxWidth().padding(top = Space.s2),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    SecondaryButton("Close", vm::cancelConfirmLoan, Modifier.weight(1f))
+                    PrimaryButton(
+                        "Undo Payment",
+                        vm::commitConfirmLoan,
+                        Modifier.weight(1f)
+                    )
+                }
+            } else {
+                PfField(
+                    label = "EMI Amount (₹)",
+                    value = vm.loanConfirmAmountDraft,
+                    onValueChange = { vm.loanConfirmAmountDraft = it },
+                    numeric = true
+                )
+
+                if (loan.onCard) {
+                    val card = vm.cards.firstOrNull { it.id == loan.cardId }
+                    Muted("Billed to Card: ${card?.name ?: "Credit Card"}")
+                } else {
+                    Column {
+                        Muted("Paid from Account")
+                        PfSelect(
+                            value = vm.loanConfirmAccountNameDraft,
+                            options = vm.visibleAccounts.map { it.name },
+                            onSelect = { vm.loanConfirmAccountNameDraft = it }
+                        )
+                    }
+                }
+
+                Muted("Recording EMI payment creates an expense transaction and decrements remaining months by 1.")
+
+                Row(
+                    Modifier.fillMaxWidth().padding(top = Space.s2),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    SecondaryButton("Cancel", vm::cancelConfirmLoan, Modifier.weight(1f))
+                    PrimaryButton(
+                        "Confirm EMI",
+                        vm::commitConfirmLoan,
+                        Modifier.weight(1f),
+                        enabled = (vm.loanConfirmAmountDraft.toDoubleOrNull() ?: 0.0) > 0.0 &&
+                            (loan.onCard || vm.loanConfirmAccountNameDraft.isNotBlank())
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun DetectedAccountDialog(vm: FinTrackViewModel) {
@@ -2393,8 +2523,8 @@ private fun LoansSection(vm: FinTrackViewModel) {
                                     vm.isLoanCleared(l) ->
                                         SecondaryButton("Remove", { vm.deleteLoan(l.id) })
                                     vm.isLoanConfirmed(l.id) ->
-                                        SecondaryButton("Paid", { vm.confirmLoan(l) })
-                                    else -> PrimaryButton("Pay EMI", { vm.confirmLoan(l) })
+                                        SecondaryButton("Paid", { vm.startConfirmLoan(l) })
+                                    else -> PrimaryButton("Pay EMI", { vm.startConfirmLoan(l) })
                                 }
                                 IconButton(onClick = { vm.startEditLoan(l) }, modifier = Modifier.size(32.dp)) {
                                     Icon(Icons.Default.Edit, "Edit loan", Modifier.size(16.dp), tint = Pf.Accent400)
