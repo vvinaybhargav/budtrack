@@ -925,7 +925,7 @@ private fun SalarySection(vm: FinTrackViewModel, profile: String) {
                     )
                 }
 
-                val months = (1..3).map { Ledger.addMonths(today(), it).take(7) }
+                val months = (1..3).map { vm.upcomingPaydayDate(profile, it).take(7) }
                 months.forEach { ym ->
                     SalaryOverrideMonthItem(vm, profile, ym)
                 }

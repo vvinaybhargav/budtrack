@@ -819,8 +819,18 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun upcomingSalaryFor(profile: String, monthsAhead: Int = 1): Double {
-        val targetDate = Ledger.addMonths(today(), monthsAhead)
+    fun upcomingPaydayDate(profile: String, nthUpcoming: Int = 1): String {
+        val resetDay = salaryResetDayFor(profile)
+        var date = Ledger.nextSalaryDate(today(), resetDay)
+        for (i in 2..nthUpcoming) {
+            val nextMonth = Ledger.addMonths(date, 1)
+            date = Ledger.nextSalaryDate(nextMonth, resetDay)
+        }
+        return date
+    }
+
+    fun upcomingSalaryFor(profile: String, nthUpcoming: Int = 1): Double {
+        val targetDate = upcomingPaydayDate(profile, nthUpcoming)
         val yearMonth = targetDate.substring(0, 7)
         val override = getSalaryOverride(profile, yearMonth)
         if (override != null) {
@@ -2357,7 +2367,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * past months would look like a forecast without being one.
      */
     fun outlook(months: Int = 6): List<OutlookMonth> = (1..months).map { ahead ->
-        val on = Ledger.addMonths(today(), ahead)
+        val person = activeProfile.orEmpty()
+        val on = upcomingPaydayDate(person, ahead + 1)
+        val onYm = on.take(7)
 
         val setAside = annualSetAsides.sumOf { e ->
             if (e.dueDate.isEmpty()) {
@@ -2366,7 +2378,6 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 val resetDay = salaryResetDayFor(e.person, on)
                 val start = if (e.startDate.isNotEmpty()) e.startDate else today()
                 val paydays = Ledger.allPaydayDatesBetween(start, e.dueDate, resetDay)
-                val onYm = on.take(7)
                 val isActiveInOnMonth = paydays.any { it.startsWith(onYm) }
                 if (isActiveInOnMonth) {
                     e.monthly(resetDay)
@@ -2377,15 +2388,21 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
         // Still paying only while instalments remain: an EMI that ends in March
         // must not go on being subtracted in April.
-        val running = scopedLoans.filter { it.remainingMonths > ahead }
-        val ending = scopedLoans.firstOrNull { it.remainingMonths == ahead }
+        val running = scopedLoans.filter { it.remainingMonths > ahead && it.isStarted(on, salaryResetDayFor(it.person, on)) }
+        val ending = scopedLoans.firstOrNull { it.remainingMonths == ahead && it.isStarted(on, salaryResetDayFor(it.person, on)) }
+
+        val income = if (bucketView == "JOINT") {
+            profileNames.sumOf { upcomingSalaryFor(it, ahead + 1) }
+        } else {
+            upcomingSalaryFor(person, ahead + 1)
+        }
 
         OutlookMonth(
             label = monthLabel(on),
             recurring = plannedRecurring,
             loans = Ledger.paise(running.sumOf { it.monthlyEmi }),
             setAside = Ledger.paise(setAside),
-            income = plannedIncomeFor(bucketView, on),
+            income = income,
             loanEnding = ending?.name.orEmpty()
         )
     }

@@ -87,8 +87,9 @@ fun HomeScreen(vm: FinTrackViewModel) {
     val netBalance = totalBankBalances - otherExpenses + upcomingSalary
 
     val nextMonthOutlook = vm.outlook(1).firstOrNull()
-    val nextMonthSalary = nextMonthOutlook?.income ?: upcomingSalary
-    val nextMonthExpenses = nextMonthOutlook?.out ?: (totalLoanEmis + totalRecurring + totalSetAsidePending)
+    val nextMonthLabel = nextMonthOutlook?.label ?: ""
+    val nextMonthSalary = nextMonthOutlook?.income ?: 0.0
+    val nextMonthExpenses = nextMonthOutlook?.out ?: 0.0
     val nextMonthLeft = nextMonthOutlook?.left ?: (nextMonthSalary - nextMonthExpenses)
 
     LazyColumn(
@@ -109,6 +110,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                 bankBalances = totalBankBalances,
                 otherExpenses = otherExpenses,
                 salary = upcomingSalary,
+                nextMonthLabel = nextMonthLabel,
                 nextMonthSalary = nextMonthSalary,
                 nextMonthExpenses = nextMonthExpenses,
                 nextMonthLeft = nextMonthLeft,
@@ -280,7 +282,9 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     if (hasPrior) HomeSectionDivider()
                     HomeListHeaderLabel("SALARY · ${inr(upcomingSalary)}")
                     val salDay = vm.salaryResetDayFor(vm.activeProfile.orEmpty())
-                    val subtitle = if (vm.bucketView == "JOINT") "Expected Income · Joint" else "Expected Income · Pay Day: ${salDay}th"
+                    val nextDate = vm.upcomingPaydayDate(vm.activeProfile.orEmpty(), 1)
+                    val monthName = Ledger.fullMonthName(nextDate)
+                    val subtitle = if (vm.bucketView == "JOINT") "Expected Income · Joint (${prettyDate(nextDate)})" else "Expected Income · Pay Day: ${salDay}th $monthName (${prettyDate(nextDate)})"
                     HomeCompactRow(
                         title = if (vm.bucketView == "JOINT") "Joint Salary" else "${vm.activeProfile ?: "Personal"} Salary",
                         subtitle = subtitle,
@@ -532,6 +536,7 @@ private fun AfterAllExpensesCard(
     bankBalances: Double,
     otherExpenses: Double,
     salary: Double,
+    nextMonthLabel: String = "",
     nextMonthSalary: Double = 0.0,
     nextMonthExpenses: Double = 0.0,
     nextMonthLeft: Double = 0.0,
@@ -602,16 +607,20 @@ private fun AfterAllExpensesCard(
                     "Bank Balances ↗",
                     color = Color(0xFF9CA3AF),
                     fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     if (balanceHidden) "••••••" else inr(bankBalances),
                     color = Color.White,
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-            Text("—", color = Color(0xFF9CA3AF), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 4.dp))
+            Text("—", color = Color(0xFF9CA3AF), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 2.dp))
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -621,7 +630,7 @@ private fun AfterAllExpensesCard(
                 horizontalAlignment = if (salary > 0.0) Alignment.CenterHorizontally else Alignment.End
             ) {
                 Text(
-                    "Expenses (Dues+Bills) ↗",
+                    "Expenses ↗",
                     color = Color(0xFF9CA3AF),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium,
@@ -632,26 +641,32 @@ private fun AfterAllExpensesCard(
                     if (balanceHidden) "••••••" else inr(otherExpenses),
                     color = Color.White,
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             if (salary > 0.0) {
-                Text("+", color = Color(0xFF9CA3AF), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 4.dp))
+                Text("+", color = Color(0xFF9CA3AF), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 2.dp))
                 Column(
-                    modifier = Modifier.weight(0.8f).padding(vertical = 2.dp),
+                    modifier = Modifier.weight(1f).padding(vertical = 2.dp),
                     horizontalAlignment = Alignment.End
                 ) {
                     Text(
-                        "Salary",
+                        "Upcoming Salary",
                         color = Color(0xFF9CA3AF),
                         fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         if (balanceHidden) "••••••" else inr(salary),
                         color = Color.White,
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -662,34 +677,48 @@ private fun AfterAllExpensesCard(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .background(Color.White.copy(alpha = 0.06f), Radius.Sm)
-                    .padding(horizontal = Space.s3, vertical = 5.dp),
+                    .background(Color.White.copy(alpha = 0.07f), Radius.Sm)
+                    .padding(horizontal = Space.s3, vertical = 7.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                Column(
+                    modifier = Modifier.weight(1f).padding(end = Space.s2),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        "Next Month:",
+                        "NEXT MONTH${if (nextMonthLabel.isNotBlank()) " ($nextMonthLabel)" else ""}",
                         color = Color(0xFF9CA3AF),
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.Medium
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp
                     )
                     Text(
                         "Salary ${if (balanceHidden) "••••••" else inr(nextMonthSalary)} — Expenses ${if (balanceHidden) "••••••" else inr(nextMonthExpenses)}",
-                        color = Color(0xFFD1D5DB),
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.SemiBold
+                        color = Color(0xFFE5E7EB),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                Text(
-                    if (balanceHidden) "••••••" else "= ${inr(nextMonthLeft)} left",
-                    color = if (nextMonthLeft >= 0.0) Color(0xFF34D399) else Color(0xFFF87171),
-                    fontSize = 10.5.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Box(
+                    Modifier
+                        .background(
+                            if (nextMonthLeft >= 0.0) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFEF4444).copy(alpha = 0.15f),
+                            Radius.Pill
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        if (balanceHidden) "••••••" else "${if (nextMonthLeft >= 0.0) "+" else ""}${inr(nextMonthLeft)} left",
+                        color = if (nextMonthLeft >= 0.0) Color(0xFF34D399) else Color(0xFFF87171),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
             }
         }
     }
