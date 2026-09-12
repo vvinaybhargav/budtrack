@@ -638,6 +638,46 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    var showInitialProfileDialog by mutableStateOf(!persisted.hasInitialProfileSetup && persisted.profiles.keys.size <= 1 && persisted.profiles.keys.firstOrNull() == "Vinay")
+
+    fun completeInitialProfile(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isNotEmpty() && !trimmed.equals("Joint", true)) {
+            val current = activeProfile ?: profileNames.firstOrNull() ?: "Vinay"
+            startRenameProfile(current)
+            editRenameText(trimmed)
+            saveRenameProfile()
+            activeProfile = trimmed
+            update { it.copy(lastProfile = trimmed, hasInitialProfileSetup = true) }
+        } else {
+            update { it.copy(hasInitialProfileSetup = true) }
+        }
+        showInitialProfileDialog = false
+    }
+
+    fun addProfile(name: String, pin: String = "1234") {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) { profileMsg = "Name cannot be empty."; return }
+        if (trimmed.equals("Joint", true)) { profileMsg = "Joint is reserved for shared view."; return }
+        if (profileNames.any { it.equals(trimmed, true) }) { profileMsg = "Profile already exists."; return }
+        val finalPin = if (pin.length == 4 && pin.all { it.isDigit() }) hashPin(pin) else hashPin("1234")
+        update { s ->
+            s.copy(
+                profiles = s.profiles + (trimmed to finalPin),
+                salaryDays = s.salaryDays + (trimmed to s.cycleResetDay)
+            )
+        }
+        profileMsg = "Profile $trimmed created."
+    }
+
+    fun setActiveProfileFromSettings(name: String) {
+        if (name in profileNames) {
+            activeProfile = name
+            draft = Draft(person = name)
+            update { it.copy(lastProfile = name) }
+        }
+    }
+
     fun setPinField(isNew: Boolean, v: String) {
         val clean = v.filter { it.isDigit() }.take(4)
         if (isNew) pinNew = clean else pinConfirm = clean
@@ -807,19 +847,30 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val keys = overrideKeyCandidates(profile, yearMonth)
         update { s ->
             val cleaned = s.salaryOverrides.filterKeys { it !in keys }
-            if (amount == null || amount <= 0.0) {
+            if (amount == null) {
                 s.copy(salaryOverrides = cleaned)
             } else {
                 val current = getSalaryOverride(profile, ym)
                 val defaultDay = s.salaryDays[canonProfile] ?: s.cycleResetDay
                 val nextOverride = SalaryOverride(
-                    amount = amount,
+                    amount = maxOf(0.0, amount),
                     resetDay = resetDay ?: current?.resetDay ?: defaultDay
                 )
                 s.copy(salaryOverrides = cleaned + (canonKey to nextOverride))
             }
         }
     }
+
+    fun clearSalaryOverride(profile: String, yearMonth: String) {
+        setSalaryOverride(profile, yearMonth, 0.0, null)
+    }
+
+    fun resetSalaryOverride(profile: String, yearMonth: String) {
+        removeSalaryOverride(profile, yearMonth)
+    }
+
+    fun hasSalaryOverride(profile: String, yearMonth: String): Boolean =
+        getSalaryOverride(profile, yearMonth) != null
 
     fun upcomingPaydayDate(profile: String, nthUpcoming: Int = 1): String {
         val resetDay = salaryResetDayFor(profile)
@@ -2893,6 +2944,21 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     val todayTxnCount: Int
         get() = todayTxns.size
+
+    val currentCycleCategorySpend: List<Pair<String, Double>>
+        get() {
+            val c = if (bucketView == "JOINT") cycle() else cycleFor(activeProfile.orEmpty())
+            return txns
+                .filter { inBucket(it) && it.kind == "EXPENSE" && (it.period == c || it.month == c) }
+                .groupBy { it.category.ifBlank { "Other" } }
+                .mapValues { (_, txs) -> txs.sumOf { it.amount } }
+                .toList()
+                .filter { it.second > 0.0 }
+                .sortedByDescending { it.second }
+        }
+
+    val currentCycleTotalSpend: Double
+        get() = currentCycleCategorySpend.sumOf { it.second }
 
     /** Removes it here and in Firestore, and the balance follows. */
     fun deleteTxn(id: String) = removeTxns { it.id == id }

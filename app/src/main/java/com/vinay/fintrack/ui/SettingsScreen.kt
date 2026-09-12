@@ -84,7 +84,7 @@ import com.vinay.fintrack.data.inr
 
 @Composable
 fun SettingsScreen(vm: FinTrackViewModel) {
-    val profile = "Vinay"
+    val profile = vm.activeProfile ?: vm.profileNames.firstOrNull() ?: "Vinay"
     var showManageCategories by remember { mutableStateOf(false) }
     var showMoreSettings by remember { mutableStateOf(false) }
     var showSmsLog by remember { mutableStateOf(false) }
@@ -113,6 +113,13 @@ fun SettingsScreen(vm: FinTrackViewModel) {
         // ════════════════════════════════════════════════════════════════
         item {
             FeaturesGuideSection()
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // 0.5. PROFILE MANAGEMENT CARD
+        // ════════════════════════════════════════════════════════════════
+        item {
+            ProfileManagementSection(vm)
         }
 
         // ════════════════════════════════════════════════════════════════
@@ -884,9 +891,18 @@ private fun SalaryOverrideMonthItem(
     yearMonth: String
 ) {
     val override = vm.getSalaryOverride(profile, yearMonth)
-    val hasSalary = override != null && override.amount > 0.0
+    val defaultSalary = vm.salaryFor(profile)
+    val isExplicitZero = override != null && override.amount == 0.0
+    val isCustom = override != null && override.amount > 0.0
+
     var draftText by remember(override?.amount) {
-        mutableStateOf(if (hasSalary) override!!.amount.toLong().toString() else "")
+        mutableStateOf(
+            when {
+                isCustom -> override!!.amount.toLong().toString()
+                isExplicitZero -> "0"
+                else -> ""
+            }
+        )
     }
 
     val displayMonth = formatYearMonth(yearMonth)
@@ -895,8 +911,22 @@ private fun SalaryOverrideMonthItem(
         Modifier
             .fillMaxWidth()
             .clip(Radius.Sm)
-            .background(if (hasSalary) Pf.Accent.copy(alpha = 0.08f) else Pf.Surface)
-            .border(1.dp, if (hasSalary) Pf.Accent.copy(alpha = 0.35f) else Pf.Hairline, Radius.Sm)
+            .background(
+                when {
+                    isCustom -> Pf.Accent.copy(alpha = 0.08f)
+                    isExplicitZero -> Pf.Rose.copy(alpha = 0.06f)
+                    else -> Pf.Surface
+                }
+            )
+            .border(
+                1.dp,
+                when {
+                    isCustom -> Pf.Accent.copy(alpha = 0.35f)
+                    isExplicitZero -> Pf.Rose.copy(alpha = 0.35f)
+                    else -> Pf.Hairline,
+                },
+                Radius.Sm
+            )
             .padding(Space.s3)
     ) {
         Column(
@@ -916,38 +946,72 @@ private fun SalaryOverrideMonthItem(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        if (hasSalary) "Salary: ₹${inr(override!!.amount)}" else "No salary set (₹0)",
-                        color = if (hasSalary) Pf.Accent400 else Pf.Muted,
+                        when {
+                            isCustom -> "Custom: ₹${inr(override!!.amount)}"
+                            isExplicitZero -> "Cleared (₹0 salary)"
+                            else -> "Default: ₹${inr(defaultSalary)}"
+                        },
+                        color = when {
+                            isCustom -> Pf.Accent400
+                            isExplicitZero -> Pf.Rose
+                            else -> Pf.Muted
+                        },
                         fontSize = 11.5.sp,
-                        fontWeight = if (hasSalary) FontWeight.SemiBold else FontWeight.Normal
+                        fontWeight = if (isCustom || isExplicitZero) FontWeight.SemiBold else FontWeight.Normal
                     )
                 }
 
-                if (hasSalary) {
-                    Row(
-                        Modifier
-                            .clip(Radius.Sm)
-                            .clickable {
-                                draftText = ""
-                                vm.removeSalaryOverride(profile, yearMonth)
-                            }
-                            .background(Pf.Rose.copy(alpha = 0.12f))
-                            .padding(horizontal = Space.s2, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Clear salary",
-                            tint = Pf.Rose,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Text(
-                            "Clear",
-                            color = Pf.Rose,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(Space.s1),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (override != null) {
+                        Row(
+                            Modifier
+                                .clip(Radius.Sm)
+                                .clickable {
+                                    draftText = ""
+                                    vm.resetSalaryOverride(profile, yearMonth)
+                                }
+                                .background(Pf.Surface2)
+                                .padding(horizontal = Space.s2, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Reset Default",
+                                color = Pf.Muted,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    if (!isExplicitZero) {
+                        Row(
+                            Modifier
+                                .clip(Radius.Sm)
+                                .clickable {
+                                    draftText = "0"
+                                    vm.clearSalaryOverride(profile, yearMonth)
+                                }
+                                .background(Pf.Rose.copy(alpha = 0.12f))
+                                .padding(horizontal = Space.s2, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Clear salary",
+                                tint = Pf.Rose,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                "Clear",
+                                color = Pf.Rose,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }
@@ -958,15 +1022,15 @@ private fun SalaryOverrideMonthItem(
                     val clean = input.filter { it.isDigit() }
                     draftText = clean
                     val amt = clean.toDoubleOrNull()
-                    if (amt != null && amt > 0.0) {
+                    if (amt != null) {
                         vm.setSalaryOverride(profile, yearMonth, amt, null)
                     } else {
-                        vm.removeSalaryOverride(profile, yearMonth)
+                        vm.clearSalaryOverride(profile, yearMonth)
                     }
                 },
                 placeholder = {
                     Text(
-                        "Enter salary for $displayMonth (leave blank if none)",
+                        if (isExplicitZero) "Cleared (₹0)" else "Default: ₹${inr(defaultSalary)} (enter custom)",
                         color = Pf.Muted.copy(alpha = 0.6f),
                         fontSize = 12.5.sp
                     )
@@ -976,11 +1040,11 @@ private fun SalaryOverrideMonthItem(
                 textStyle = androidx.compose.ui.text.TextStyle(color = Pf.Text, fontSize = 13.sp),
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                 trailingIcon = {
-                    if (draftText.isNotEmpty()) {
+                    if (draftText.isNotEmpty() && draftText != "0") {
                         IconButton(
                             onClick = {
-                                draftText = ""
-                                vm.removeSalaryOverride(profile, yearMonth)
+                                draftText = "0"
+                                vm.clearSalaryOverride(profile, yearMonth)
                             },
                             modifier = Modifier.size(24.dp)
                         ) {
@@ -1004,6 +1068,241 @@ private fun SalaryOverrideMonthItem(
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
+        }
+    }
+}
+
+@Composable
+private fun ProfileManagementSection(vm: FinTrackViewModel) {
+    var showAddDialog by remember { mutableStateOf(false) }
+    var newNameDraft by remember { mutableStateOf("") }
+    var newPinDraft by remember { mutableStateOf("1234") }
+
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var renamingTarget by remember { mutableStateOf("") }
+    var renameDraft by remember { mutableStateOf("") }
+
+    var deleteConfirmTarget by remember { mutableStateOf<String?>(null) }
+
+    PfCard(padding = PaddingValues(Space.s4)) {
+        SettingHeader(
+            icon = Icons.Default.Person,
+            title = "Profile Management",
+            subtitle = "Manage household members and active profile",
+            action = {
+                GhostButton("+ Add Profile") {
+                    newNameDraft = ""
+                    newPinDraft = "1234"
+                    showAddDialog = true
+                }
+            }
+        )
+
+        Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+            vm.profileNames.forEachIndexed { idx, name ->
+                if (idx > 0) Hairline()
+                val isActive = name == vm.activeProfile
+
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = Space.s2),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.s3)
+                    ) {
+                        Box(
+                            Modifier
+                                .size(36.dp)
+                                .background(if (isActive) Pf.Accent else Pf.Surface2, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                name.take(1).uppercase(),
+                                color = if (isActive) Pf.OnAccent else Pf.Text,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    name,
+                                    color = Pf.Text,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (isActive) {
+                                    Tag("Active", Pf.Accent.copy(alpha = 0.15f), Pf.Accent400)
+                                }
+                            }
+                            val salary = vm.salaryFor(name)
+                            val resetDay = vm.salaryResetDayFor(name)
+                            Muted("Payday: ${resetDay}th · Salary: ${inr(salary)}", size = 11.5)
+                        }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.s1)
+                    ) {
+                        if (!isActive) {
+                            GhostButton("Switch") {
+                                vm.setActiveProfileFromSettings(name)
+                            }
+                        }
+                        IconButton(
+                            onClick = {
+                                renamingTarget = name
+                                renameDraft = name
+                                showRenameDialog = true
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "Rename profile",
+                                tint = Pf.Muted,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        if (vm.profileNames.size > 1 && !isActive) {
+                            IconButton(
+                                onClick = { deleteConfirmTarget = name },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Delete profile",
+                                    tint = Pf.Rose,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (vm.profileMsg.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(vm.profileMsg, color = Pf.Accent400, fontSize = 12.sp)
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        Dialog(onDismissRequest = { showAddDialog = false }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Pf.Surface, Radius.Lg)
+                    .border(1.dp, Pf.Hairline, Radius.Lg)
+                    .padding(Space.s4),
+                verticalArrangement = Arrangement.spacedBy(Space.s3)
+            ) {
+                Text("Add New Profile", color = Pf.Text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                PfField(
+                    label = "Profile Name",
+                    value = newNameDraft,
+                    onValueChange = { newNameDraft = it.take(20) },
+                    placeholder = "e.g. Bhargav"
+                )
+                PfField(
+                    label = "4-digit PIN (default: 1234)",
+                    value = newPinDraft,
+                    onValueChange = { newPinDraft = it.filter { c -> c.isDigit() }.take(4) },
+                    numeric = true
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = Space.s2),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    SecondaryButton("Cancel", { showAddDialog = false }, Modifier.weight(1f))
+                    PrimaryButton(
+                        "Create",
+                        {
+                            vm.addProfile(newNameDraft, newPinDraft)
+                            showAddDialog = false
+                        },
+                        Modifier.weight(1f),
+                        enabled = newNameDraft.trim().isNotEmpty()
+                    )
+                }
+            }
+        }
+    }
+
+    if (showRenameDialog) {
+        Dialog(onDismissRequest = { showRenameDialog = false }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Pf.Surface, Radius.Lg)
+                    .border(1.dp, Pf.Hairline, Radius.Lg)
+                    .padding(Space.s4),
+                verticalArrangement = Arrangement.spacedBy(Space.s3)
+            ) {
+                Text("Rename Profile", color = Pf.Text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Muted("Renaming will update all associated accounts, cards, and transactions.")
+                PfField(
+                    label = "New Name",
+                    value = renameDraft,
+                    onValueChange = { renameDraft = it.take(20) }
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = Space.s2),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    SecondaryButton("Cancel", { showRenameDialog = false }, Modifier.weight(1f))
+                    PrimaryButton(
+                        "Save",
+                        {
+                            vm.startRenameProfile(renamingTarget)
+                            vm.editRenameText(renameDraft)
+                            vm.saveRenameProfile()
+                            showRenameDialog = false
+                        },
+                        Modifier.weight(1f),
+                        enabled = renameDraft.trim().isNotEmpty() && renameDraft.trim() != renamingTarget
+                    )
+                }
+            }
+        }
+    }
+
+    deleteConfirmTarget?.let { target ->
+        Dialog(onDismissRequest = { deleteConfirmTarget = null }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Pf.Surface, Radius.Lg)
+                    .border(1.dp, Pf.Hairline, Radius.Lg)
+                    .padding(Space.s4),
+                verticalArrangement = Arrangement.spacedBy(Space.s3)
+            ) {
+                Text("Delete Profile?", color = Pf.Text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Muted("Are you sure you want to remove '$target'? Their existing entries and accounts will remain intact.")
+                Row(
+                    Modifier.fillMaxWidth().padding(top = Space.s2),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    SecondaryButton("Cancel", { deleteConfirmTarget = null }, Modifier.weight(1f))
+                    PrimaryButton(
+                        "Delete",
+                        {
+                            vm.removeProfile(target)
+                            deleteConfirmTarget = null
+                        },
+                        Modifier.weight(1f)
+                    )
+                }
+            }
         }
     }
 }

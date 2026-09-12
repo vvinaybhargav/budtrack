@@ -362,7 +362,7 @@ fun Hairline(modifier: Modifier = Modifier) {
         modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(Pf.Hairline)
+            .background(if (Pf.isDark) Color(0xFF3F3F46) else Pf.Hairline)
     )
 }
 

@@ -149,11 +149,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         val fraction = safeFraction(pot, e.amount)
                         val pct = (fraction * 100).toInt()
                         val resetDay = vm.salaryResetDayFor(e.person)
-                        val nextPayday = Ledger.nextSalaryDate(today(), resetDay)
-                        val daysToPayday = Ledger.daysBetween(today(), nextPayday)
                         val n = Ledger.instalmentsUntil(today(), e.nextDue, resetDay)
-                        val duePart = if (daysToPayday <= 0) "due today" else "due on payday in $daysToPayday days (${prettyDate(nextPayday)})"
-                        val subtitle = "${inr(pot)} of ${inr(e.amount)} saved ($pct%) · $duePart · $n mo left"
+                        val subtitle = "${inr(pot)}/${inr(e.amount)} ($pct%) · Due (${resetDay}th) · ${n}mo left"
 
                         HomeCompactSetAsideRow(
                             index = idx + 1,
@@ -168,39 +165,6 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     hasPrior = true
                 }
 
-                // 1b. ALL FUTURE SET ASIDES (Grouped by starting payday month)
-                if (futureSetAsidesMap.isNotEmpty()) {
-                    futureSetAsidesMap.forEach { (yearMonth, entriesList) ->
-                        if (hasPrior) HomeSectionDivider()
-                        val monthDateIso = "$yearMonth-01"
-                        val monthTitle = Ledger.fullMonthName(monthDateIso)
-                        val totalFutureMonth = entriesList.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
-                        HomeListHeaderLabel("SET ASIDE ($monthTitle) · ${inr(totalFutureMonth)}/mo") {
-                            vm.accountsFilter = "Set Aside"
-                            vm.tab = Tab.ACCOUNTS
-                        }
-                        entriesList.forEachIndexed { idx, e ->
-                            if (idx > 0) Hairline()
-                            val resetDay = vm.salaryResetDayFor(e.person)
-                            val start = if (e.startDate.isNotEmpty()) e.startDate else today()
-                            val firstPayday = vm.firstPaydayOf(e)
-                            val daysToStart = Ledger.daysBetween(today(), firstPayday)
-                            val n = Ledger.instalmentsBetween(start, e.nextDue, resetDay)
-                            val monthlyAmt = e.monthly(resetDay)
-                            val subtitle = "Starts in $monthTitle (${prettyDate(firstPayday)}, in $daysToStart days) · $n mo split · Total: ${inr(e.amount)}"
-
-                            HomeCompactRow(
-                                title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
-                                subtitle = subtitle,
-                                amount = inr(monthlyAmt),
-                                amountColor = Pf.Muted,
-                                onClick = { vm.openEditEntry(e) }
-                            )
-                        }
-                        hasPrior = true
-                    }
-                }
-
                 // 2. CREDIT CARDS (DUES)
                 if (pendingCards.isNotEmpty()) {
                     if (hasPrior) HomeSectionDivider()
@@ -213,7 +177,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         val cleanName = if (c.name.contains("••") && c.numberTail.isNotBlank()) {
                             c.name.substringBefore("••").trim().ifEmpty { c.name }
                         } else c.name
-                        val duePart = if (c.dueText.isNotBlank()) "Due: ${c.dueText}" else null
+                        val dayDigits = c.dueText.filter { it.isDigit() }
+                        val duePart = if (c.dueText.isNotBlank()) "Due (${if (dayDigits.isNotEmpty()) "${dayDigits}th" else c.dueText})" else null
                         val tailPart = if (c.numberTail.isNotBlank()) "••••${c.numberTail}" else null
                         val ownerPart = if (c.owner == "Joint") "Joint" else null
                         val subtitle = listOfNotNull(duePart, tailPart, ownerPart).joinToString(" · ").ifEmpty { "Credit Card" }
@@ -238,8 +203,9 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     }
                     pendingRecurring.forEachIndexed { idx, e ->
                         if (idx > 0) Hairline()
-                        val when_ = if (e.nextDue.isEmpty()) "" else " · due in ${Ledger.untilText(today(), e.nextDue)}"
-                        val subtitle = "${e.person} · ${e.category}$when_"
+                        val day = e.nextDue.takeLast(2).toIntOrNull()
+                        val when_ = if (day != null) "Due (${day}th)" else if (e.nextDue.isNotEmpty()) "Due (${e.nextDue})" else null
+                        val subtitle = listOfNotNull(e.person, e.category, when_).joinToString(" · ")
                         HomeCompactRow(
                             title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
                             subtitle = subtitle,
@@ -260,7 +226,9 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     }
                     pendingLoans.forEachIndexed { idx, l ->
                         if (idx > 0) Hairline()
-                        val subtitle = "${l.remainingMonths} mo left · EMI ${inr(l.monthlyEmi)}"
+                        val day = if (l.dueDay > 0) l.dueDay else l.nextDue.takeLast(2).toIntOrNull()
+                        val duePart = if (day != null) " · Due (${day}th)" else ""
+                        val subtitle = "${l.remainingMonths} mo left · EMI ${inr(l.monthlyEmi)}$duePart"
                         HomeCompactRow(
                             title = "${idx + 1}. ${l.name}",
                             subtitle = subtitle,
@@ -272,21 +240,35 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     hasPrior = true
                 }
 
-                // 5. SALARY / EXPECTED INCOME
-                if (upcomingSalary > 0.0) {
-                    if (hasPrior) HomeSectionDivider()
-                    HomeListHeaderLabel("NEXT SALARY · ${inr(upcomingSalary)}")
-                    val salDay = vm.salaryResetDayFor(vm.activeProfile.orEmpty())
-                    val nextDate = vm.upcomingPaydayDate(vm.activeProfile.orEmpty(), 1)
-                    val monthName = Ledger.fullMonthName(nextDate)
-                    val subtitle = if (vm.bucketView == "JOINT") "Expected Income · Joint (${prettyDate(nextDate)})" else "Expected Income · Pay Day: ${salDay}th $monthName (${prettyDate(nextDate)})"
-                    HomeCompactRow(
-                        title = if (vm.bucketView == "JOINT") "Next Month Salary" else "${vm.activeProfile ?: "Personal"} Salary",
-                        subtitle = subtitle,
-                        amount = inr(upcomingSalary),
-                        amountColor = Color(0xFF10B981)
-                    )
-                    hasPrior = true
+                // 5. FUTURE SET ASIDES (Grouped by starting payday month - placed UNDER loans)
+                if (futureSetAsidesMap.isNotEmpty()) {
+                    futureSetAsidesMap.forEach { (yearMonth, entriesList) ->
+                        if (hasPrior) HomeSectionDivider()
+                        val monthDateIso = "$yearMonth-01"
+                        val monthTitle = Ledger.fullMonthName(monthDateIso)
+                        val totalFutureMonth = entriesList.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
+                        HomeListHeaderLabel("SET ASIDE ($monthTitle) · ${inr(totalFutureMonth)}/mo") {
+                            vm.accountsFilter = "Set Aside"
+                            vm.tab = Tab.ACCOUNTS
+                        }
+                        entriesList.forEachIndexed { idx, e ->
+                            if (idx > 0) Hairline()
+                            val resetDay = vm.salaryResetDayFor(e.person)
+                            val start = if (e.startDate.isNotEmpty()) e.startDate else today()
+                            val n = Ledger.instalmentsBetween(start, e.nextDue, resetDay)
+                            val monthlyAmt = e.monthly(resetDay)
+                            val subtitle = "Starts in $monthTitle · Due (${resetDay}th) · ${n}mo · Total: ${inr(e.amount)}"
+
+                            HomeCompactRow(
+                                title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
+                                subtitle = subtitle,
+                                amount = inr(monthlyAmt),
+                                amountColor = Pf.Muted,
+                                onClick = { vm.openEditEntry(e) }
+                            )
+                        }
+                        hasPrior = true
+                    }
                 }
 
                 if (!hasPrior) {
@@ -306,7 +288,12 @@ fun HomeScreen(vm: FinTrackViewModel) {
             }
         }
 
-        // 4. UPCOMING MONTHS 2 & 3 FORECAST (Cash Flow Projection)
+        // 4. MORE HOME FEATURES (Category Spending Breakdown Till Payday)
+        item {
+            MoreHomeFeaturesSection(vm)
+        }
+
+        // 5. UPCOMING MONTHS 2 & 3 FORECAST (Cash Flow Projection)
         item {
             UpcomingMonths2And3Section(vm, netBalance)
         }
@@ -315,6 +302,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
     ConfirmSheet(vm)
     CardSettleSheet(vm)
     LoanConfirmSheet(vm)
+    InitialProfileDialog(vm)
 }
 
 @Composable
@@ -420,8 +408,8 @@ private fun HomeSectionDivider() {
             .fillMaxWidth()
             .height(1.dp)
             .background(
-                if (Pf.isDark) Color(0xFF374151)
-                else Color(0xFFE2E8F0)
+                if (Pf.isDark) Color(0xFF4B5563)
+                else Color(0xFFCBD5E1)
             )
     )
     Spacer(Modifier.height(Space.s1))
@@ -869,6 +857,194 @@ private fun UpcomingMonths2And3Section(vm: FinTrackViewModel, startingLeftover: 
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoreHomeFeaturesSection(vm: FinTrackViewModel) {
+    var expanded by remember { mutableStateOf(false) }
+    val spends = vm.currentCycleCategorySpend
+    val totalSpend = vm.currentCycleTotalSpend
+    val resetDay = vm.salaryResetDayFor(vm.activeProfile.orEmpty())
+
+    PfCard(
+        modifier = Modifier.fillMaxWidth(),
+        padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
+        shape = Radius.Lg
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(Radius.Sm)
+                    .clickable { expanded = !expanded }
+                    .padding(vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        Text(
+                            "Categories Spent (Till Payday)",
+                            color = Pf.Text,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Box(
+                            Modifier
+                                .background(Pf.Accent.copy(alpha = 0.12f), Radius.Pill)
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                "Till ${resetDay}th",
+                                color = Pf.Accent400,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        if (totalSpend > 0.0) "Total: ${inr(totalSpend)} across ${spends.size} categories"
+                        else "Tap to view spending breakdown till payday",
+                        color = Pf.Muted,
+                        fontSize = 12.sp
+                    )
+                }
+                Text(
+                    if (expanded) "▲" else "▼",
+                    color = Pf.Muted,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(start = Space.s2)
+                )
+            }
+
+            if (expanded) {
+                HomeSectionDivider()
+                if (spends.isEmpty()) {
+                    Text(
+                        "No expenses recorded for this cycle yet.",
+                        color = Pf.Muted,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(vertical = Space.s2)
+                    )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+                        spends.forEachIndexed { idx, (cat, amt) ->
+                            if (idx > 0) Hairline()
+                            val pct = if (totalSpend > 0.0) ((amt / totalSpend) * 100).toInt() else 0
+                            val fraction = if (totalSpend > 0.0) (amt / totalSpend).toFloat() else 0f
+                            val catColor = categoryColor(cat)
+
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(Radius.Sm)
+                                    .clickable {
+                                        vm.entriesCategoryFilter = cat
+                                        vm.tab = Tab.ENTRIES
+                                    }
+                                    .padding(vertical = 2.dp)
+                            ) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                                    ) {
+                                        Box(
+                                            Modifier
+                                                .size(10.dp)
+                                                .background(catColor, CircleShape)
+                                        )
+                                        Text(
+                                            cat,
+                                            color = Pf.Text,
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            "($pct%)",
+                                            color = Pf.Muted,
+                                            fontSize = 11.5.sp
+                                        )
+                                    }
+                                    Text(
+                                        inr(amt),
+                                        color = Pf.Text,
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .background(Pf.Surface2, Radius.Pill)
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth(fraction.coerceIn(0.02f, 1f))
+                                            .height(6.dp)
+                                            .background(catColor, Radius.Pill)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun InitialProfileDialog(vm: FinTrackViewModel) {
+    if (!vm.showInitialProfileDialog) return
+    var nameDraft by remember { mutableStateOf(vm.activeProfile ?: "Vinay") }
+
+    Dialog(onDismissRequest = { vm.showInitialProfileDialog = false }) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(Pf.Surface, Radius.Lg)
+                .border(1.dp, Pf.Hairline, Radius.Lg)
+                .padding(Space.s4),
+            verticalArrangement = Arrangement.spacedBy(Space.s3)
+        ) {
+            Text(
+                "Welcome to FinTrack!",
+                color = Pf.Text,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Muted("Please enter your profile name to get started:")
+
+            PfField(
+                label = "Your Name",
+                value = nameDraft,
+                onValueChange = { nameDraft = it.take(20) },
+                placeholder = "e.g. Vinay"
+            )
+
+            Row(
+                Modifier.fillMaxWidth().padding(top = Space.s2),
+                horizontalArrangement = Arrangement.End
+            ) {
+                PrimaryButton(
+                    "Get Started",
+                    { vm.completeInitialProfile(nameDraft) },
+                    enabled = nameDraft.trim().isNotEmpty()
+                )
             }
         }
     }
