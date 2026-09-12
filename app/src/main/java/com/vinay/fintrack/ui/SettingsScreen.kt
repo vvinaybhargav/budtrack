@@ -1032,7 +1032,7 @@ private fun LocalStorageBackupSection(vm: FinTrackViewModel) {
             ) {
                 Column(Modifier.weight(1f)) {
                     Text("Storage Engine", color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Muted("Data stays strictly on your phone — ₹0 cloud bills", size = 11.5)
+                    Muted("Data stays strictly on your phone — ₹0 cloud bills", size = 11)
                 }
                 Tag("On-Device (Free)", Pf.Accent2_100, Pf.Accent2_800)
             }
@@ -1119,7 +1119,7 @@ private fun LocalStorageBackupSection(vm: FinTrackViewModel) {
             if (vm.backupStatusMsg.isNotEmpty()) {
                 Text(
                     vm.backupStatusMsg,
-                    color = if (vm.backupStatusIsError) Pf.Accent400 else Pf.Accent2_600,
+                    color = if (vm.backupStatusIsError) Pf.Accent400 else Color(0xFF34D399),
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.SemiBold
                 )

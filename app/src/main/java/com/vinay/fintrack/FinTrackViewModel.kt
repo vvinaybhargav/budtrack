@@ -2148,7 +2148,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         return try {
             val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
             val decoded = json.decodeFromString(PersistedState.serializer(), jsonString)
-            commit(decoded, pushToRemote = false)
+            update { decoded }
             backupStatusMsg = "Backup successfully restored!"
             backupStatusIsError = false
             true
