@@ -4,13 +4,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Bank alerts are the transaction source. Nothing is sent anywhere: the
-         message is parsed on the device and only the parsed fields are kept. -->
-    <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <uses-permission android:name="android.permission.READ_SMS" />
-
-    <!-- Imports happen with the app closed, so the notification is the only way
-         to see a payment was filed before opening the app and scrolling. -->
+    <!-- Transaction alerts from Bank SMS and UPI apps are captured via
+         FinTrackNotificationListener (NotificationListenerService) with 100%
+         Google Play Store policy compliance and zero high-risk SMS permissions. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Due-date reminders are a daily alarm, and alarms do not survive a
@@ -44,17 +40,6 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
-
-        <!-- Fires on each incoming bank alert, so a payment is recorded without
-             the app being opened. -->
-        <receiver
-            android:name=".sms.SmsReceiver"
-            android:exported="true"
-            android:permission="android.permission.BROADCAST_SMS">
-            <intent-filter android:priority="999">
-                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
 
