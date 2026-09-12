@@ -2468,8 +2468,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 if (c.limit <= 0.0) {
                     missing.add("Credit limit not set")
                 }
-                if (c.paymentDueDay <= 0 && c.billingCycle <= 0) {
-                    missing.add("Payment due day or billing cycle not set")
+                if (c.dueDate.isBlank() && c.due.isBlank()) {
+                    missing.add("Payment due date not set")
+                }
+                if (c.statementDay <= 0) {
+                    missing.add("Statement billing day not set")
                 }
                 if (missing.isNotEmpty()) {
                     list.add(MissingConfigItem("Card", c.id, c.name, missing))

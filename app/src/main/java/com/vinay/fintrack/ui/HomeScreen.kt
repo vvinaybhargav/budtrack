@@ -265,23 +265,6 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     hasPrior = true
                 }
 
-                // 5. SALARY / EXPECTED INCOME
-                if (upcomingSalary > 0.0) {
-                    if (hasPrior) HomeSectionDivider()
-                    HomeListHeaderLabel("SALARY · ${inr(upcomingSalary)}")
-                    val salDay = vm.salaryResetDayFor(vm.activeProfile.orEmpty())
-                    val nextDate = vm.upcomingPaydayDate(vm.activeProfile.orEmpty(), 1)
-                    val monthName = Ledger.fullMonthName(nextDate)
-                    val subtitle = if (vm.bucketView == "JOINT") "Expected Income · Joint (${prettyDate(nextDate)})" else "Expected Income · Pay Day: ${salDay}th $monthName (${prettyDate(nextDate)})"
-                    HomeCompactRow(
-                        title = if (vm.bucketView == "JOINT") "Joint Salary" else "${vm.activeProfile ?: "Personal"} Salary",
-                        subtitle = subtitle,
-                        amount = inr(upcomingSalary),
-                        amountColor = Pf.Text
-                    )
-                    hasPrior = true
-                }
-
                 if (!hasPrior) {
                     Row(
                         Modifier.fillMaxWidth().padding(vertical = Space.s4),
