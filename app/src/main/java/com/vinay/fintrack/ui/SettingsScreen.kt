@@ -1091,11 +1091,11 @@ private fun ProfileManagementSection(vm: FinTrackViewModel) {
             title = "Profile Management",
             subtitle = "Manage household members and active profile",
             action = {
-                GhostButton("+ Add Profile") {
+                GhostButton("+ Add Profile", onClick = {
                     newNameDraft = ""
                     newPinDraft = "1234"
                     showAddDialog = true
-                }
+                })
             }
         )
 
@@ -1145,7 +1145,7 @@ private fun ProfileManagementSection(vm: FinTrackViewModel) {
                             }
                             val salary = vm.salaryFor(name)
                             val resetDay = vm.salaryResetDayFor(name)
-                            Muted("Payday: ${resetDay}th · Salary: ${inr(salary)}", size = 11.5)
+                            Muted("Payday: ${resetDay}th · Salary: ${inr(salary)}", size = 11)
                         }
                     }
 
@@ -1154,9 +1154,9 @@ private fun ProfileManagementSection(vm: FinTrackViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(Space.s1)
                     ) {
                         if (!isActive) {
-                            GhostButton("Switch") {
+                            GhostButton("Switch", onClick = {
                                 vm.setActiveProfileFromSettings(name)
-                            }
+                            })
                         }
                         IconButton(
                             onClick = {
