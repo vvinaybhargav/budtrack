@@ -49,19 +49,19 @@ data class ParsedSms(
 }
 
 private val AMOUNT = Regex("""(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
-private val DEBIT_WORDS = listOf("debited", "debit", "sent", "paid", "withdrawn", "spent", "purchase", "payment of", "transferred", "transfer to")
-private val CREDIT_WORDS = listOf("credited", "credit", "received", "deposited", "refund", "reversed", "reversal", "money added", "cashback")
+private val DEBIT_WORDS = listOf("debited", "debit", "sent", "paid", "withdrawn", "spent", "purchase", "payment of", "payment to", "transferred", "transfer to", "charged", "auto-debited", "autodebit")
+private val CREDIT_WORDS = listOf("credited", "credit", "received", "deposited", "refund", "refunded", "reversed", "reversal", "money added", "cashback", "deposited into", "added to", "received from")
 
 /** A credit that is money coming back rather than money earned. Netted off the
  *  spending it reverses instead of counted as income. */
 private val REFUND_WORDS = listOf("refund", "refunded", "reversed", "reversal", "returned", "cancelled order", "chargeback")
 
 private val ACCOUNT_TAIL = Regex(
-    """(?:a/?c|acct|account|card)\s*(?:no\.?|number)?\s*[:\-]?\s*[xX*]+\s*(\d{3,6})""",
+    """\b(?:a/?c|acct|account|card|ending(?:\s+(?:with|in|at))?)\s*(?:no\.?|number|ending(?:\s+(?:with|in|at))?)?\s*[:\-]?\s*[xX*.\u2026]*\s*(\d{3,6})\b""",
     RegexOption.IGNORE_CASE
 )
 private val REF = Regex(
-    """(?:upi|imps|neft|rrn|txn|transaction|ref(?:erence)?)\s*(?:ref(?:erence)?)?\s*(?:no\.?|id)?\s*[:\-]?\s*(\d{6,})""",
+    """(?:upi|imps|neft|rtgs|rrn|txn|transaction|ref(?:erence)?)\s*(?:ref(?:erence)?)?\s*(?:no\.?|id|num)?\s*[:\-/]?\s*([A-Za-z0-9]*\d{4,}[A-Za-z0-9]*)""",
     RegexOption.IGNORE_CASE
 )
 private val VPA = Regex("""(?:to|from)\s+(?:vpa\s+)?([A-Za-z0-9._-]+@[A-Za-z]+)""", RegexOption.IGNORE_CASE)
@@ -326,6 +326,19 @@ fun looksLikeBankSender(sender: String): Boolean {
     val s = sender.uppercase()
     if (s.any { it.isDigit() } && s.length >= 10) return false   // an ordinary mobile number
     return BANK_CODES.any { s.contains(it) } || s.contains("-")
+}
+
+/**
+ * Detects whether a notification text has the hallmark structure of a financial transaction
+ * (amount + debit/credit phrasing).
+ */
+fun looksLikeBankMessage(text: String): Boolean {
+    if (text.isBlank()) return false
+    val lower = text.lowercase()
+    if (NOT_A_TRANSACTION.any { lower.contains(it) }) return false
+    val hasAmount = AMOUNT.containsMatchIn(text)
+    val hasDirection = DEBIT_WORDS.any { lower.contains(it) } || CREDIT_WORDS.any { lower.contains(it) }
+    return hasAmount && hasDirection
 }
 
 private val BANK_CODES = listOf(

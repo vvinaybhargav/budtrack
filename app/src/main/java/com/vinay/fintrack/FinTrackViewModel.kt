@@ -358,6 +358,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun adoptFromDisk(disk: PersistedState) {
         val known = persisted.txns.map { it.id }.toSet()
+        ownRevision = store.revision()
         persisted = disk.copy(
             firebaseConfigText = persisted.firebaseConfigText,
             openaiKeyText = persisted.openaiKeyText
