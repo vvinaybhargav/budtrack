@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Delete
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
@@ -104,6 +106,13 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                 Spacer(Modifier.height(2.dp))
                 Muted("Personalize your budget, security & preferences", size = 13)
             }
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // 0. APP FEATURES & USER GUIDE CARD
+        // ════════════════════════════════════════════════════════════════
+        item {
+            FeaturesGuideSection()
         }
 
         // ════════════════════════════════════════════════════════════════
@@ -1140,4 +1149,190 @@ private fun LocalStorageBackupSection(vm: FinTrackViewModel) {
         }
     }
 }
+
+@Composable
+private fun FeaturesGuideSection() {
+    var expanded by remember { mutableStateOf(false) }
+
+    PfCard(padding = PaddingValues(Space.s4)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(Radius.Sm)
+                .clickable { expanded = !expanded }
+                .padding(vertical = Space.s1),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.s3),
+                modifier = Modifier.weight(1f, fill = false)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Pf.Accent700.copy(alpha = 0.3f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = Pf.Accent400,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        "Features & User Guide",
+                        color = Pf.Text,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        if (expanded) "Tap to collapse guide ▲" else "Learn how FinTrack manages your money ▼",
+                        color = Pf.Accent400,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+            Icon(
+                if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                tint = Pf.Accent400,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+
+        if (expanded) {
+            Column(
+                Modifier.padding(top = Space.s3),
+                verticalArrangement = Arrangement.spacedBy(Space.s3)
+            ) {
+                Hairline()
+
+                // Feature 1: Live SMS & UPI Auto-Tracking
+                FeatureGuideItem(
+                    emoji = "⚡",
+                    title = "Live SMS & UPI Auto-Tracking",
+                    tag = "Zero Effort",
+                    tagColor = Pf.Accent2_100,
+                    tagTextColor = Pf.Accent2_800,
+                    description = "FinTrack catches incoming Bank SMS (HDFC, ICICI, SBI, Axis, etc.) and UPI alerts (Google Pay, PhonePe, Paytm, CRED) directly from your status bar in real-time. It parses the amount, merchant, and account digits instantly with zero manual entry!"
+                )
+
+                // Feature 2: Hero Card & True Net Balance
+                FeatureGuideItem(
+                    emoji = "💰",
+                    title = "Hero Card & Net Cash Flow",
+                    tag = "Cash Flow",
+                    tagColor = Pf.Accent100,
+                    tagTextColor = Pf.Accent800,
+                    description = "Unlike traditional apps that only show bank balances, FinTrack calculates your true disposable income:\n• Bank Balances — Upcoming Expenses + Upcoming Salary = Net Balance.\nIt also previews your next month's projected cash flow so you never overspend."
+                )
+
+                // Feature 3: Set-A-Side (Sinking Funds)
+                FeatureGuideItem(
+                    emoji = "🎯",
+                    title = "Set-A-Side (Sinking Funds)",
+                    tag = "Smart Planning",
+                    tagColor = Pf.Accent.copy(alpha = 0.2f),
+                    tagTextColor = Pf.Accent400,
+                    description = "Never get caught off-guard by big annual or periodic expenses (e.g. ₹24,000 Car Insurance in 6 months).\n• FinTrack splits the total into ₹4,000/month from each salary.\n• You can set a Start Pay Month so expenses start counting exactly when you want."
+                )
+
+                // Feature 4: Dynamic Payday & Salary Rollover
+                FeatureGuideItem(
+                    emoji = "📅",
+                    title = "Payday Reset & Salary Rollovers",
+                    tag = "Dynamic Cycles",
+                    tagColor = Pf.Neutral100,
+                    tagTextColor = Pf.Neutral800,
+                    description = "Choose your payday reset day (e.g., 6th of each month). FinTrack aligns budgets, dues, and cash flow to your salary cycle rather than the rigid 1st of the month. After your payday passes, the next 3 months roll over automatically!"
+                )
+
+                // Feature 5: Loans & Credit Card Debt Manager
+                FeatureGuideItem(
+                    emoji = "💳",
+                    title = "Credit Cards & Loan EMIs",
+                    tag = "Debt Free",
+                    tagColor = Pf.Rose.copy(alpha = 0.2f),
+                    tagTextColor = Pf.Rose,
+                    description = "Track credit card statements, due dates, and minimum dues in one clean list. For loans and EMIs, FinTrack counts down remaining tenure months and automatically stops subtracting the EMI when the loan is finished."
+                )
+
+                // Feature 6: Monthly Budgets & Rollovers
+                FeatureGuideItem(
+                    emoji = "📊",
+                    title = "Monthly Budgets & Leftover Rollover",
+                    tag = "Disciplined Spends",
+                    tagColor = Pf.Accent2_100,
+                    tagTextColor = Pf.Accent2_800,
+                    description = "Set spending caps for categories like Food, Fuel, or Shopping. Turn on 'Rollover leftover' to carry underspent amounts into next month's budget!"
+                )
+
+                // Feature 7: 100% On-Device & Total Privacy
+                FeatureGuideItem(
+                    emoji = "🛡️",
+                    title = "100% On-Device & ₹0 Cost",
+                    tag = "Private & Free",
+                    tagColor = Pf.Accent2_100,
+                    tagTextColor = Pf.Accent2_800,
+                    description = "Your financial data and bank messages are processed strictly on your phone and never uploaded to any cloud server. You get total privacy, offline capability, and 1-tap JSON backups at ₹0 cost forever."
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeatureGuideItem(
+    emoji: String,
+    title: String,
+    tag: String,
+    tagColor: Color,
+    tagTextColor: Color,
+    description: String
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(Radius.Md)
+            .background(Pf.Surface2.copy(alpha = 0.55f))
+            .border(1.dp, Pf.Hairline, Radius.Md)
+            .padding(Space.s3)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(emoji, fontSize = 16.sp)
+                    Text(
+                        title,
+                        color = Pf.Text,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Tag(tag, tagColor, tagTextColor)
+            }
+            Text(
+                description,
+                color = Pf.Muted,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+    }
+}
+
 
