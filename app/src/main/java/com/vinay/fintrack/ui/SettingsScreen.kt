@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.Sms
@@ -417,69 +418,8 @@ fun SettingsScreen(vm: FinTrackViewModel) {
                         // SMS Rules
                         SmsRulesSection(vm)
 
-                        // Firestore & OpenAI Sync Card
-                        PfCard(
-                            Modifier.fillMaxWidth(),
-                            padding = PaddingValues(Space.s3)
-                        ) {
-                            SettingHeader(
-                                icon = Icons.Default.Sync,
-                                title = "Sync & Integrations",
-                                subtitle = "Cloud database & AI configuration"
-                            )
-                            Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-                                DebouncedField(
-                                    label = "Firebase Config (apiKey, projectId, appId…)",
-                                    value = vm.firebaseConfigText,
-                                    onSettled = vm::setFirebaseConfig,
-                                    placeholder = "Paste values separated by commas",
-                                    singleLine = false,
-                                    allowBlank = true
-                                )
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Muted("Firestore Cloud Sync")
-                                    when (vm.syncStatus) {
-                                        SyncStatus.LIVE -> Tag("Live", Pf.Accent2_100, Pf.Accent2_800)
-                                        SyncStatus.CONNECTING -> Tag("Connecting…", Pf.Neutral100, Pf.Neutral800)
-                                        SyncStatus.ERROR -> Tag("Error", Pf.Accent100, Pf.Accent800)
-                                        SyncStatus.OFF -> OutlineTag("Not connected")
-                                    }
-                                }
-                                if (vm.syncError.isNotEmpty()) {
-                                    Text(vm.syncError, color = Pf.Accent400, fontSize = 12.sp)
-                                }
-                                PrimaryButton("Connect", vm::applyFirebaseConfig)
-                                Muted(
-                                    if (vm.syncConfigLooksValid) "Reads OK — ${vm.syncConfigSummary}"
-                                    else "Need at least apiKey, projectId and appId."
-                                )
-
-                                Spacer(Modifier.height(Space.s1))
-                                Hairline()
-                                Spacer(Modifier.height(Space.s1))
-
-                                DebouncedField(
-                                    label = "OpenAI API Key (for Smart Assistant)",
-                                    value = vm.openaiKeyText,
-                                    onSettled = vm::setOpenaiKey,
-                                    placeholder = "sk-…",
-                                    allowBlank = true
-                                )
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Muted("OpenAI Assistant")
-                                    if (vm.openaiKeyText.isNotBlank()) Tag("Configured", Pf.Accent100, Pf.Accent800)
-                                    else OutlineTag("Not set")
-                                }
-                            }
-                        }
+                        // 100% On-Device Storage & Local Backup Section
+                        LocalStorageBackupSection(vm)
 
                         // Sample Data Card (if any)
                         if (vm.sampleDataCount > 0) {
@@ -1055,6 +995,148 @@ private fun SalaryOverrideMonthItem(
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LocalStorageBackupSection(vm: FinTrackViewModel) {
+    val context = LocalContext.current
+    var showRestoreDialog by remember { mutableStateOf(false) }
+    var restoreInputText by remember { mutableStateOf("") }
+
+    PfCard(
+        Modifier.fillMaxWidth(),
+        padding = PaddingValues(Space.s3)
+    ) {
+        SettingHeader(
+            icon = Icons.Default.PhoneAndroid,
+            title = "Data Storage & Backup",
+            subtitle = "100% On-Device & Free Forever"
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Storage Engine", color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Muted("Data stays strictly on your phone — ₹0 cloud bills", size = 11.5)
+                }
+                Tag("On-Device (Free)", Pf.Accent2_100, Pf.Accent2_800)
+            }
+
+            Muted(
+                "All accounts, transactions, and budgets are saved locally. " +
+                    "Your financial data is private and never uploaded to any remote server."
+            )
+
+            // Backup & Restore Action Buttons
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                verticalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                PrimaryButton("Export Backup (Copy JSON)", onClick = {
+                    val json = vm.exportBackupJson()
+                    if (json.isNotBlank()) {
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("FinTrack Backup", json)
+                        clipboard.setPrimaryClip(clip)
+                        android.widget.Toast.makeText(context, "Backup copied to clipboard! Paste it anywhere to save.", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                })
+
+                SecondaryButton(
+                    if (showRestoreDialog) "Cancel Restore" else "Restore from Backup",
+                    onClick = {
+                        showRestoreDialog = !showRestoreDialog
+                        vm.clearBackupStatus()
+                    }
+                )
+            }
+
+            if (showRestoreDialog) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Pf.Surface2, Radius.Md)
+                        .border(1.dp, Pf.Hairline, Radius.Md)
+                        .padding(Space.s3),
+                    verticalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    Text(
+                        "Paste Backup JSON below:",
+                        color = Pf.Text,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedTextField(
+                        value = restoreInputText,
+                        onValueChange = { restoreInputText = it },
+                        placeholder = { Text("Paste JSON backup here…", color = Pf.Muted, fontSize = 12.sp) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(color = Pf.Text, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
+                        shape = Radius.Sm,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Pf.Surface,
+                            unfocusedContainerColor = Pf.Surface,
+                            focusedBorderColor = Pf.Accent,
+                            unfocusedBorderColor = Pf.Hairline,
+                            cursorColor = Pf.Accent,
+                            focusedTextColor = Pf.Text,
+                            unfocusedTextColor = Pf.Text
+                        )
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        PrimaryButton("Apply Restore", onClick = {
+                            val ok = vm.importBackupJson(restoreInputText)
+                            if (ok) {
+                                restoreInputText = ""
+                                showRestoreDialog = false
+                            }
+                        }, enabled = restoreInputText.isNotBlank())
+                    }
+                }
+            }
+
+            if (vm.backupStatusMsg.isNotEmpty()) {
+                Text(
+                    vm.backupStatusMsg,
+                    color = if (vm.backupStatusIsError) Pf.Accent400 else Pf.Accent2_600,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Spacer(Modifier.height(Space.s1))
+            Hairline()
+            Spacer(Modifier.height(Space.s1))
+
+            // OpenAI API Key
+            DebouncedField(
+                label = "OpenAI API Key (Optional for Smart Assistant)",
+                value = vm.openaiKeyText,
+                onSettled = vm::setOpenaiKey,
+                placeholder = "sk-…",
+                allowBlank = true
+            )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Muted("OpenAI Assistant")
+                if (vm.openaiKeyText.isNotBlank()) Tag("Configured", Pf.Accent100, Pf.Accent800)
+                else OutlineTag("Not set")
+            }
         }
     }
 }

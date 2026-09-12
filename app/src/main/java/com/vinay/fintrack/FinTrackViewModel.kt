@@ -2126,6 +2126,44 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun setFirebaseConfig(v: String) = update { it.copy(firebaseConfigText = v) }
     fun setOpenaiKey(v: String) = update { it.copy(openaiKeyText = v) }
 
+    // ── Local Device Backup & Restore ──────────────────────────────────
+    var backupStatusMsg by mutableStateOf("")
+    var backupStatusIsError by mutableStateOf(false)
+
+    fun exportBackupJson(): String {
+        return try {
+            val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = true }
+            json.encodeToString(PersistedState.serializer(), persisted)
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    fun importBackupJson(jsonString: String): Boolean {
+        if (jsonString.isBlank()) {
+            backupStatusMsg = "Backup text is empty."
+            backupStatusIsError = true
+            return false
+        }
+        return try {
+            val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+            val decoded = json.decodeFromString(PersistedState.serializer(), jsonString)
+            commit(decoded, pushToRemote = false)
+            backupStatusMsg = "Backup successfully restored!"
+            backupStatusIsError = false
+            true
+        } catch (e: Exception) {
+            backupStatusMsg = "Invalid backup format: ${e.localizedMessage ?: "parse error"}"
+            backupStatusIsError = true
+            false
+        }
+    }
+
+    fun clearBackupStatus() {
+        backupStatusMsg = ""
+        backupStatusIsError = false
+    }
+
     /** Explicit, so typing the config doesn't reconnect on every keystroke. */
     fun applyFirebaseConfig() {
         if (persisted.firebaseConfigText.isBlank()) sync.disconnect() else connectSync()
