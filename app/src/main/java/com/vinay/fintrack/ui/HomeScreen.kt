@@ -71,7 +71,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
     val totalBankBalances = vm.scopedAccounts.sumOf { vm.balanceOf(it) }
     val pendingCards = vm.scopedCards.filter { it.balance > 0.0 }
     val totalCardDues = pendingCards.sumOf { it.balance }
-    val pendingLoans = vm.scopedLoans.filter { !vm.isLoanCleared(it) && !vm.isLoanConfirmed(it.id) }
+    val pendingLoans = vm.scopedLoans.filter { vm.isLoanActiveThisMonth(it) && !vm.isLoanConfirmed(it.id) }
     val totalLoanEmis = pendingLoans.sumOf { it.monthlyEmi }
     val pendingRecurring = vm.commitments.filter { !vm.isConfirmed(it.id) }
     val totalRecurring = pendingRecurring.sumOf { it.monthly }
@@ -80,13 +80,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
     val pendingSetAsidesThisMonth = vm.annualSetAsides.filter { vm.isSetAsideActiveThisMonth(it) && vm.setAsideLeft(it) > 0.0 }
     val totalSetAsidePending = pendingSetAsidesThisMonth.sumOf { vm.setAsideLeft(it) }
 
-    val nextMonthDateIso = Ledger.addMonths(today(), 1)
-    val nextMonthName = Ledger.fullMonthName(nextMonthDateIso)
-    val nextMonthSetAsides = vm.annualSetAsides.filter { vm.setAsideMonthBucket(it) == 1 && !it.closed }
-
-    val monthAfterDateIso = Ledger.addMonths(today(), 2)
-    val monthAfterName = Ledger.fullMonthName(monthAfterDateIso)
-    val monthAfterSetAsides = vm.annualSetAsides.filter { vm.setAsideMonthBucket(it) == 2 && !it.closed }
+    val futureSetAsidesMap = vm.futureSetAsidesGrouped()
 
     val otherExpenses = totalCardDues + totalLoanEmis + totalRecurring + totalSetAsidePending
     val upcomingSalary = vm.scopedUpcomingSalary
@@ -136,7 +130,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
             SpentTodayBadge(vm)
         }
 
-        // 3. UNIFIED 1-BY-1 CLEAN LIST (Credit Cards -> Loans -> Recurring -> Set Aside -> Salary)
+        // 3. UNIFIED 1-BY-1 CLEAN LIST (Set Aside -> Credit Cards -> Recurring -> Loans -> Salary)
         item {
             PfCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -145,79 +139,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
             ) {
                 var hasPrior = false
 
-                // 1. CREDIT CARDS (DUES)
-                if (pendingCards.isNotEmpty()) {
-                    HomeListHeaderLabel("CREDIT CARDS · ${inr(totalCardDues)}") {
-                        vm.accountsFilter = "Cards"
-                        vm.tab = Tab.ACCOUNTS
-                    }
-                    pendingCards.forEachIndexed { idx, c ->
-                        if (idx > 0) Hairline()
-                        val cleanName = if (c.name.contains("••") && c.numberTail.isNotBlank()) {
-                            c.name.substringBefore("••").trim().ifEmpty { c.name }
-                        } else c.name
-                        val duePart = if (c.dueText.isNotBlank()) "Due: ${c.dueText}" else null
-                        val tailPart = if (c.numberTail.isNotBlank()) "••••${c.numberTail}" else null
-                        val ownerPart = if (c.owner == "Joint") "Joint" else null
-                        val subtitle = listOfNotNull(duePart, tailPart, ownerPart).joinToString(" · ").ifEmpty { "Credit Card" }
-
-                        HomeCompactRow(
-                            title = "${idx + 1}. $cleanName",
-                            subtitle = subtitle,
-                            amount = inr(c.balance),
-                            amountColor = Pf.Text,
-                            onClick = { vm.startSettleCard(c.id) }
-                        )
-                    }
-                    hasPrior = true
-                }
-
-                // 2. LOANS
-                if (pendingLoans.isNotEmpty()) {
-                    if (hasPrior) HomeSectionDivider()
-                    HomeListHeaderLabel("LOANS · ${inr(totalLoanEmis)}/mo") {
-                        vm.accountsFilter = "Loans"
-                        vm.tab = Tab.ACCOUNTS
-                    }
-                    pendingLoans.forEachIndexed { idx, l ->
-                        if (idx > 0) Hairline()
-                        val subtitle = "${l.remainingMonths} mo left · EMI ${inr(l.monthlyEmi)}"
-                        HomeCompactRow(
-                            title = "${idx + 1}. ${l.name}",
-                            subtitle = subtitle,
-                            amount = inr(l.monthlyEmi),
-                            amountColor = Pf.Text,
-                            onClick = { vm.confirmLoan(l) }
-                        )
-                    }
-                    hasPrior = true
-                }
-
-                // 3. RECURRING
-                if (pendingRecurring.isNotEmpty()) {
-                    if (hasPrior) HomeSectionDivider()
-                    HomeListHeaderLabel("RECURRING · ${inr(totalRecurring)}/mo") {
-                        vm.accountsFilter = "Recurring"
-                        vm.tab = Tab.ACCOUNTS
-                    }
-                    pendingRecurring.forEachIndexed { idx, e ->
-                        if (idx > 0) Hairline()
-                        val when_ = if (e.nextDue.isEmpty()) "" else " · due in ${Ledger.untilText(today(), e.nextDue)}"
-                        val subtitle = "${e.person} · ${e.category}$when_"
-                        HomeCompactRow(
-                            title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
-                            subtitle = subtitle,
-                            amount = inr(e.monthly),
-                            amountColor = Pf.Text,
-                            onClick = { vm.requestConfirm(e) }
-                        )
-                    }
-                    hasPrior = true
-                }
-
-                // 4. CURRENT MONTH SET ASIDE (Active in This Cycle)
+                // 1. CURRENT MONTH SET ASIDE (Active in This Cycle)
                 if (pendingSetAsidesThisMonth.isNotEmpty()) {
-                    if (hasPrior) HomeSectionDivider()
                     HomeListHeaderLabel("SET ASIDE · ${inr(totalSetAsidePending)}") {
                         vm.accountsFilter = "Set Aside"
                         vm.tab = Tab.ACCOUNTS
@@ -248,59 +171,105 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     hasPrior = true
                 }
 
-                // 4b. NEXT MONTH SET ASIDE (Starts Next Month e.g. November)
-                if (nextMonthSetAsides.isNotEmpty()) {
+                // 1b. ALL FUTURE SET ASIDES (Grouped by starting payday month)
+                if (futureSetAsidesMap.isNotEmpty()) {
+                    futureSetAsidesMap.forEach { (yearMonth, entriesList) ->
+                        if (hasPrior) HomeSectionDivider()
+                        val monthDateIso = "$yearMonth-01"
+                        val monthTitle = Ledger.fullMonthName(monthDateIso)
+                        val totalFutureMonth = entriesList.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
+                        HomeListHeaderLabel("SET ASIDE ($monthTitle) · ${inr(totalFutureMonth)}/mo") {
+                            vm.accountsFilter = "Set Aside"
+                            vm.tab = Tab.ACCOUNTS
+                        }
+                        entriesList.forEachIndexed { idx, e ->
+                            if (idx > 0) Hairline()
+                            val resetDay = vm.salaryResetDayFor(e.person)
+                            val start = if (e.startDate.isNotEmpty()) e.startDate else today()
+                            val firstPayday = vm.firstPaydayOf(e)
+                            val daysToStart = Ledger.daysBetween(today(), firstPayday)
+                            val n = Ledger.instalmentsBetween(start, e.nextDue, resetDay)
+                            val monthlyAmt = e.monthly(resetDay)
+                            val subtitle = "Starts in $monthTitle (${prettyDate(firstPayday)}, in $daysToStart days) · $n mo split · Total: ${inr(e.amount)}"
+
+                            HomeCompactRow(
+                                title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
+                                subtitle = subtitle,
+                                amount = inr(monthlyAmt),
+                                amountColor = Pf.Muted,
+                                onClick = { vm.openEditEntry(e) }
+                            )
+                        }
+                        hasPrior = true
+                    }
+                }
+
+                // 2. CREDIT CARDS (DUES)
+                if (pendingCards.isNotEmpty()) {
                     if (hasPrior) HomeSectionDivider()
-                    val totalNextMonth = nextMonthSetAsides.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
-                    HomeListHeaderLabel("SET ASIDE ($nextMonthName) · ${inr(totalNextMonth)}/mo") {
-                        vm.accountsFilter = "Set Aside"
+                    HomeListHeaderLabel("CREDIT CARDS · ${inr(totalCardDues)}") {
+                        vm.accountsFilter = "Cards"
                         vm.tab = Tab.ACCOUNTS
                     }
-                    nextMonthSetAsides.forEachIndexed { idx, e ->
+                    pendingCards.forEachIndexed { idx, c ->
                         if (idx > 0) Hairline()
-                        val resetDay = vm.salaryResetDayFor(e.person)
-                        val start = if (e.startDate.isNotEmpty()) e.startDate else today()
-                        val firstPayday = Ledger.allPaydayDatesBetween(start, e.nextDue, resetDay).firstOrNull() ?: e.nextDue
-                        val daysToStart = Ledger.daysBetween(today(), firstPayday)
-                        val n = Ledger.instalmentsBetween(start, e.nextDue, resetDay)
-                        val monthlyAmt = e.monthly(resetDay)
-                        val subtitle = "Starts on ${prettyDate(firstPayday)} (in $daysToStart days) · $n mo split · Total: ${inr(e.amount)}"
+                        val cleanName = if (c.name.contains("••") && c.numberTail.isNotBlank()) {
+                            c.name.substringBefore("••").trim().ifEmpty { c.name }
+                        } else c.name
+                        val duePart = if (c.dueText.isNotBlank()) "Due: ${c.dueText}" else null
+                        val tailPart = if (c.numberTail.isNotBlank()) "••••${c.numberTail}" else null
+                        val ownerPart = if (c.owner == "Joint") "Joint" else null
+                        val subtitle = listOfNotNull(duePart, tailPart, ownerPart).joinToString(" · ").ifEmpty { "Credit Card" }
 
                         HomeCompactRow(
-                            title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
+                            title = "${idx + 1}. $cleanName",
                             subtitle = subtitle,
-                            amount = inr(monthlyAmt),
-                            amountColor = Pf.Muted,
-                            onClick = { vm.openEditEntry(e) }
+                            amount = inr(c.balance),
+                            amountColor = Pf.Text,
+                            onClick = { vm.startSettleCard(c.id) }
                         )
                     }
                     hasPrior = true
                 }
 
-                // 4c. MONTH AFTER NEXT SET ASIDE (Starts in 2 Months e.g. December)
-                if (monthAfterSetAsides.isNotEmpty()) {
+                // 3. RECURRING
+                if (pendingRecurring.isNotEmpty()) {
                     if (hasPrior) HomeSectionDivider()
-                    val totalMonthAfter = monthAfterSetAsides.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
-                    HomeListHeaderLabel("SET ASIDE ($monthAfterName) · ${inr(totalMonthAfter)}/mo") {
-                        vm.accountsFilter = "Set Aside"
+                    HomeListHeaderLabel("RECURRING · ${inr(totalRecurring)}/mo") {
+                        vm.accountsFilter = "Recurring"
                         vm.tab = Tab.ACCOUNTS
                     }
-                    monthAfterSetAsides.forEachIndexed { idx, e ->
+                    pendingRecurring.forEachIndexed { idx, e ->
                         if (idx > 0) Hairline()
-                        val resetDay = vm.salaryResetDayFor(e.person)
-                        val start = if (e.startDate.isNotEmpty()) e.startDate else today()
-                        val firstPayday = Ledger.allPaydayDatesBetween(start, e.nextDue, resetDay).firstOrNull() ?: e.nextDue
-                        val daysToStart = Ledger.daysBetween(today(), firstPayday)
-                        val n = Ledger.instalmentsBetween(start, e.nextDue, resetDay)
-                        val monthlyAmt = e.monthly(resetDay)
-                        val subtitle = "Starts in $monthAfterName (${prettyDate(firstPayday)}) · $n mo split · Total: ${inr(e.amount)}"
-
+                        val when_ = if (e.nextDue.isEmpty()) "" else " · due in ${Ledger.untilText(today(), e.nextDue)}"
+                        val subtitle = "${e.person} · ${e.category}$when_"
                         HomeCompactRow(
                             title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
                             subtitle = subtitle,
-                            amount = inr(monthlyAmt),
-                            amountColor = Pf.Muted,
-                            onClick = { vm.openEditEntry(e) }
+                            amount = inr(e.monthly),
+                            amountColor = Pf.Text,
+                            onClick = { vm.requestConfirm(e) }
+                        )
+                    }
+                    hasPrior = true
+                }
+
+                // 4. LOANS (Active this cycle)
+                if (pendingLoans.isNotEmpty()) {
+                    if (hasPrior) HomeSectionDivider()
+                    HomeListHeaderLabel("LOANS · ${inr(totalLoanEmis)}/mo") {
+                        vm.accountsFilter = "Loans"
+                        vm.tab = Tab.ACCOUNTS
+                    }
+                    pendingLoans.forEachIndexed { idx, l ->
+                        if (idx > 0) Hairline()
+                        val subtitle = "${l.remainingMonths} mo left · EMI ${inr(l.monthlyEmi)}"
+                        HomeCompactRow(
+                            title = "${idx + 1}. ${l.name}",
+                            subtitle = subtitle,
+                            amount = inr(l.monthlyEmi),
+                            amountColor = Pf.Text,
+                            onClick = { vm.confirmLoan(l) }
                         )
                     }
                     hasPrior = true
@@ -2230,6 +2199,21 @@ private fun LoansSection(vm: FinTrackViewModel) {
                                 value = vm.editLoanSourceName,
                                 options = vm.emiSourceOptions,
                                 onSelect = vm::setEditLoanSource
+                            )
+                            val payMonthOptions = vm.startPayMonthOptions
+                            val selectedStartMonthKey = vm.loanDraft.startMonth.ifEmpty { today().take(7) }
+                            val selectedStartMonthLabel = payMonthOptions.firstOrNull { it.key == selectedStartMonthKey }?.label
+                                ?: payMonthOptions.firstOrNull()?.label.orEmpty()
+                            PfSelect(
+                                label = "Start Pay Month",
+                                value = selectedStartMonthLabel,
+                                options = payMonthOptions.map { it.label },
+                                onSelect = { label ->
+                                    val opt = payMonthOptions.firstOrNull { it.label == label }
+                                    if (opt != null) {
+                                        vm.loanDraft = vm.loanDraft.copy(startMonth = opt.key)
+                                    }
+                                }
                             )
                             PfField(
                                 label = "Due day of month (1-31)",

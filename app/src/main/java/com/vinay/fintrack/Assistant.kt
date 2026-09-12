@@ -184,10 +184,14 @@ class Assistant(private val vm: FinTrackViewModel) {
             "add_loan" -> {
                 val total = a.int("total_months") ?: 0
                 val l = vm.addLoanDirect(
-                    a.str("name").orEmpty(), a.num("emi") ?: 0.0, total,
-                    a.int("remaining_months") ?: total,
-                    a.str("card").orEmpty(), a.str("account").orEmpty(),
-                    a.str("due_date").orEmpty()
+                    name = a.str("name").orEmpty(),
+                    emi = a.num("emi") ?: 0.0,
+                    total = total,
+                    remaining = a.int("remaining_months") ?: total,
+                    cardName = a.str("card").orEmpty(),
+                    accountName = a.str("account").orEmpty(),
+                    dueDate = a.str("due_date").orEmpty(),
+                    startMonth = a.str("start_month").orEmpty()
                 )
                 "Added to **Loans** (${l.person}): ${l.name}, EMI ${inr(l.monthlyEmi)}/mo (${l.remainingMonths} mo left) — ${vm.emiSourceLabel(l)}" +
                     (if (l.nextDue.isNotEmpty()) ", due ${prettyDate(l.nextDue)}" else "") + "."

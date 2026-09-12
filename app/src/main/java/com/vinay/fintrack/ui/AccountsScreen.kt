@@ -53,13 +53,15 @@ import com.vinay.fintrack.data.today
 fun AccountsScreen(vm: FinTrackViewModel) {
     val selectedFilter = vm.accountsFilter
 
+    val pastCount = vm.pastClosedLoans.size + vm.pastClosedSetAsides.size + vm.pastClosedRecurring.size
     val filterOptions = listOf(
         "All" to "All",
         "Banks" to "Banks (${vm.scopedAccounts.size})",
         "Cards" to "Cards (${vm.scopedCards.size})",
         "Loans" to "Loans (${vm.scopedLoans.filter { !vm.isLoanCleared(it) }.size})",
         "Recurring" to "Recurring (${vm.commitments.size})",
-        "Set Aside" to "Set Aside (${vm.annualSetAsides.size})"
+        "Set Aside" to "Set Aside (${vm.annualSetAsides.size})",
+        "Past" to "Past ($pastCount)"
     )
 
     LazyColumn(
@@ -147,6 +149,13 @@ fun AccountsScreen(vm: FinTrackViewModel) {
         if (selectedFilter == "All" || selectedFilter == "Set Aside") {
             item {
                 ManageSetAsidesSection(vm)
+            }
+        }
+
+        // 7. Past / Completed Payments Section
+        if (selectedFilter == "All" || selectedFilter == "Past") {
+            item {
+                ManagePastPaymentsSection(vm)
             }
         }
     }
@@ -533,6 +542,21 @@ private fun ManageLoansSection(vm: FinTrackViewModel) {
                                     options = vm.emiSourceOptions,
                                     onSelect = vm::setEditLoanSource
                                 )
+                                val payMonthOptions = vm.startPayMonthOptions
+                                val selectedStartMonthKey = vm.loanDraft.startMonth.ifEmpty { today().take(7) }
+                                val selectedStartMonthLabel = payMonthOptions.firstOrNull { it.key == selectedStartMonthKey }?.label
+                                    ?: payMonthOptions.firstOrNull()?.label.orEmpty()
+                                PfSelect(
+                                    label = "Start Pay Month",
+                                    value = selectedStartMonthLabel,
+                                    options = payMonthOptions.map { it.label },
+                                    onSelect = { label ->
+                                        val opt = payMonthOptions.firstOrNull { it.label == label }
+                                        if (opt != null) {
+                                            vm.loanDraft = vm.loanDraft.copy(startMonth = opt.key)
+                                        }
+                                    }
+                                )
                                 PfField(
                                     label = "Due Day of Month (1-31)",
                                     value = vm.loanDraft.dueText,
@@ -823,6 +847,199 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
                                         IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(28.dp)) {
                                             Icon(Icons.Default.Delete, "Delete", Modifier.size(15.dp), tint = Pf.Accent400)
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManagePastPaymentsSection(vm: FinTrackViewModel) {
+    val pastLoans = vm.pastClosedLoans
+    val pastSetAsides = vm.pastClosedSetAsides
+    val pastRecurring = vm.pastClosedRecurring
+    val totalPast = pastLoans.size + pastSetAsides.size + pastRecurring.size
+
+    var isExpanded by remember { mutableStateOf(false) }
+
+    Column {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(bottom = Space.s1),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                modifier = Modifier.weight(1f, fill = false)
+            ) {
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .background(Pf.Surface2, Radius.Sm),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Receipt,
+                        contentDescription = null,
+                        tint = Color(0xFF10B981),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Text(
+                    "Past / Completed Payments",
+                    color = Pf.Text,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Tag(
+                    "$totalPast completed",
+                    Color(0xFF10B981).copy(alpha = 0.15f),
+                    Color(0xFF10B981)
+                )
+            }
+            if (totalPast > 0) {
+                GhostButton(if (isExpanded) "Hide" else "Show", { isExpanded = !isExpanded })
+            }
+        }
+
+        if (totalPast == 0) {
+            PfCard(padding = PaddingValues(Space.s4)) {
+                Text(
+                    "No completed payments yet. When you pay off a loan or finish saving for a set-aside goal, it will appear here.",
+                    color = Pf.Muted,
+                    fontSize = 13.sp
+                )
+            }
+        } else if (isExpanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+                // 1. Paid off Loans
+                if (pastLoans.isNotEmpty()) {
+                    Text(
+                        "PAID OFF LOANS",
+                        color = Pf.Muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(top = Space.s2)
+                    )
+                    pastLoans.forEach { l ->
+                        PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f).padding(end = Space.s2)) {
+                                    Text(
+                                        l.name,
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    val personPart = if (l.person == "Joint") "Joint" else null
+                                    val tenurePart = "${l.totalMonths} of ${l.totalMonths} months paid (${inr(l.monthlyEmi)}/mo)"
+                                    val subtitle = listOfNotNull(tenurePart, personPart).joinToString(" · ")
+                                    Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(Space.s1)
+                                ) {
+                                    Tag("Paid off", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+                                    IconButton(onClick = { vm.deleteLoan(l.id) }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Default.Delete, "Delete", Modifier.size(15.dp), tint = Pf.Accent400)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. Completed Set Asides
+                if (pastSetAsides.isNotEmpty()) {
+                    Text(
+                        "COMPLETED SET ASIDES",
+                        color = Pf.Muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(top = Space.s2)
+                    )
+                    pastSetAsides.forEach { e ->
+                        PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f).padding(end = Space.s2)) {
+                                    Text(
+                                        e.note.ifEmpty { e.category },
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    val duePart = if (e.dueDate.isNotEmpty()) "Target: ${prettyDate(e.dueDate)}" else null
+                                    val subtitle = listOfNotNull("Total: ${inr(e.amount)}", duePart, e.person).joinToString(" · ")
+                                    Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(Space.s1)
+                                ) {
+                                    Tag("Completed", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+                                    SecondaryButton("Reopen", { vm.closeEntry(e.id, false) })
+                                    IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Default.Delete, "Delete", Modifier.size(15.dp), tint = Pf.Accent400)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 3. Inactive / Closed Recurring
+                if (pastRecurring.isNotEmpty()) {
+                    Text(
+                        "CLOSED RECURRING BILLS",
+                        color = Pf.Muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(top = Space.s2)
+                    )
+                    pastRecurring.forEach { e ->
+                        PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f).padding(end = Space.s2)) {
+                                    Text(
+                                        e.note.ifEmpty { e.category },
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text("${inr(e.amount)}/mo · ${e.person}", color = Pf.Muted, fontSize = 12.sp)
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(Space.s1)
+                                ) {
+                                    Tag("Inactive", Pf.Muted.copy(alpha = 0.2f), Pf.Muted)
+                                    SecondaryButton("Reactivate", { vm.closeEntry(e.id, false) })
+                                    IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Default.Delete, "Delete", Modifier.size(15.dp), tint = Pf.Accent400)
                                     }
                                 }
                             }

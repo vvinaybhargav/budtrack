@@ -188,6 +188,7 @@ object AssistantTools {
             ))
             put("account", str("Bank account the EMI is debited from, if not a card EMI."))
             put("due_date", str("The day the EMI comes out, as YYYY-MM-DD."))
+            put("start_month", str("Start pay month as YYYY-MM (e.g. '2026-12'). Defaults to current month."))
             required("name", "emi", "total_months")
         })
         add(tool("update_card", "Change a credit card's limit, balance, bill date or digits.") {

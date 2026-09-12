@@ -87,6 +87,8 @@ data class Loan(
      * owes; no bank balance moves until the card bill itself is settled.
      */
     val cardId: String = "",
+    val startMonth: String = "", // YYYY-MM
+    val startDate: String = "",  // YYYY-MM-DD
     /** The day the EMI comes out, as YYYY-MM-DD. Empty when it isn't known. */
     val dueDate: String = "",
     val dueDay: Int = 0,
@@ -96,6 +98,17 @@ data class Loan(
     val nextDue: String get() = Ledger.nextDue(dueDate, 1, today())
 
     val onCard: Boolean get() = cardId.isNotEmpty()
+
+    fun isStarted(todayIso: String = today(), resetDay: Int = 1): Boolean {
+        if (startMonth.isNotEmpty()) {
+            val currentCycle = Ledger.cycleOf(todayIso, resetDay)
+            return currentCycle >= startMonth
+        }
+        if (startDate.isNotEmpty()) {
+            return todayIso >= startDate
+        }
+        return true
+    }
 }
 
 /**

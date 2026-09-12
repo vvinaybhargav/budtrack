@@ -73,6 +73,8 @@ enum class HomeTab(val label: String) {
  *  imported onto that same card. */
 const val CARD_PAYMENT = Ledger.CARD_PAYMENT
 
+data class PayMonthOption(val key: String, val label: String)
+
 data class Draft(
     val person: String = "Me",
     val type: String = "EXPENSE",
@@ -83,6 +85,7 @@ data class Draft(
     val accountId: String = "",
     /** Months between payments, 1–12. Twelve is the old "annual". */
     val periodMonths: Int = 1,
+    val startMonth: String = "", // YYYY-MM
     val startDateText: String = "",
     /** When the bill is due, as the form takes it (dd-mm-yyyy). Optional. */
     val dueText: String = ""
@@ -102,6 +105,7 @@ data class NewLoanDraft(
     val accountId: String = "",
     /** Set instead of [accountId] when the EMI is billed to a credit card. */
     val cardId: String = "",
+    val startMonth: String = "", // YYYY-MM
     /** The day the EMI comes out, as the form takes it (dd-mm-yyyy). */
     val dueText: String = ""
 )
@@ -868,31 +872,61 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      *  out of it. */
     fun setAsidePot(e: Entry): Double = Ledger.setAsidePot(persisted.txns, e.id)
 
-    fun setAsideMonthBucket(e: Entry): Int {
-        // 0 = Current cycle / month, 1 = Next month, 2 = Month after next, 3+ = Later
+    val startPayMonthOptions: List<PayMonthOption>
+        get() {
+            val currentIso = today()
+            return (0..23).map { offset ->
+                val d = Ledger.addMonths(currentIso, offset)
+                val key = d.take(7) // "YYYY-MM"
+                val monthName = Ledger.fullMonthName(d)
+                val year = d.take(4)
+                val label = when (offset) {
+                    0 -> "Current Month ($monthName $year)"
+                    1 -> "Next Month ($monthName $year)"
+                    else -> "$monthName $year"
+                }
+                PayMonthOption(key, label)
+            }
+        }
+
+    fun firstPaydayOf(e: Entry): String {
         val resetDay = salaryResetDayFor(e.person)
-        val nextPayday = Ledger.nextSalaryDate(today(), resetDay)
         val start = if (e.startDate.isNotEmpty()) e.startDate else today()
         val due = if (e.dueDate.isNotEmpty()) e.dueDate else e.nextDue
-        
         val paydays = Ledger.allPaydayDatesBetween(start, due, resetDay)
-        if (paydays.isEmpty()) return 0
-        
-        val firstPayday = paydays.first()
-        if (firstPayday <= nextPayday) return 0
-        
-        val nextPayday2 = Ledger.nextSalaryDate(Ledger.addMonths(nextPayday, 1), resetDay)
-        if (firstPayday <= nextPayday2) return 1
-        
-        val nextPayday3 = Ledger.nextSalaryDate(Ledger.addMonths(nextPayday, 2), resetDay)
-        if (firstPayday <= nextPayday3) return 2
-        
-        return 3
+        return paydays.firstOrNull() ?: start.ifEmpty { due }
     }
 
     fun isSetAsideActiveThisMonth(e: Entry): Boolean {
         if (e.closed || !e.isSetAside) return false
-        return setAsideMonthBucket(e) == 0
+        val resetDay = salaryResetDayFor(e.person)
+        val nextPayday = Ledger.nextSalaryDate(today(), resetDay)
+        val firstPay = firstPaydayOf(e)
+        return firstPay <= nextPayday
+    }
+
+    fun futureSetAsidesGrouped(): Map<String, List<Entry>> {
+        val future = annualSetAsides.filter { !isSetAsideActiveThisMonth(it) && !it.closed }
+        return future.groupBy { e ->
+            val firstPay = firstPaydayOf(e)
+            firstPay.take(7)
+        }.toSortedMap()
+    }
+
+    fun setAsideMonthBucket(e: Entry): Int {
+        // 0 = Current cycle / month, 1 = Next month, 2 = Month after next, 3+ = Later
+        val resetDay = salaryResetDayFor(e.person)
+        val nextPayday = Ledger.nextSalaryDate(today(), resetDay)
+        val firstPay = firstPaydayOf(e)
+        if (firstPay <= nextPayday) return 0
+        
+        val nextPayday2 = Ledger.nextSalaryDate(Ledger.addMonths(nextPayday, 1), resetDay)
+        if (firstPay <= nextPayday2) return 1
+        
+        val nextPayday3 = Ledger.nextSalaryDate(Ledger.addMonths(nextPayday, 2), resetDay)
+        if (firstPay <= nextPayday3) return 2
+        
+        return 3
     }
 
     /**
@@ -953,6 +987,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Paid off: the last EMI has gone and there is nothing left to confirm. */
     fun isLoanCleared(l: Loan): Boolean = l.remainingMonths <= 0
+
+    fun isLoanActiveThisMonth(l: Loan): Boolean {
+        if (isLoanCleared(l)) return false
+        val resetDay = salaryResetDayFor(l.person)
+        return l.isStarted(today(), resetDay)
+    }
 
     /** Where the money was actually put by, so the bill leaves the same place
      *  rather than the account the entry nominally belongs to. */
@@ -1175,6 +1215,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         addKind = if (e.isSetAside) "SET_ASIDE" else if (e.type == "SAVINGS") "INVESTMENT" else "RECURRING"
         val startFormatted = if (e.startDate.isNotEmpty()) dayFirstOf(e.startDate) else todayDayFirst()
         val dueFormatted = if (e.dueDate.isNotEmpty()) dayFirstOf(e.dueDate) else ""
+        val startMonthKey = if (e.startDate.isNotEmpty()) e.startDate.take(7) else today().take(7)
         draft = Draft(
             person = e.person,
             type = e.type,
@@ -1184,6 +1225,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             note = e.note,
             accountId = e.accountId,
             periodMonths = e.everyMonths,
+            startMonth = startMonthKey,
             startDateText = startFormatted,
             dueText = dueFormatted
         )
@@ -1205,10 +1247,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val p = scopePerson
         when (k) {
             "RECURRING" -> draft = Draft(person = p, type = "EXPENSE", frequency = "MONTHLY", periodMonths = 1)
-            "SET_ASIDE" -> draft = Draft(person = p, type = "EXPENSE", frequency = "ANNUAL", periodMonths = 12, startDateText = todayDayFirst())
+            "SET_ASIDE" -> draft = Draft(person = p, type = "EXPENSE", frequency = "ANNUAL", periodMonths = 12, startMonth = today().take(7), startDateText = todayDayFirst())
             "INVESTMENT" -> draft = Draft(person = p, type = "SAVINGS", category = "LIC", frequency = "MONTHLY")
             "ONE_TIME" -> draft = Draft(person = p, type = "EXPENSE", frequency = "ONE_TIME")
-            "EMI_LOAN" -> newLoanDraft = NewLoanDraft(person = p)
+            "EMI_LOAN" -> newLoanDraft = NewLoanDraft(person = p, startMonth = today().take(7))
             "BANK_ACCOUNT" -> newAccountDraft = NewAccountDraft(owner = p)
             "CREDIT_CARD" -> newCardDraft = NewCardDraft(owner = p)
         }
@@ -1306,6 +1348,11 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * every month, and never appeared in Transactions at all.
      */
     val draftStartDateIso: String get() {
+        if (draft.startMonth.isNotBlank()) {
+            val resetDay = salaryResetDayFor(draft.person)
+            val dayStr = resetDay.coerceIn(1, 28).toString().padStart(2, '0')
+            return "${draft.startMonth}-$dayStr"
+        }
         if (draft.startDateText.isBlank()) return today()
         val parsed = isoFromDayFirst(draft.startDateText)
         if (parsed != null) return parsed
@@ -1413,7 +1460,15 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val editingId = editingEntryId
-        val startIso = if (draft.startDateText.isNotBlank()) draftStartDateIso else today()
+        val startIso = if (draft.startMonth.isNotBlank()) {
+            val resetDay = salaryResetDayFor(draft.person)
+            val dayStr = resetDay.coerceIn(1, 28).toString().padStart(2, '0')
+            "${draft.startMonth}-$dayStr"
+        } else if (draft.startDateText.isNotBlank()) {
+            draftStartDateIso
+        } else {
+            today()
+        }
         update { s ->
             val entry = Entry(
                 id = editingId ?: newId("e"),
@@ -1489,6 +1544,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val onCard = newLoanDraft.cardId.isNotEmpty()
         val dueDay = newLoanDraft.dueText.toIntOrNull() ?: 0
         val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
+        val startMonth = newLoanDraft.startMonth.ifEmpty { today().take(7) }
+        val startDay = (dueDay.takeIf { it in 1..28 } ?: salaryResetDayFor(newLoanDraft.person)).toString().padStart(2, '0')
+        val startDate = "$startMonth-$startDay"
         update { s ->
             s.copy(
                 loans = s.loans + Loan(
@@ -1501,6 +1559,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     accountId = if (onCard) "" else
                         newLoanDraft.accountId.ifEmpty { accountIdByName(defaultAccount) },
                     cardId = newLoanDraft.cardId,
+                    startMonth = startMonth,
+                    startDate = startDate,
                     dueDate = resolvedDueDate,
                     dueDay = dueDay,
                     lastProcessedMonth = ""
@@ -1857,6 +1917,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             remainingMonthsText = l.remainingMonths.toString(),
             accountId = l.accountId,
             cardId = l.cardId,
+            startMonth = l.startMonth.ifEmpty { if (l.startDate.isNotEmpty()) l.startDate.take(7) else today().take(7) },
             dueText = if (l.dueDay > 0) l.dueDay.toString() else ""
         )
     }
@@ -1867,6 +1928,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val id = editingLoanId ?: return
         val dueDay = loanDraft.dueText.toIntOrNull() ?: 0
         val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
+        val startMonth = loanDraft.startMonth.ifEmpty { today().take(7) }
+        val startDay = (dueDay.takeIf { it in 1..28 } ?: salaryResetDayFor(loanDraft.person)).toString().padStart(2, '0')
+        val startDate = "$startMonth-$startDay"
         update { s ->
             s.copy(loans = s.loans.map {
                 if (it.id == id) it.copy(
@@ -1876,6 +1940,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     remainingMonths = loanDraft.remainingMonthsText.toIntOrNull() ?: 0,
                     accountId = if (loanDraft.cardId.isNotEmpty()) "" else loanDraft.accountId,
                     cardId = loanDraft.cardId,
+                    startMonth = startMonth,
+                    startDate = startDate,
                     dueDate = resolvedDueDate,
                     dueDay = dueDay
                 ) else it
@@ -2198,7 +2264,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         annualSetAsidesFor(view).filter { isSetAsideActiveThisMonth(it) }.sumOf { it.monthly }
 
     fun plannedLoansFor(view: String): Double =
-        scopedLoansFor(view).sumOf { it.monthlyEmi }
+        scopedLoansFor(view).filter { isLoanActiveThisMonth(it) }.sumOf { it.monthlyEmi }
 
     fun annualSetAsidesFor(view: String): List<Entry> =
         scopedEntriesFor(view).filter { it.isSetAside && it.category != "Salary" }
@@ -2434,6 +2500,15 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
      * is waiting when the yearly bill actually lands.
      */
     val annualSetAsides: List<Entry> get() = annualSetAsidesFor(bucketView)
+
+    val pastClosedSetAsides: List<Entry>
+        get() = scopedEntries.filter { it.isSetAside && it.closed }
+
+    val pastClosedLoans: List<Loan>
+        get() = scopedLoans.filter { isLoanCleared(it) }
+
+    val pastClosedRecurring: List<Entry>
+        get() = scopedEntries.filter { !it.isSetAside && it.closed }
 
     val annualSetAsideMonthly: Double get() = plannedSetAsideFor(bucketView)
 
@@ -3952,7 +4027,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         remaining: Int,
         cardName: String = "",
         accountName: String = "",
-        dueDate: String = ""
+        dueDate: String = "",
+        startMonth: String = "",
+        startDate: String = ""
     ): Loan {
         val person = activeProfile ?: "Me"
         // A named card wins: it is the more specific thing to have said, and a
@@ -3961,6 +4038,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             ?: cards.firstOrNull { cardName.isNotBlank() && it.name.contains(cardName, true) }
         val account = accounts.firstOrNull { it.name.equals(accountName, true) }
             ?: accounts.firstOrNull { accountName.isNotBlank() && it.name.contains(accountName, true) }
+        val sMonth = startMonth.ifEmpty { today().take(7) }
+        val sDate = startDate.ifEmpty { "$sMonth-${salaryResetDayFor(person).toString().padStart(2, '0')}" }
         val l = Loan(
             id = newId("l"),
             name = name,
@@ -3970,6 +4049,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             remainingMonths = remaining.coerceIn(0, total),
             accountId = if (card != null) "" else (account?.id ?: defaultAccountFor(person, "JOINT")),
             cardId = card?.id.orEmpty(),
+            startMonth = sMonth,
+            startDate = sDate,
             dueDate = dueDate
         )
         update { s -> s.copy(loans = s.loans + l) }

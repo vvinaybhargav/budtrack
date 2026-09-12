@@ -292,6 +292,21 @@ private fun LoanForm(vm: FinTrackViewModel) {
         // Accounts and cards together: a card EMI is a purchase split into
         // instalments, which is the same arrangement paid to a different place.
         PfSelect("Paid from", vm.newLoanSourceName, vm.emiSourceOptions, vm::setLoanSource)
+        val payMonthOptions = vm.startPayMonthOptions
+        val selectedStartMonthKey = vm.newLoanDraft.startMonth.ifEmpty { today().take(7) }
+        val selectedStartMonthLabel = payMonthOptions.firstOrNull { it.key == selectedStartMonthKey }?.label
+            ?: payMonthOptions.firstOrNull()?.label.orEmpty()
+        PfSelect(
+            label = "Start Pay Month",
+            value = selectedStartMonthLabel,
+            options = payMonthOptions.map { it.label },
+            onSelect = { label ->
+                val opt = payMonthOptions.firstOrNull { it.label == label }
+                if (opt != null) {
+                    vm.newLoanDraft = vm.newLoanDraft.copy(startMonth = opt.key)
+                }
+            }
+        )
         PfField(
             "Due day of month (1-31)",
             vm.newLoanDraft.dueText,
@@ -709,48 +724,42 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             )
         }
 
-        val isSetAsideKind = vm.addKind == "SET_ASIDE" || (isEditing && (vm.draft.type == "SAVINGS" || vm.draft.dueText.isNotEmpty() || vm.draft.startDateText.isNotEmpty() || vm.draft.periodMonths > 1 || vm.draft.frequency == "ANNUAL"))
+        val isSetAsideKind = vm.addKind == "SET_ASIDE" || (isEditing && (vm.draft.type == "SAVINGS" || vm.draft.dueText.isNotEmpty() || vm.draft.startDateText.isNotEmpty() || vm.draft.startMonth.isNotEmpty() || vm.draft.periodMonths > 1 || vm.draft.frequency == "ANNUAL"))
 
         if (isSetAsideKind) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Space.s3)
-            ) {
-                PfField(
-                    label = "Start Date",
-                    value = vm.draft.startDateText.ifEmpty { vm.todayDayFirstText },
-                    onValueChange = { vm.draft = vm.draft.copy(startDateText = it) },
-                    placeholder = "dd-mm-yyyy",
-                    numeric = false,
-                    modifier = Modifier.weight(1f),
-                    trailingIcon = {
-                        IconButton(onClick = { startDatePickerDialog.show() }) {
-                            Icon(
-                                imageVector = Icons.Default.DateRange,
-                                contentDescription = "Start Date",
-                                tint = Pf.Accent400
-                            )
-                        }
+            val payMonthOptions = vm.startPayMonthOptions
+            val selectedStartMonthKey = vm.draft.startMonth.ifEmpty { today().take(7) }
+            val selectedStartMonthLabel = payMonthOptions.firstOrNull { it.key == selectedStartMonthKey }?.label
+                ?: payMonthOptions.firstOrNull()?.label.orEmpty()
+
+            PfSelect(
+                label = "Start Pay Month",
+                value = selectedStartMonthLabel,
+                options = payMonthOptions.map { it.label },
+                onSelect = { label ->
+                    val opt = payMonthOptions.firstOrNull { it.label == label }
+                    if (opt != null) {
+                        vm.draft = vm.draft.copy(startMonth = opt.key)
                     }
-                )
-                PfField(
-                    label = "Target / End Date",
-                    value = vm.draft.dueText,
-                    onValueChange = { vm.draft = vm.draft.copy(dueText = it) },
-                    placeholder = "dd-mm-yyyy",
-                    numeric = false,
-                    modifier = Modifier.weight(1f),
-                    trailingIcon = {
-                        IconButton(onClick = { dueDatePickerDialog.show() }) {
-                            Icon(
-                                imageVector = Icons.Default.DateRange,
-                                contentDescription = "End Date",
-                                tint = Pf.Accent400
-                            )
-                        }
+                }
+            )
+
+            PfField(
+                label = "Target / End Date",
+                value = vm.draft.dueText,
+                onValueChange = { vm.draft = vm.draft.copy(dueText = it) },
+                placeholder = "dd-mm-yyyy",
+                numeric = false,
+                trailingIcon = {
+                    IconButton(onClick = { dueDatePickerDialog.show() }) {
+                        Icon(
+                            imageVector = Icons.Default.DateRange,
+                            contentDescription = "End Date",
+                            tint = Pf.Accent400
+                        )
                     }
-                )
-            }
+                }
+            )
 
             val resetDay = vm.salaryResetDayFor(vm.draft.person)
             val paydaysList = vm.draftPaydaysList
@@ -804,7 +813,7 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
                     }
                 }
             } else {
-                Muted("Pick start & end dates. The amount splits equally across the paydays (${resetDay}th of each month) between them.")
+                Muted("Select start pay month and target end date. The amount splits equally across the paydays (${resetDay}th of each month) between them.")
             }
         } else {
             PfField(
