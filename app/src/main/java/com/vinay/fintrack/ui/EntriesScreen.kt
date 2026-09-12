@@ -532,6 +532,7 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         if (t.source == "sms") OutlineTag("SMS")
+                                        if (t.kind == "REFUND") OutlineTag("Refund")
                                     }
                                     Spacer(Modifier.height(2.dp))
                                     Muted(
@@ -544,10 +545,13 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                                     Text(
                                         when (t.kind) {
                                             "INCOME" -> "+${inr(t.amount)}"
+                                            "REFUND" -> "+${inr(t.amount)}"
                                             "TRANSFER" -> "↔ ${inr(t.amount)}"
                                             else -> "−${inr(t.amount)}"
                                         },
                                         color = when (t.kind) {
+                                            "INCOME" -> Color(0xFF10B981)
+                                            "REFUND" -> Color(0xFF10B981)
                                             "TRANSFER" -> Pf.Muted
                                             else -> Pf.Text
                                         },

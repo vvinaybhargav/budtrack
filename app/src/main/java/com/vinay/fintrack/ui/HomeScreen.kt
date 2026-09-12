@@ -83,14 +83,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
     val futureSetAsidesMap = vm.futureSetAsidesGrouped()
 
     val otherExpenses = totalCardDues + totalLoanEmis + totalRecurring + totalSetAsidePending
-    val upcomingSalary = vm.scopedUpcomingSalary
-    val netBalance = totalBankBalances - otherExpenses + upcomingSalary
-
-    val nextMonthOutlook = vm.outlook(1).firstOrNull()
-    val nextMonthLabel = nextMonthOutlook?.label ?: ""
-    val nextMonthSalary = nextMonthOutlook?.income ?: 0.0
-    val nextMonthExpenses = nextMonthOutlook?.out ?: 0.0
-    val nextMonthLeft = nextMonthOutlook?.left ?: (nextMonthSalary - nextMonthExpenses)
+    val netBalance = totalBankBalances - otherExpenses
 
     LazyColumn(
         Modifier.fillMaxWidth(),
@@ -103,17 +96,12 @@ fun HomeScreen(vm: FinTrackViewModel) {
         // Alert if SMS transactions need account link
         item { UnmatchedAccountAlert(vm) }
 
-        // 2. HERO CARD: Net balance (Bank Balances - Other Expenses + Salary)
+        // 2. HERO CARD: Current Month Net Balance (Bank Balances - Current Month Expenses)
         item {
             AfterAllExpensesCard(
                 netBalance = netBalance,
                 bankBalances = totalBankBalances,
                 otherExpenses = otherExpenses,
-                salary = upcomingSalary,
-                nextMonthLabel = nextMonthLabel,
-                nextMonthSalary = nextMonthSalary,
-                nextMonthExpenses = nextMonthExpenses,
-                nextMonthLeft = nextMonthLeft,
                 balanceHidden = vm.balanceHidden,
                 onToggleVisibility = vm::toggleBalanceVisible,
                 onBankBalancesClick = {
@@ -309,6 +297,11 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     }
                 }
             }
+        }
+
+        // 4. UPCOMING 3 MONTHS FORECAST (Cash Flow Projection)
+        item {
+            Upcoming3MonthsSection(vm)
         }
     }
 
@@ -535,11 +528,6 @@ private fun AfterAllExpensesCard(
     netBalance: Double,
     bankBalances: Double,
     otherExpenses: Double,
-    salary: Double,
-    nextMonthLabel: String = "",
-    nextMonthSalary: Double = 0.0,
-    nextMonthExpenses: Double = 0.0,
-    nextMonthLeft: Double = 0.0,
     balanceHidden: Boolean,
     onToggleVisibility: () -> Unit,
     onBankBalancesClick: (() -> Unit)? = null,
@@ -562,7 +550,7 @@ private fun AfterAllExpensesCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                if (salary > 0.0) "NET BALANCE (INCL. SALARY)" else "AFTER ALL EXPENSES",
+                "CURRENT MONTH NET (AFTER EXPENSES)",
                 color = Color(0xFF9CA3AF),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
@@ -620,17 +608,17 @@ private fun AfterAllExpensesCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Text("—", color = Color(0xFF9CA3AF), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 2.dp))
+            Text("—", color = Color(0xFF9CA3AF), fontSize = 13.sp, modifier = Modifier.padding(horizontal = Space.s2))
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .clip(Radius.Sm)
                     .then(if (onExpensesClick != null) Modifier.clickable { onExpensesClick() } else Modifier)
                     .padding(vertical = 2.dp),
-                horizontalAlignment = if (salary > 0.0) Alignment.CenterHorizontally else Alignment.End
+                horizontalAlignment = Alignment.End
             ) {
                 Text(
-                    "Expenses ↗",
+                    "Pending Expenses ↗",
                     color = Color(0xFF9CA3AF),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium,
@@ -646,78 +634,186 @@ private fun AfterAllExpensesCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            if (salary > 0.0) {
-                Text("+", color = Color(0xFF9CA3AF), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 2.dp))
-                Column(
-                    modifier = Modifier.weight(1f).padding(vertical = 2.dp),
-                    horizontalAlignment = Alignment.End
-                ) {
-                    Text(
-                        "Upcoming Salary",
-                        color = Color(0xFF9CA3AF),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        if (balanceHidden) "••••••" else inr(salary),
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
+        }
+    }
+}
+
+@Composable
+private fun Upcoming3MonthsSection(vm: FinTrackViewModel) {
+    val outlookMonths = vm.outlook(3)
+    if (outlookMonths.isEmpty()) return
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = Space.s2),
+        verticalArrangement = Arrangement.spacedBy(Space.s3)
+    ) {
+        Column {
+            Text(
+                "Upcoming 3 Months Outlook",
+                color = Pf.Text,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(2.dp))
+            Muted("Projected monthly cash flow from salary and fixed commitments", size = 11)
         }
 
-        if (nextMonthSalary > 0.0 || nextMonthExpenses > 0.0) {
-            Spacer(Modifier.height(Space.s2))
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .background(Color.White.copy(alpha = 0.07f), Radius.Sm)
-                    .padding(horizontal = Space.s3, vertical = 7.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        outlookMonths.forEachIndexed { idx, month ->
+            PfCard(
+                modifier = Modifier.fillMaxWidth(),
+                padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
+                shape = Radius.Lg
             ) {
-                Column(
-                    modifier = Modifier.weight(1f).padding(end = Space.s2),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Text(
-                        "NEXT MONTH${if (nextMonthLabel.isNotBlank()) " ($nextMonthLabel)" else ""}",
-                        color = Color(0xFF9CA3AF),
-                        fontSize = 9.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp
-                    )
-                    Text(
-                        "Salary ${if (balanceHidden) "••••••" else inr(nextMonthSalary)} — Expenses ${if (balanceHidden) "••••••" else inr(nextMonthExpenses)}",
-                        color = Color(0xFFE5E7EB),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Box(
-                    Modifier
-                        .background(
-                            if (nextMonthLeft >= 0.0) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFEF4444).copy(alpha = 0.15f),
-                            Radius.Pill
+                Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+                    // Header: Month label + Net Leftover
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(28.dp)
+                                    .background(Pf.Accent.copy(alpha = 0.15f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "${idx + 1}",
+                                    color = Pf.Accent400,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Column {
+                                Text(
+                                    month.label,
+                                    color = Pf.Text,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (month.loanEnding.isNotEmpty()) {
+                                    Text(
+                                        "🎉 ${month.loanEnding} ends this month!",
+                                        color = Color(0xFF10B981),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            val isSurplus = month.left >= 0.0
+                            Text(
+                                if (vm.balanceHidden) "••••••" else if (isSurplus) "+${inr(month.left)}" else "-${inr(Math.abs(month.left))}",
+                                color = if (isSurplus) Color(0xFF10B981) else Color(0xFFEF4444),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Muted("Projected Leftover", size = 10)
+                        }
+                    }
+
+                    Hairline()
+
+                    // Breakdown Rows: Salary, Loans, Set Asides, Recurring
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(6.dp).background(Color(0xFF10B981), CircleShape))
+                            Muted("Expected Salary", size = 12)
+                        }
+                        Text(
+                            if (vm.balanceHidden) "••••••" else "+${inr(month.income)}",
+                            color = Color(0xFF10B981),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        if (balanceHidden) "••••••" else "${if (nextMonthLeft >= 0.0) "+" else ""}${inr(nextMonthLeft)} left",
-                        color = if (nextMonthLeft >= 0.0) Color(0xFF34D399) else Color(0xFFF87171),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        softWrap = false
-                    )
+                    }
+
+                    if (month.loans > 0.0) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(6.dp).background(Color(0xFFFFA726), CircleShape))
+                                Muted("Active Loans / EMIs", size = 12)
+                            }
+                            Text(
+                                if (vm.balanceHidden) "••••••" else "−${inr(month.loans)}",
+                                color = Pf.Text,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    if (month.setAside > 0.0) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(6.dp).background(Pf.Accent400, CircleShape))
+                                Muted("Set Asides (Sinking Funds)", size = 12)
+                            }
+                            Text(
+                                if (vm.balanceHidden) "••••••" else "−${inr(month.setAside)}",
+                                color = Pf.Text,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    if (month.recurring > 0.0) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(6.dp).background(Pf.Muted, CircleShape))
+                                Muted("Recurring Bills", size = 12)
+                            }
+                            Text(
+                                if (vm.balanceHidden) "••••••" else "−${inr(month.recurring)}",
+                                color = Pf.Text,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    // Total Outflows Footer
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(Pf.Surface2, Radius.Sm)
+                            .padding(horizontal = Space.s2, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Muted("Total Planned Outflows", size = 11)
+                        Text(
+                            if (vm.balanceHidden) "••••••" else "−${inr(month.out)}",
+                            color = Pf.Muted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }

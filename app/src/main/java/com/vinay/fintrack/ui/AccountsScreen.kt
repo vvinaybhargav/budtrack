@@ -49,6 +49,9 @@ import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.today
 
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Tune
+
 @Composable
 fun AccountsScreen(vm: FinTrackViewModel) {
     val selectedFilter = vm.accountsFilter
@@ -157,6 +160,11 @@ fun AccountsScreen(vm: FinTrackViewModel) {
             item {
                 ManagePastPaymentsSection(vm)
             }
+        }
+
+        // 8. Incomplete Setup / Missing Details Health Check (at the end of accounts page)
+        item {
+            IncompleteSetupSection(vm)
         }
     }
 
@@ -1042,6 +1050,137 @@ private fun ManagePastPaymentsSection(vm: FinTrackViewModel) {
                                         Icon(Icons.Default.Delete, "Delete", Modifier.size(15.dp), tint = Pf.Accent400)
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IncompleteSetupSection(vm: FinTrackViewModel) {
+    val missingItems = vm.missingSetupItems
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = Space.s2),
+        verticalArrangement = Arrangement.spacedBy(Space.s3)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .background(
+                            if (missingItems.isNotEmpty()) Color(0xFFFFA726).copy(alpha = 0.15f) else Color(0xFF10B981).copy(alpha = 0.15f),
+                            Radius.Sm
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (missingItems.isNotEmpty()) Icons.Default.Tune else Icons.Default.CheckCircle,
+                        null,
+                        Modifier.size(15.dp),
+                        tint = if (missingItems.isNotEmpty()) Color(0xFFFFA726) else Color(0xFF10B981)
+                    )
+                }
+                Text(
+                    "Setup Health & Missing Details",
+                    color = Pf.Text,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            if (missingItems.isNotEmpty()) {
+                Tag("${missingItems.size} Need Attention", Color(0xFFFFA726).copy(alpha = 0.2f), Color(0xFFFFA726))
+            }
+        }
+
+        if (missingItems.isEmpty()) {
+            PfCard(
+                modifier = Modifier.fillMaxWidth(),
+                padding = PaddingValues(Space.s4),
+                shape = Radius.Md
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.s3)
+                ) {
+                    Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
+                    Column {
+                        Text("All Setup Complete! ✓", color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Muted("All bank digits, card limits, due dates, and loans are fully configured for auto-tracking.", size = 11)
+                    }
+                }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+                missingItems.forEach { item ->
+                    PfCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                when (item.entityType) {
+                                    "Account" -> vm.editAccountById(item.entityId)
+                                    "Card" -> vm.editCardById(item.entityId)
+                                    "Loan" -> vm.editLoanById(item.entityId)
+                                    else -> vm.editEntryById(item.entityId)
+                                }
+                            },
+                        padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
+                        shape = Radius.Md
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f).padding(end = Space.s2)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    OutlineTag(item.entityType)
+                                    Text(
+                                        item.name,
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                item.missingFields.forEach { msg ->
+                                    Text(
+                                        "• $msg",
+                                        color = Color(0xFFFFA726),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    "Fix →",
+                                    color = Pf.Accent400,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }

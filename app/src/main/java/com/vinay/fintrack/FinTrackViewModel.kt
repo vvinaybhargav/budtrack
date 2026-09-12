@@ -2389,8 +2389,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val loans: Double,
         val setAside: Double,
         val income: Double,
+        val dateIso: String = "",
         /** A loan that makes its last payment this month, worth seeing coming. */
-        val loanEnding: String
+        val loanEnding: String = ""
     ) {
         val out: Double get() = Ledger.paise(recurring + loans + setAside)
         val left: Double get() = Ledger.paise(income - out)
@@ -2399,15 +2400,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * The months ahead, from what is already known.
      *
-     * Recurring bills, EMIs and set-asides are the parts of a month you can
-     * actually see coming, and none of them stays still: a set-aside's share
-     * climbs as its due date nears and drops back once paid, and an EMI stops
-     * altogether when the loan runs out. Spending is left out — an average of
-     * past months would look like a forecast without being one.
+     * Displays accurate projection for the upcoming months based on configured
+     * salaries (including monthly overrides), active loans, set-asides and recurring bills.
      */
-    fun outlook(months: Int = 6): List<OutlookMonth> = (1..months).map { ahead ->
+    fun outlook(months: Int = 3): List<OutlookMonth> = (1..months).map { ahead ->
         val person = activeProfile.orEmpty()
-        val on = upcomingPaydayDate(person, ahead + 1)
+        val on = upcomingPaydayDate(person, ahead)
         val onYm = on.take(7)
 
         val setAside = annualSetAsides.sumOf { e ->
@@ -2425,15 +2423,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        // Still paying only while instalments remain: an EMI that ends in March
-        // must not go on being subtracted in April.
-        val running = scopedLoans.filter { it.remainingMonths > ahead && it.isStarted(on, salaryResetDayFor(it.person, on)) }
+        val running = scopedLoans.filter { it.remainingMonths >= ahead && it.isStarted(on, salaryResetDayFor(it.person, on)) }
         val ending = scopedLoans.firstOrNull { it.remainingMonths == ahead && it.isStarted(on, salaryResetDayFor(it.person, on)) }
 
         val income = if (bucketView == "JOINT") {
-            profileNames.sumOf { upcomingSalaryFor(it, ahead + 1) }
+            profileNames.sumOf { upcomingSalaryFor(it, ahead) }
         } else {
-            upcomingSalaryFor(person, ahead + 1)
+            upcomingSalaryFor(person, ahead)
         }
 
         OutlookMonth(
@@ -2442,8 +2438,111 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             loans = Ledger.paise(running.sumOf { it.monthlyEmi }),
             setAside = Ledger.paise(setAside),
             income = income,
+            dateIso = on,
             loanEnding = ending?.name.orEmpty()
         )
+    }
+
+    val missingSetupItems: List<MissingConfigItem>
+        get() {
+            val list = mutableListOf<MissingConfigItem>()
+
+            // 1. Bank Accounts
+            scopedAccounts.forEach { a ->
+                val missing = mutableListOf<String>()
+                if (a.numberTail.isBlank()) {
+                    missing.add("Last 3-4 digits missing (needed for SMS auto-matching)")
+                }
+                if (missing.isNotEmpty()) {
+                    list.add(MissingConfigItem("Account", a.id, a.name, missing))
+                }
+            }
+
+            // 2. Credit Cards
+            scopedCards.forEach { c ->
+                val missing = mutableListOf<String>()
+                if (c.numberTail.isBlank()) {
+                    missing.add("Last 4 digits missing (needed for SMS auto-matching)")
+                }
+                if (c.limit <= 0.0) {
+                    missing.add("Credit limit not set")
+                }
+                if (c.paymentDueDay <= 0 && c.billingCycle <= 0) {
+                    missing.add("Payment due day or billing cycle not set")
+                }
+                if (missing.isNotEmpty()) {
+                    list.add(MissingConfigItem("Card", c.id, c.name, missing))
+                }
+            }
+
+            // 3. Loans
+            scopedLoans.filter { !isLoanCleared(it) }.forEach { l ->
+                val missing = mutableListOf<String>()
+                if (l.monthlyEmi <= 0.0) {
+                    missing.add("Monthly EMI amount not set")
+                }
+                if (l.totalMonths <= 0) {
+                    missing.add("Tenor / Total months missing")
+                }
+                if (l.remainingMonths <= 0) {
+                    missing.add("Remaining months missing")
+                }
+                if (l.accountId.isBlank() && l.cardId.isBlank()) {
+                    missing.add("Payment source account/card not selected")
+                }
+                if (missing.isNotEmpty()) {
+                    list.add(MissingConfigItem("Loan", l.id, l.name, missing))
+                }
+            }
+
+            // 4. Recurring Commitments
+            commitments.forEach { e ->
+                val missing = mutableListOf<String>()
+                if (e.amount <= 0.0) {
+                    missing.add("Bill amount not set")
+                }
+                if (e.accountId.isBlank()) {
+                    missing.add("Payment account not selected")
+                }
+                if (missing.isNotEmpty()) {
+                    list.add(MissingConfigItem("Recurring", e.id, e.category.ifEmpty { "Recurring Bill" }, missing))
+                }
+            }
+
+            // 5. Set Asides / Sinking Funds
+            annualSetAsides.forEach { e ->
+                val missing = mutableListOf<String>()
+                if (e.amount <= 0.0) {
+                    missing.add("Target amount not set")
+                }
+                if (e.dueDate.isBlank()) {
+                    missing.add("Target due date not set")
+                }
+                if (e.accountId.isBlank()) {
+                    missing.add("Account not selected")
+                }
+                if (missing.isNotEmpty()) {
+                    list.add(MissingConfigItem("Set Aside", e.id, e.category.ifEmpty { "Sinking Fund" }, missing))
+                }
+            }
+
+            return list
+        }
+
+    fun editAccountById(id: String) {
+        accounts.firstOrNull { it.id == id }?.let { startEditAccount(it) }
+    }
+
+    fun editCardById(id: String) {
+        cards.firstOrNull { it.id == id }?.let { startEditCard(it) }
+    }
+
+    fun editLoanById(id: String) {
+        loans.firstOrNull { it.id == id }?.let { startEditLoan(it) }
+    }
+
+    fun editEntryById(id: String) {
+        entries.firstOrNull { it.id == id }?.let { openEditEntry(it) }
     }
 
     fun getSixMonthOutlook(): SixMonthOutlook {
