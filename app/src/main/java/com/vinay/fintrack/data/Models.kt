@@ -111,6 +111,14 @@ data class Loan(
     }
 }
 
+@Serializable
+data class MissingConfigItem(
+    val entityType: String,
+    val entityId: String,
+    val name: String,
+    val missingFields: List<String>
+)
+
 /**
  * An actual movement of money, unlike [Entry] which is only the recurring plan.
  * EXPENSE debits [fromAccountId]; INCOME credits [toAccountId]; TRANSFER does both

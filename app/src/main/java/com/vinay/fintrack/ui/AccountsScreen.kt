@@ -48,6 +48,7 @@ import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.today
+import com.vinay.fintrack.data.MissingConfigItem
 
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Tune
