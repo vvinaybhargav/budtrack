@@ -581,7 +581,7 @@ fun EntriesScreen(vm: FinTrackViewModel) {
 private fun EditTxnSheet(vm: FinTrackViewModel) {
     val txn = vm.editingTxn ?: return
     var note by remember(txn.id) { mutableStateOf(txn.note) }
-    var amountText by remember(txn.id) { mutableStateOf(if (txn.amount > 0) txn.amount.toLong().toString() else "") }
+    var amountText by remember(txn.id) { mutableStateOf(if (txn.amount > 0) com.vinay.fintrack.data.MathEvaluator.formatResult(txn.amount) else "") }
     var selectedAccountId by remember(txn.id) { mutableStateOf(txn.fromAccountId.ifEmpty { txn.toAccountId }) }
     var selectedCategory by remember(txn.id) { mutableStateOf(txn.category) }
     var selectedLoanId by remember(txn.id) { mutableStateOf(txn.loanId) }
@@ -637,7 +637,7 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                 value = amountText,
                 onValueChange = { amountText = it },
                 label = "Amount (₹)",
-                numeric = true,
+                isAmount = true,
                 placeholder = "Amount"
             )
 
@@ -774,7 +774,9 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                 PrimaryButton(
                     "Save",
                     {
-                        val amt = amountText.toDoubleOrNull() ?: txn.amount
+                        val amt = com.vinay.fintrack.data.MathEvaluator.evaluate(amountText)
+                            ?: amountText.toDoubleOrNull()
+                            ?: txn.amount
                         vm.saveTxnDetails(
                             txnId = txn.id,
                             note = note,

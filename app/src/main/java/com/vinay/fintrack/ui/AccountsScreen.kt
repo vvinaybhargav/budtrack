@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -74,9 +75,28 @@ fun AccountsScreen(vm: FinTrackViewModel) {
         "Loans" to "Loans (${vm.scopedLoans.filter { !vm.isLoanCleared(it) }.size})",
         "Recurring" to "Recurring (${vm.commitments.size})",
         "Set Aside" to "Set Aside (${vm.annualSetAsides.size})",
-        "Lent & Borrow" to "Lent & Borrow (${vm.pendingDebts.size})",
         "Past" to "Past ($pastCount)"
     )
+
+    val todayDay = try {
+        java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_MONTH)
+    } catch (e: Exception) {
+        today().takeLast(2).toIntOrNull() ?: 1
+    }
+
+    val overdueBills = vm.commitments.filter {
+        it.dueDay in 1..31 && todayDay > it.dueDay && !vm.isConfirmed(it.id)
+    }
+    val overdueCards = vm.scopedCards.filter {
+        it.dueDay in 1..31 && todayDay > it.dueDay && !it.paid && it.balance > 0.0
+    }
+    val overdueLoans = vm.scopedLoans.filter {
+        it.dueDay in 1..31 && todayDay > it.dueDay && vm.isLoanActiveThisMonth(it) && !vm.isLoanConfirmed(it.id)
+    }
+    val overdueSetAsides = vm.annualSetAsides.filter {
+        it.dueDay in 1..31 && todayDay > it.dueDay && !it.closed && vm.isSetAsideActiveThisMonth(it) && vm.setAsideLeft(it) > 0.0
+    }
+    val totalOverdueCount = overdueBills.size + overdueCards.size + overdueLoans.size + overdueSetAsides.size
 
     LazyColumn(
         Modifier.fillMaxWidth(),
@@ -131,6 +151,20 @@ fun AccountsScreen(vm: FinTrackViewModel) {
             }
         }
 
+        // 1.5 OVERDUE UNPAID DUES (Always on top of accounts page if any exist)
+        if (totalOverdueCount > 0) {
+            item {
+                OverdueDuesSection(
+                    vm = vm,
+                    todayDay = todayDay,
+                    overdueBills = overdueBills,
+                    overdueCards = overdueCards,
+                    overdueLoans = overdueLoans,
+                    overdueSetAsides = overdueSetAsides
+                )
+            }
+        }
+
         // 2. Bank Accounts Section
         if (selectedFilter == "All" || selectedFilter == "Banks") {
             item {
@@ -166,8 +200,8 @@ fun AccountsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        // 7. Lent & Borrow Section (Below Set Aside)
-        if (selectedFilter == "All" || selectedFilter == "Lent & Borrow") {
+        // 7. Lent & Borrow Section (shown only if legacy pending debts exist)
+        if (vm.pendingDebts.isNotEmpty()) {
             item {
                 ManageLentBorrowSection(vm)
             }
@@ -192,6 +226,204 @@ fun AccountsScreen(vm: FinTrackViewModel) {
     SetupFixDialog(vm)
     AddDebtDialog(vm)
     DebtActionSheet(vm)
+}
+
+@Composable
+private fun OverdueDuesSection(
+    vm: FinTrackViewModel,
+    todayDay: Int,
+    overdueBills: List<Entry>,
+    overdueCards: List<com.vinay.fintrack.data.Card>,
+    overdueLoans: List<com.vinay.fintrack.data.Loan>,
+    overdueSetAsides: List<Entry>
+) {
+    val totalCount = overdueBills.size + overdueCards.size + overdueLoans.size + overdueSetAsides.size
+    if (totalCount == 0) return
+
+    val totalOverdueAmount = overdueBills.sumOf { it.amount } +
+            overdueCards.sumOf { it.balance } +
+            overdueLoans.sumOf { it.emi } +
+            overdueSetAsides.sumOf { vm.setAsideLeft(it) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .background(Color(0xFFE53935).copy(alpha = 0.15f), Radius.Sm),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("⚠️", fontSize = 14.sp)
+                }
+                Column {
+                    Text(
+                        "Overdue Unpaid Dues",
+                        color = Color(0xFFFF5252),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Muted("Due date passed · Action required", size = 11)
+                }
+            }
+            Tag("$totalCount Overdue · ${inr(totalOverdueAmount)}", Color(0xFFE53935).copy(alpha = 0.18f), Color(0xFFFF5252))
+        }
+
+        PfCard(padding = PaddingValues(Space.s3)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+                // 1. Overdue Bills
+                overdueBills.forEach { bill ->
+                    OverdueItemRow(
+                        icon = Icons.Default.Receipt,
+                        title = bill.note.ifEmpty { bill.category },
+                        badge = "Bill",
+                        badgeBg = Pf.Accent100,
+                        badgeColor = Pf.Accent800,
+                        dueDayText = "Due on ${bill.dueDay}th · ${todayDay - bill.dueDay} days overdue",
+                        amountText = inr(bill.amount),
+                        actionText = "Confirm",
+                        onAction = { vm.requestConfirm(bill) }
+                    )
+                }
+
+                // 2. Overdue Cards
+                overdueCards.forEach { card ->
+                    OverdueItemRow(
+                        icon = Icons.Default.CreditCard,
+                        title = card.name,
+                        badge = "Card",
+                        badgeBg = Color(0xFF64B5F6).copy(alpha = 0.15f),
+                        badgeColor = Color(0xFF2196F3),
+                        dueDayText = "Due on ${card.dueDay}th · ${todayDay - card.dueDay} days overdue",
+                        amountText = inr(card.balance),
+                        actionText = "Settle",
+                        onAction = { vm.startSettleCard(card.id) }
+                    )
+                }
+
+                // 3. Overdue Loans
+                overdueLoans.forEach { loan ->
+                    OverdueItemRow(
+                        icon = Icons.Default.AccountBalance,
+                        title = loan.name,
+                        badge = "Loan EMI",
+                        badgeBg = Color(0xFFFFB74D).copy(alpha = 0.15f),
+                        badgeColor = Color(0xFFFF9800),
+                        dueDayText = "Due on ${loan.dueDay}th · ${todayDay - loan.dueDay} days overdue",
+                        amountText = inr(loan.emi),
+                        actionText = "Confirm",
+                        onAction = { vm.confirmLoan(loan) }
+                    )
+                }
+
+                // 4. Overdue Set Asides
+                overdueSetAsides.forEach { sa ->
+                    val left = vm.setAsideLeft(sa)
+                    OverdueItemRow(
+                        icon = Icons.Default.Bookmark,
+                        title = sa.note.ifEmpty { sa.category },
+                        badge = if (sa.isLent) "Lent" else "Set Aside",
+                        badgeBg = if (sa.isLent) Pf.AmberBg else Pf.Accent100,
+                        badgeColor = if (sa.isLent) Pf.Amber else Pf.Accent800,
+                        dueDayText = "Due on ${sa.dueDay}th · ${todayDay - sa.dueDay} days overdue",
+                        amountText = inr(left),
+                        actionText = "Put Aside",
+                        onAction = { vm.requestConfirm(sa) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverdueItemRow(
+    icon: ImageVector,
+    title: String,
+    badge: String,
+    badgeBg: Color,
+    badgeColor: Color,
+    dueDayText: String,
+    amountText: String,
+    actionText: String,
+    onAction: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(Pf.Surface2, Radius.Md)
+            .border(1.dp, Color(0xFFE53935).copy(alpha = 0.3f), Radius.Md)
+            .padding(horizontal = Space.s3, vertical = Space.s2),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.s2)
+        ) {
+            Box(
+                Modifier
+                    .size(34.dp)
+                    .background(Color(0xFFE53935).copy(alpha = 0.12f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, Modifier.size(16.dp), tint = Color(0xFFFF5252))
+            }
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        title,
+                        color = Pf.Text,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Tag(badge, badgeBg, badgeColor)
+                }
+                Text(
+                    dueDayText,
+                    color = Color(0xFFFF8A80),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        Spacer(Modifier.width(Space.s2))
+
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                amountText,
+                color = Pf.Text,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Spacer(Modifier.height(3.dp))
+            Box(
+                Modifier
+                    .background(Pf.Accent, Radius.Pill)
+                    .clickable { onAction() }
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    actionText,
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -815,15 +1047,23 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        e.note.ifEmpty { e.category },
-                                        color = Pf.Text,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.weight(1f, fill = false)
-                                    )
+                                    ) {
+                                        Text(
+                                            e.note.ifEmpty { e.category },
+                                            color = Pf.Text,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        if (e.isLent) {
+                                            Spacer(Modifier.width(6.dp))
+                                            Tag("Lent", Pf.AmberBg, Pf.Amber)
+                                        }
+                                    }
                                     Spacer(Modifier.width(Space.s2))
                                     Text(
                                         "$pct%",

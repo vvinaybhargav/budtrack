@@ -90,7 +90,8 @@ data class Draft(
     val startMonth: String = "", // YYYY-MM
     val startDateText: String = "",
     /** When the bill is due, as the form takes it (dd-mm-yyyy). Optional. */
-    val dueText: String = ""
+    val dueText: String = "",
+    val isLent: Boolean = false
 ) {
     /**
      * Derived, never stored. As its own field it defaulted to JOINT and stayed
@@ -1138,7 +1139,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         pendingConfirm = PendingConfirm(
             title = e.note.ifEmpty { e.category },
             amount = left,
-            amountText = left.toLong().toString(),
+            amountText = com.vinay.fintrack.data.MathEvaluator.formatResult(left),
             kind = kind,
             category = e.category,
             entryId = e.id,
@@ -1303,14 +1304,15 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             person = e.person,
             type = e.type,
             category = e.category,
-            amountText = e.amount.toLong().toString(),
+            amountText = com.vinay.fintrack.data.MathEvaluator.formatResult(e.amount),
             frequency = e.frequency,
             note = e.note,
             accountId = e.accountId,
             periodMonths = e.everyMonths,
             startMonth = startMonthKey,
             startDateText = startFormatted,
-            dueText = dueFormatted
+            dueText = dueFormatted,
+            isLent = e.isLent
         )
     }
 
@@ -1537,7 +1539,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveDraft() {
-        val amount = draft.amountText.toDoubleOrNull() ?: return
+        val amount = com.vinay.fintrack.data.MathEvaluator.evaluate(draft.amountText)
+            ?: draft.amountText.toDoubleOrNull()
+            ?: return
         if (amount <= 0) return
         if (editingEntryId == null && addKind == "ONE_TIME") {
             saveOneOff(amount)
@@ -1557,7 +1561,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             val entry = Entry(
                 id = editingId ?: newId("e"),
                 person = draft.person,
-                type = draft.type,
+                type = if (draft.isLent) "SAVINGS" else draft.type,
                 bucket = draft.bucket,
                 category = draft.category,
                 amount = amount,
@@ -1567,7 +1571,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 accountId = draft.accountId.ifEmpty { defaultAccountFor(draft.person, draft.bucket) },
                 periodMonths = draft.periodMonths,
                 startDate = startIso,
-                dueDate = draftDueIso
+                dueDate = draftDueIso,
+                isLent = draft.isLent
             )
             if (editingId != null) {
                 s.copy(entries = s.entries.map { if (it.id == entry.id) entry else it })
@@ -1621,7 +1626,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun setEditLoanSource(label: String) { loanDraft = withSource(loanDraft, label) }
 
     fun addNewLoan() {
-        val emi = newLoanDraft.emiText.toDoubleOrNull() ?: return
+        val emi = com.vinay.fintrack.data.MathEvaluator.evaluate(newLoanDraft.emiText)
+            ?: newLoanDraft.emiText.toDoubleOrNull()
+            ?: return
         val total = newLoanDraft.totalMonthsText.toIntOrNull() ?: return
         if (newLoanDraft.name.isBlank() || emi <= 0 || total <= 0) return
         val remaining = newLoanDraft.remainingMonthsText.toIntOrNull() ?: total
@@ -4771,7 +4778,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val card = persisted.cards.firstOrNull { it.id == cardId } ?: return
         settlingCardId = cardId
         val defaultAmt = if (card.statementAmount > 0.0) card.statementAmount else card.balance
-        settleAmountDraft = defaultAmt.toLong().toString()
+        settleAmountDraft = com.vinay.fintrack.data.MathEvaluator.formatResult(defaultAmt)
         settleAccountNameDraft = defaultAccount
     }
 
@@ -4782,7 +4789,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun confirmSettleCard() {
         val cardId = settlingCardId ?: return
         val card = persisted.cards.firstOrNull { it.id == cardId } ?: return
-        val amount = settleAmountDraft.toDoubleOrNull() ?: 0.0
+        val amount = com.vinay.fintrack.data.MathEvaluator.evaluate(settleAmountDraft) ?: settleAmountDraft.toDoubleOrNull() ?: 0.0
         if (amount <= 0.0) return
 
         val fromAccId = persisted.accounts.firstOrNull { it.name == settleAccountNameDraft }?.id

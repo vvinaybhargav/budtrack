@@ -60,6 +60,7 @@ import com.vinay.fintrack.data.todayDayFirst
 import com.vinay.fintrack.data.isoFromDayFirst
 import com.vinay.fintrack.data.categoryForParty
 import com.vinay.fintrack.data.UNCATEGORISED
+import com.vinay.fintrack.data.MathEvaluator
 import java.util.Calendar
 
 private data class AddKindItem(val key: String, val label: String, val icon: ImageVector)
@@ -71,7 +72,6 @@ private val ADD_KINDS = listOf(
     AddKindItem("ONE_TIME", "One-time", Icons.Default.Receipt),
     AddKindItem("RECURRING", "Recurring", Icons.Default.Repeat),
     AddKindItem("SET_ASIDE", "Set aside", Icons.Default.Bookmark),
-    AddKindItem("DEBT", "Lent & Borrow", Icons.Default.SwapHoriz),
     AddKindItem("EMI_LOAN", "EMI / Loan", Icons.Default.AccountBalance),
     AddKindItem("INVESTMENT", "Investment", Icons.Default.TrendingUp),
     AddKindItem("BANK_ACCOUNT", "Account", Icons.Default.AccountBalanceWallet),
@@ -152,8 +152,7 @@ fun AddScreen(vm: FinTrackViewModel) {
                     }
                     val hint = when (vm.addKind) {
                         "ONE_TIME" -> "Already paid or received. Goes straight into Transactions."
-                        "SET_ASIDE" -> "Paid every few months. Set aside a share each month."
-                        "DEBT" -> "Track money lent to people (receivables) or borrowed from others (payables)."
+                        "SET_ASIDE" -> "Paid periodically or lent to others. Set aside a share each month."
                         "RECURRING" -> "Monthly fixed commitment. Confirm it each month on Home."
                         "EMI_LOAN" -> "Track loan tenure, EMI schedule, and interest payments."
                         "INVESTMENT" -> "Track mutual funds, SIPs, gold, or recurring market assets."
@@ -172,14 +171,12 @@ fun AddScreen(vm: FinTrackViewModel) {
         val showAccount = !isEditing && vm.addKind == "BANK_ACCOUNT"
         val showCard = !isEditing && vm.addKind == "CREDIT_CARD"
         val showOneTime = !isEditing && vm.addKind == "ONE_TIME"
-        val showDebt = !isEditing && vm.addKind == "DEBT"
-        val showGeneric = isEditing || (vm.addKind !in listOf("EMI_LOAN", "BANK_ACCOUNT", "CREDIT_CARD", "ONE_TIME", "DEBT"))
+        val showGeneric = isEditing || (vm.addKind !in listOf("EMI_LOAN", "BANK_ACCOUNT", "CREDIT_CARD", "ONE_TIME"))
 
         if (showLoan) item { LoanForm(vm) }
         if (showAccount) item { AccountForm(vm) }
         if (showCard) item { CardForm(vm) }
         if (showOneTime) item { OneTimePaymentForm(vm) }
-        if (showDebt) item { DebtForm(vm) }
         if (showGeneric) item { GenericForm(vm, isEditing) }
     }
 }
@@ -190,6 +187,9 @@ private fun HeroAmountInput(
     onAmountChange: (String) -> Unit,
     onQuickAdd: (Long) -> Unit
 ) {
+    var calculationFormula by remember(amountText.isEmpty()) { androidx.compose.runtime.mutableStateOf("") }
+    val hasMath = MathEvaluator.hasMathOperation(amountText)
+
     Box(
         Modifier
             .fillMaxWidth()
@@ -214,7 +214,10 @@ private fun HeroAmountInput(
                     letterSpacing = 1.sp
                 )
                 if (amountText.isNotEmpty()) {
-                    GhostButton("Clear", { onAmountChange("") })
+                    GhostButton("Clear", {
+                        calculationFormula = ""
+                        onAmountChange("")
+                    })
                 }
             }
             Spacer(Modifier.height(Space.s2))
@@ -231,7 +234,7 @@ private fun HeroAmountInput(
                 )
                 OutlinedTextField(
                     value = amountText,
-                    onValueChange = { onAmountChange(it.filter { c -> c.isDigit() || c == '.' }) },
+                    onValueChange = { onAmountChange(it.filter { c -> c.isDigit() || c in ".,+-*/() " }) },
                     placeholder = { Text("0", color = Pf.Muted, fontSize = 28.sp, fontWeight = FontWeight.Bold) },
                     singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(
@@ -239,7 +242,7 @@ private fun HeroAmountInput(
                         fontSize = 28.sp,
                         fontWeight = FontWeight.Bold
                     ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     shape = Radius.Sm,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
@@ -251,6 +254,48 @@ private fun HeroAmountInput(
                         unfocusedTextColor = Pf.Text
                     ),
                     modifier = Modifier.weight(1f)
+                )
+
+                // Calculate button
+                Box(
+                    Modifier
+                        .padding(start = 8.dp)
+                        .size(44.dp)
+                        .background(
+                            if (hasMath) Pf.Accent else Pf.Surface2,
+                            Radius.Md
+                        )
+                        .border(
+                            1.dp,
+                            if (hasMath) Pf.Accent400 else Pf.Hairline,
+                            Radius.Md
+                        )
+                        .clickable {
+                            val res = MathEvaluator.evaluate(amountText)
+                            if (res != null) {
+                                val formatted = MathEvaluator.formatResult(res)
+                                calculationFormula = "$amountText = $formatted"
+                                onAmountChange(formatted)
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "=",
+                        color = if (hasMath) Color.White else Pf.Muted,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+
+            if (calculationFormula.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    calculationFormula,
+                    color = Pf.Accent400,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
 
@@ -290,7 +335,7 @@ private fun LoanForm(vm: FinTrackViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
         PfField("Loan name", vm.newLoanDraft.name, { vm.newLoanDraft = vm.newLoanDraft.copy(name = it) }, placeholder = "e.g. Car loan — Me")
         PfSelect("Person", vm.newLoanDraft.person, vm.draftPersonOptions, { vm.newLoanDraft = vm.newLoanDraft.copy(person = it) })
-        PfField("Monthly EMI (₹)", vm.newLoanDraft.emiText, { vm.newLoanDraft = vm.newLoanDraft.copy(emiText = it) }, placeholder = "e.g. 22000", numeric = true)
+        PfField("Monthly EMI (₹)", vm.newLoanDraft.emiText, { vm.newLoanDraft = vm.newLoanDraft.copy(emiText = it) }, placeholder = "e.g. 22000", isAmount = true)
         Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
             PfField("Tenure (months)", vm.newLoanDraft.totalMonthsText, { vm.newLoanDraft = vm.newLoanDraft.copy(totalMonthsText = it) }, Modifier.weight(1f), "e.g. 84", numeric = true)
             PfField("Months remaining", vm.newLoanDraft.remainingMonthsText, { vm.newLoanDraft = vm.newLoanDraft.copy(remainingMonthsText = it) }, Modifier.weight(1f), "e.g. 42", numeric = true)
@@ -527,7 +572,7 @@ private fun OneTimePaymentForm(vm: FinTrackViewModel) {
 
     val isToday = vm.oneOffDateText == todayDayFirst()
     val isYesterday = vm.oneOffDateText == dayFirstOf(addDays(today(), -1))
-    val amount = vm.draft.amountText.toDoubleOrNull() ?: 0.0
+    val evaluatedAmount = MathEvaluator.evaluate(vm.draft.amountText) ?: vm.draft.amountText.toDoubleOrNull() ?: 0.0
 
     Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
         // 1. Amount Input
@@ -535,8 +580,8 @@ private fun OneTimePaymentForm(vm: FinTrackViewModel) {
             amountText = vm.draft.amountText,
             onAmountChange = { vm.draft = vm.draft.copy(amountText = it) },
             onQuickAdd = { delta ->
-                val cur = vm.draft.amountText.toLongOrNull() ?: 0L
-                vm.draft = vm.draft.copy(amountText = (cur + delta).toString())
+                val cur = MathEvaluator.evaluate(vm.draft.amountText) ?: vm.draft.amountText.toDoubleOrNull() ?: 0.0
+                vm.draft = vm.draft.copy(amountText = MathEvaluator.formatResult(cur + delta))
             }
         )
 
@@ -777,17 +822,17 @@ private fun OneTimePaymentForm(vm: FinTrackViewModel) {
 
         // 8. Action Button
         val buttonText = when {
-            amount <= 0.0 -> "Enter amount"
-            vm.oneOffKind == "TRANSFER" -> "Transfer ${inr(amount)}"
-            vm.oneOffKind == "INCOME" -> "Record Income · ${inr(amount)}"
-            else -> "Record Expense · ${inr(amount)}"
+            evaluatedAmount <= 0.0 -> "Enter amount"
+            vm.oneOffKind == "TRANSFER" -> "Transfer ${inr(evaluatedAmount)}"
+            vm.oneOffKind == "INCOME" -> "Record Income · ${inr(evaluatedAmount)}"
+            else -> "Record Expense · ${inr(evaluatedAmount)}"
         }
 
         PrimaryButton(
             buttonText,
             vm::saveDraft,
             Modifier.fillMaxWidth(),
-            enabled = amount > 0.0 && vm.oneOffDateValid
+            enabled = evaluatedAmount > 0.0 && vm.oneOffDateValid
         )
     }
 }
@@ -811,8 +856,8 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             amountText = vm.draft.amountText,
             onAmountChange = { vm.draft = vm.draft.copy(amountText = it) },
             onQuickAdd = { delta ->
-                val cur = vm.draft.amountText.toLongOrNull() ?: 0L
-                vm.draft = vm.draft.copy(amountText = (cur + delta).toString())
+                val cur = MathEvaluator.evaluate(vm.draft.amountText) ?: vm.draft.amountText.toDoubleOrNull() ?: 0.0
+                vm.draft = vm.draft.copy(amountText = MathEvaluator.formatResult(cur + delta))
             }
         )
 
@@ -850,9 +895,44 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             )
         }
 
-        val isSetAsideKind = vm.addKind == "SET_ASIDE" || (isEditing && (vm.draft.type == "SAVINGS" || vm.draft.dueText.isNotEmpty() || vm.draft.startDateText.isNotEmpty() || vm.draft.startMonth.isNotEmpty() || vm.draft.periodMonths > 1 || vm.draft.frequency == "ANNUAL"))
+        val isSetAsideKind = vm.addKind == "SET_ASIDE" || (isEditing && (vm.draft.isLent || vm.draft.type == "SAVINGS" || vm.draft.dueText.isNotEmpty() || vm.draft.startDateText.isNotEmpty() || vm.draft.startMonth.isNotEmpty() || vm.draft.periodMonths > 1 || vm.draft.frequency == "ANNUAL"))
 
         if (isSetAsideKind) {
+            // Option to choose between Normal Set Aside and Lent Money
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                listOf(
+                    false to "📌 Set Aside",
+                    true to "🤝 Lent Money"
+                ).forEach { (lent, label) ->
+                    val isSel = vm.draft.isLent == lent
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .clip(Radius.Pill)
+                            .background(if (isSel) (if (lent) Pf.Amber.copy(alpha = 0.2f) else Pf.Accent.copy(alpha = 0.2f)) else Pf.Surface2)
+                            .border(1.5.dp, if (isSel) (if (lent) Pf.Amber else Pf.Accent) else Pf.Hairline, Radius.Pill)
+                            .clickable {
+                                vm.draft = vm.draft.copy(
+                                    isLent = lent,
+                                    category = if (lent && vm.draft.category.isEmpty()) "Lent" else vm.draft.category
+                                )
+                            }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            label,
+                            color = if (isSel) (if (lent) Pf.Amber else Pf.Accent400) else Pf.Text,
+                            fontSize = 13.sp,
+                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
             val payMonthOptions = vm.startPayMonthOptions
             val selectedStartMonthKey = vm.draft.startMonth.ifEmpty { today().take(7) }
             val selectedStartMonthLabel = payMonthOptions.firstOrNull { it.key == selectedStartMonthKey }?.label
@@ -890,7 +970,7 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             val resetDay = vm.salaryResetDayFor(vm.draft.person)
             val paydaysList = vm.draftPaydaysList
             val instalments = vm.draftInstalments
-            val amount = vm.draft.amountText.toDoubleOrNull() ?: 0.0
+            val evaluatedDraftAmount = MathEvaluator.evaluate(vm.draft.amountText) ?: vm.draft.amountText.toDoubleOrNull() ?: 0.0
 
             if (vm.draftDueIso.isNotEmpty()) {
                 Box(
@@ -927,8 +1007,8 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
                                 fontWeight = FontWeight.Medium
                             )
                         }
-                        if (amount > 0.0) {
-                            val monthlyShare = amount / instalments.coerceAtLeast(1)
+                        if (evaluatedDraftAmount > 0.0) {
+                            val monthlyShare = evaluatedDraftAmount / instalments.coerceAtLeast(1)
                             Text(
                                 "Split equally: ${inr(monthlyShare)} / month",
                                 color = Pf.Accent,
@@ -976,11 +1056,12 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             },
             placeholder = notePlaceholder
         )
+        val finalEvaluatedAmount = MathEvaluator.evaluate(vm.draft.amountText) ?: vm.draft.amountText.toDoubleOrNull() ?: 0.0
         PrimaryButton(
             if (isEditing) "Save changes" else "Save entry",
             vm::saveDraft,
             Modifier.fillMaxWidth(),
-            enabled = (vm.draft.amountText.toDoubleOrNull() ?: 0.0) > 0
+            enabled = finalEvaluatedAmount > 0
         )
     }
 }

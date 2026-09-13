@@ -30,7 +30,9 @@ data class Entry(
      * has stopped: kept for its history rather than deleted, but off Home and
      * out of the month's plan.
      */
-    val closed: Boolean = false
+    val closed: Boolean = false,
+    /** Marked as money lent to someone, tracked inside Set a Side. */
+    val isLent: Boolean = false
 ) {
     val everyMonths: Int
         get() = when {
@@ -54,7 +56,7 @@ data class Entry(
         else -> Ledger.monthlyShare(amount, everyMonths)
     }
 
-    val isSetAside: Boolean get() = frequency != "ONE_TIME" && (everyMonths > 1 || dueDate.isNotEmpty() || frequency == "ANNUAL" || type == "SAVINGS")
+    val isSetAside: Boolean get() = isLent || (frequency != "ONE_TIME" && (everyMonths > 1 || dueDate.isNotEmpty() || frequency == "ANNUAL" || type == "SAVINGS"))
 }
 
 @Serializable
@@ -259,12 +261,29 @@ fun hashPin(pin: String): String {
 fun looksLikePlainPin(value: String): Boolean =
     value.length in 4..6 && value.all { it.isDigit() }
 
-private val inrFormat: NumberFormat = NumberFormat.getIntegerInstance(Locale("en", "IN"))
+private val inrFormat: NumberFormat = NumberFormat.getInstance(Locale("en", "IN")).apply {
+    minimumFractionDigits = 2
+    maximumFractionDigits = 2
+}
 
 fun inr(n: Double): String {
-    val rounded = Math.round(n)
-    return if (rounded < 0) "-₹" + inrFormat.format(-rounded)
-    else "₹" + inrFormat.format(rounded)
+    val isNeg = n < 0
+    val absVal = kotlin.math.abs(n)
+    val formatted = inrFormat.format(absVal)
+    return if (isNeg) "-₹$formatted" else "₹$formatted"
+}
+
+fun friendlyCycle(cycle: String): String {
+    val parts = cycle.split("-")
+    if (parts.size == 2) {
+        val y = parts[0]
+        val m = parts[1].toIntOrNull()
+        val monthNames = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+        if (m != null && m in 1..12) {
+            return "${monthNames[m - 1]} $y"
+        }
+    }
+    return cycle
 }
 
 fun ownerLabel(person: String): String = if (person == "Joint") "Joint" else "$person · personal"

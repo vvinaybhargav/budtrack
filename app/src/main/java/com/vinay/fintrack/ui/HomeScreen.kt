@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.People
 import androidx.compose.ui.unit.dp
@@ -59,6 +60,7 @@ import com.vinay.fintrack.HomeTab
 import com.vinay.fintrack.Tab
 import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.inr
+import com.vinay.fintrack.data.friendlyCycle
 import com.vinay.fintrack.data.monthsToDate
 import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.today
@@ -1671,12 +1673,27 @@ private fun ScopeSwitch(vm: FinTrackViewModel) {
             Text("▾", color = Pf.Muted, fontSize = 11.sp)
         }
 
-        Text(
-            vm.cycle(),
-            color = Pf.Muted,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            modifier = Modifier
+                .background(Pf.Surface2, Radius.Pill)
+                .border(1.dp, Pf.Hairline, Radius.Pill)
+                .padding(horizontal = 10.dp, vertical = 5.dp)
+        ) {
+            Icon(
+                Icons.Default.DateRange,
+                contentDescription = null,
+                modifier = Modifier.size(13.dp),
+                tint = Pf.Accent400
+            )
+            Text(
+                friendlyCycle(vm.cycle()),
+                color = Pf.Text,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }
 

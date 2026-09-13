@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -260,6 +261,7 @@ fun PfField(
     modifier: Modifier = Modifier,
     placeholder: String = "",
     numeric: Boolean = false,
+    isAmount: Boolean = false,
     singleLine: Boolean = true,
     trailingIcon: @Composable (() -> Unit)? = null
 ) {
@@ -269,20 +271,68 @@ fun PfField(
         !placeholder.lowercase().contains("message") &&
         !placeholder.lowercase().contains("type")) placeholder else null
 
+    var calculationFootnote by remember(value.isEmpty()) { mutableStateOf("") }
+
+    val effectiveTrailingIcon: @Composable (() -> Unit)? = when {
+        trailingIcon != null -> trailingIcon
+        isAmount -> {
+            {
+                val hasMath = com.vinay.fintrack.data.MathEvaluator.hasMathOperation(value)
+                Box(
+                    Modifier
+                        .padding(end = 6.dp)
+                        .size(30.dp)
+                        .background(
+                            if (hasMath) Pf.Accent else Pf.Surface,
+                            Radius.Sm
+                        )
+                        .border(1.dp, if (hasMath) Pf.Accent400 else Pf.Hairline, Radius.Sm)
+                        .clickable {
+                            val res = com.vinay.fintrack.data.MathEvaluator.evaluate(value)
+                            if (res != null) {
+                                val formatted = com.vinay.fintrack.data.MathEvaluator.formatResult(res)
+                                calculationFootnote = "$value = $formatted"
+                                onValueChange(formatted)
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "=",
+                        color = if (hasMath) Color.White else Pf.Muted,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+        }
+        else -> null
+    }
+
     Column(modifier) {
         if (displayLabel != null) {
             Muted(displayLabel, Modifier.padding(bottom = 5.dp))
         }
         OutlinedTextField(
             value = value,
-            onValueChange = { if (numeric) onValueChange(it.filter { c -> c.isDigit() || c == '.' }) else onValueChange(it) },
+            onValueChange = { input ->
+                if (isAmount) {
+                    onValueChange(input.filter { c -> c.isDigit() || c in ".,+-*/() " })
+                } else if (numeric) {
+                    onValueChange(input.filter { c -> c.isDigit() || c == '.' })
+                } else {
+                    onValueChange(input)
+                }
+            },
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(placeholder, color = Pf.Muted, fontSize = 14.sp) },
             singleLine = singleLine,
             shape = Radius.Sm,
             textStyle = androidx.compose.ui.text.TextStyle(color = Pf.Text, fontSize = 14.sp),
-            keyboardOptions = if (numeric) KeyboardOptions(keyboardType = KeyboardType.Number) else KeyboardOptions.Default,
-            trailingIcon = trailingIcon,
+            keyboardOptions = if (isAmount) KeyboardOptions(keyboardType = KeyboardType.Text)
+                else if (numeric) KeyboardOptions(keyboardType = KeyboardType.Number)
+                else KeyboardOptions.Default,
+            trailingIcon = effectiveTrailingIcon,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = Pf.Surface2,
                 unfocusedContainerColor = Pf.Surface2,
@@ -293,6 +343,15 @@ fun PfField(
                 unfocusedTextColor = Pf.Text
             )
         )
+        if (calculationFootnote.isNotEmpty()) {
+            Text(
+                calculationFootnote,
+                color = Pf.Accent400,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 2.dp, start = 2.dp)
+            )
+        }
     }
 }
 
