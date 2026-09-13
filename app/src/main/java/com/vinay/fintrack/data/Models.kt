@@ -57,6 +57,11 @@ data class Entry(
     }
 
     val isSetAside: Boolean get() = isLent || (frequency != "ONE_TIME" && (everyMonths > 1 || dueDate.isNotEmpty() || frequency == "ANNUAL" || type == "SAVINGS"))
+
+    val dueDay: Int
+        get() = (if (dueDate.length >= 10) dueDate.takeLast(2).toIntOrNull() else dueDate.toIntOrNull())
+            ?: (if (nextDue.length >= 10) nextDue.takeLast(2).toIntOrNull() else null)
+            ?: 0
 }
 
 @Serializable
@@ -100,6 +105,7 @@ data class Loan(
     val nextDue: String get() = Ledger.nextDue(dueDate, 1, today())
 
     val onCard: Boolean get() = cardId.isNotEmpty()
+    val emi: Double get() = monthlyEmi
 
     fun isStarted(todayIso: String = today(), resetDay: Int = 1): Boolean {
         if (startMonth.isNotEmpty()) {
@@ -227,6 +233,12 @@ data class Card(
 
     /** What to show: the real date when there is one, else the old free text. */
     val dueText: String get() = if (nextDue.isNotEmpty()) prettyDate(nextDue) else due
+
+    val dueDay: Int
+        get() = (if (dueDate.length >= 10) dueDate.takeLast(2).toIntOrNull() else dueDate.toIntOrNull())
+            ?: (if (nextDue.length >= 10) nextDue.takeLast(2).toIntOrNull() else null)
+            ?: due.filter { it.isDigit() }.toIntOrNull()
+            ?: statementDay
 }
 
 @Serializable
