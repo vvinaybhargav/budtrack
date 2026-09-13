@@ -267,6 +267,36 @@ object AssistantTools {
             required("name")
         })
 
+        // ── lent & borrow ──────────────────────────────────────────────
+        add(tool(
+            "record_debt",
+            "Record money lent to someone (you gave money, they owe you back) or money borrowed from someone (you took money, you owe them back)."
+        ) {
+            put("type", enum("Whether money was lent or borrowed.", listOf("LENT", "BORROWED")))
+            put("peer_name", str("Name of the person (e.g. Rahul, Priya). Required."))
+            put("amount", num("Amount in rupees. Required."))
+            put("due_date", str("Expected return date as dd-MM-yyyy or YYYY-MM-DD. Optional."))
+            put("account", str("Bank account name if money was transferred from/to a bank account."))
+            put("note", str("Reason or description."))
+            required("type", "peer_name", "amount")
+        })
+        add(tool(
+            "settle_debt",
+            "Record money received back from someone you lent to, or money repaid to someone you borrowed from."
+        ) {
+            put("peer_name", str("Name of the person (e.g. Rahul)."))
+            put("id", str("Debt id if known."))
+            put("amount", num("Amount returned/repaid in rupees. Defaults to full remaining debt."))
+            put("account", str("Bank account name where returned money landed or was repaid from."))
+        })
+        add(tool(
+            "list_debts",
+            "List money lent to others and borrowed from others with pending amounts and return dates."
+        ) {
+            put("status", enum("Filter by status.", listOf("pending", "settled", "all")))
+            put("type", enum("Filter by type.", listOf("LENT", "BORROWED", "all")))
+        })
+
         // ── settings ───────────────────────────────────────────────────
         add(tool("set_budget", "Set or change a category's monthly budget.") {
             put("category", str("Category name. Required."))
@@ -329,6 +359,7 @@ object AssistantTools {
            - When deleting a transaction, commitment, account, card, or loan, the tool registers a proposal on screen. Always clearly tell the user what is being removed and inform them that a confirmation dialog has appeared on screen for them to tap "Delete".
 
         APP CONCEPTS & SECTIONS:
+        - Lent & Borrow (`record_debt` / `settle_debt` / `list_debts`): When user lends money to someone (e.g. "lent 5000 to Rahul", "gave 2000 to friend") or borrows money from someone (e.g. "borrowed 3000 from Priya"), use `record_debt`. When someone returns money or user repays them, use `settle_debt`. Placed below Set Aside.
         - Set Aside (`add_commitment` with `due_date` or `every_months > 1`): One-time future goals, expected future receivables from others, or periodic large bills to save up for (e.g. Spectacles on 15 Sep, Expected from Ajay, Insurance in Nov).
         - Recurring (`add_commitment` with `every_months = 1` and no future due date): Fixed monthly bills paid every single month (e.g. Rent, Wi-Fi, Maid).
         - Transactions (`add_transaction`): Money that has already moved in/out of an account on or before today. Affects live account balances.
@@ -339,6 +370,7 @@ object AssistantTools {
         - Totals, trends, averages, comparisons: summarise_spending. Never manually add up rows.
         - Upcoming bills and due dates: due_soon.
         - Individual transaction lookup: list_transactions. Users may refer to items by date and serial number (e.g. "yesterday 1", "today first 3").
+        - Lent & Borrow balances: list_debts.
 
         Keep replies concise, clear, and direct. Always format amounts in rupees (e.g. ₹2,500).
     """.trimIndent()

@@ -26,6 +26,8 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -69,6 +71,7 @@ private val ADD_KINDS = listOf(
     AddKindItem("ONE_TIME", "One-time", Icons.Default.Receipt),
     AddKindItem("RECURRING", "Recurring", Icons.Default.Repeat),
     AddKindItem("SET_ASIDE", "Set aside", Icons.Default.Bookmark),
+    AddKindItem("DEBT", "Lent & Borrow", Icons.Default.SwapHoriz),
     AddKindItem("EMI_LOAN", "EMI / Loan", Icons.Default.AccountBalance),
     AddKindItem("INVESTMENT", "Investment", Icons.Default.TrendingUp),
     AddKindItem("BANK_ACCOUNT", "Account", Icons.Default.AccountBalanceWallet),
@@ -150,6 +153,7 @@ fun AddScreen(vm: FinTrackViewModel) {
                     val hint = when (vm.addKind) {
                         "ONE_TIME" -> "Already paid or received. Goes straight into Transactions."
                         "SET_ASIDE" -> "Paid every few months. Set aside a share each month."
+                        "DEBT" -> "Track money lent to people (receivables) or borrowed from others (payables)."
                         "RECURRING" -> "Monthly fixed commitment. Confirm it each month on Home."
                         "EMI_LOAN" -> "Track loan tenure, EMI schedule, and interest payments."
                         "INVESTMENT" -> "Track mutual funds, SIPs, gold, or recurring market assets."
@@ -168,12 +172,14 @@ fun AddScreen(vm: FinTrackViewModel) {
         val showAccount = !isEditing && vm.addKind == "BANK_ACCOUNT"
         val showCard = !isEditing && vm.addKind == "CREDIT_CARD"
         val showOneTime = !isEditing && vm.addKind == "ONE_TIME"
-        val showGeneric = isEditing || (vm.addKind !in listOf("EMI_LOAN", "BANK_ACCOUNT", "CREDIT_CARD", "ONE_TIME"))
+        val showDebt = !isEditing && vm.addKind == "DEBT"
+        val showGeneric = isEditing || (vm.addKind !in listOf("EMI_LOAN", "BANK_ACCOUNT", "CREDIT_CARD", "ONE_TIME", "DEBT"))
 
         if (showLoan) item { LoanForm(vm) }
         if (showAccount) item { AccountForm(vm) }
         if (showCard) item { CardForm(vm) }
         if (showOneTime) item { OneTimePaymentForm(vm) }
+        if (showDebt) item { DebtForm(vm) }
         if (showGeneric) item { GenericForm(vm, isEditing) }
     }
 }
@@ -327,6 +333,126 @@ private fun LoanForm(vm: FinTrackViewModel) {
             enabled = vm.newLoanDraft.name.isNotBlank() &&
                 (vm.newLoanDraft.emiText.toDoubleOrNull() ?: 0.0) > 0 &&
                 (vm.newLoanDraft.totalMonthsText.toIntOrNull() ?: 0) > 0
+        )
+    }
+}
+
+@Composable
+private fun DebtForm(vm: FinTrackViewModel) {
+    val draft = vm.newDebtDraft
+    val isLent = draft.type == "LENT"
+    val accounts = vm.scopedAccounts
+    val accountOptions = listOf("None (Cash / Offline)") + accounts.map { it.name }
+    val selectedAccountName = accounts.firstOrNull { it.id == draft.accountId }?.name ?: "None (Cash / Offline)"
+
+    Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+        // Toggle
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(Pf.Surface2, Radius.Pill)
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .background(if (isLent) Color(0xFF00BFA5) else Color.Transparent, Radius.Pill)
+                    .clickable { vm.newDebtDraft = draft.copy(type = "LENT") }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("I Lent Money", color = if (isLent) Color.White else Pf.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
+            Box(
+                Modifier
+                    .weight(1f)
+                    .background(if (!isLent) Color(0xFFFF5252) else Color.Transparent, Radius.Pill)
+                    .clickable { vm.newDebtDraft = draft.copy(type = "BORROWED") }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("I Borrowed", color = if (!isLent) Color.White else Pf.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        PfField(
+            if (isLent) "Lent to (Person Name)" else "Borrowed from (Person Name)",
+            draft.peerName,
+            { vm.newDebtDraft = draft.copy(peerName = it) },
+            placeholder = "e.g. Rahul, Priya, Ajay"
+        )
+
+        PfField(
+            "Amount (₹)",
+            draft.amountText,
+            { vm.newDebtDraft = draft.copy(amountText = it) },
+            placeholder = "e.g. 5000",
+            numeric = true
+        )
+
+        PfField(
+            "Expected Return Date (Optional)",
+            draft.dueDateText,
+            { vm.newDebtDraft = draft.copy(dueDateText = it) },
+            placeholder = "e.g. 15-10-2026 or 15th"
+        )
+
+        Column {
+            Muted("Bank Account (Optional)", size = 12)
+            Spacer(Modifier.height(4.dp))
+            PfSelect(
+                "Bank Account",
+                selectedAccountName,
+                accountOptions,
+                { chosen ->
+                    val accId = accounts.firstOrNull { it.name == chosen }?.id.orEmpty()
+                    vm.newDebtDraft = draft.copy(accountId = accId, recordTxn = accId.isNotEmpty())
+                }
+            )
+        }
+
+        if (draft.accountId.isNotEmpty()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { vm.newDebtDraft = draft.copy(recordTxn = !draft.recordTxn) }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                Box(
+                    Modifier
+                        .size(18.dp)
+                        .border(1.5.dp, if (draft.recordTxn) Pf.Accent else Pf.Muted, Radius.Sm)
+                        .background(if (draft.recordTxn) Pf.Accent else Color.Transparent, Radius.Sm),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (draft.recordTxn) {
+                        Icon(Icons.Default.CheckCircle, null, Modifier.size(14.dp), tint = Color.White)
+                    }
+                }
+                Text(
+                    if (isLent) "Debit $selectedAccountName now" else "Credit $selectedAccountName now",
+                    color = Pf.Text,
+                    fontSize = 13.sp
+                )
+            }
+        }
+
+        PfField(
+            "Note / Purpose (Optional)",
+            draft.note,
+            { vm.newDebtDraft = draft.copy(note = it) },
+            placeholder = "e.g. Dinner split, Emergency loan"
+        )
+
+        val isValid = draft.peerName.isNotBlank() && (draft.amountText.toDoubleOrNull() ?: 0.0) > 0.0
+        PrimaryButton(
+            "Save Record",
+            { vm.saveNewDebt(navigateHome = true) },
+            Modifier.fillMaxWidth(),
+            enabled = isValid
         )
     }
 }

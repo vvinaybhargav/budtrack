@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import com.vinay.fintrack.data.Account
 import com.vinay.fintrack.data.Card
+import com.vinay.fintrack.data.Debt
 import com.vinay.fintrack.data.AssistantTools
 import com.vinay.fintrack.data.ChatMessage
 import com.vinay.fintrack.data.Entry
@@ -122,6 +123,16 @@ data class NewCardDraft(
     val balanceText: String = "", val minDueText: String = "", val dueText: String = "",
     val statementDayText: String = "", val statementAmountText: String = "",
     val numberTail: String = ""
+)
+
+data class NewDebtDraft(
+    val type: String = "LENT", // "LENT" or "BORROWED"
+    val peerName: String = "",
+    val amountText: String = "",
+    val dueDateText: String = "",
+    val accountId: String = "",
+    val note: String = "",
+    val recordTxn: Boolean = false
 )
 
 data class OneOffPaymentSource(
@@ -480,6 +491,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     var newLoanDraft by mutableStateOf(NewLoanDraft())
     var newAccountDraft by mutableStateOf(NewAccountDraft())
     var newCardDraft by mutableStateOf(NewCardDraft())
+    var newDebtDraft by mutableStateOf(NewDebtDraft())
+
+    var showAddDebtDialog by mutableStateOf(false)
+    var selectedDebtForAction by mutableStateOf<Debt?>(null)
+    var debtSettleAmountText by mutableStateOf("")
+    var debtSettleAccountId by mutableStateOf("")
+    var debtSettleRecordTxn by mutableStateOf(false)
 
     var editingAccountId by mutableStateOf<String?>(null); private set
     var accountDraft by mutableStateOf(NewAccountDraft())
@@ -1318,6 +1336,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             "EMI_LOAN" -> newLoanDraft = NewLoanDraft(person = p, startMonth = today().take(7))
             "BANK_ACCOUNT" -> newAccountDraft = NewAccountDraft(owner = p)
             "CREDIT_CARD" -> newCardDraft = NewCardDraft(owner = p)
+            "DEBT" -> newDebtDraft = NewDebtDraft()
         }
     }
 
@@ -2020,6 +2039,150 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         editingLoanId = null
     }
 
+    fun openAddDebt(type: String = "LENT") {
+        newDebtDraft = NewDebtDraft(type = type)
+        showAddDebtDialog = true
+    }
+
+    fun openDebtAction(debt: Debt) {
+        selectedDebtForAction = debt
+        debtSettleAmountText = if (debt.remainingAmount > 0) debt.remainingAmount.toLong().toString() else debt.amount.toLong().toString()
+        debtSettleAccountId = debt.accountId
+        debtSettleRecordTxn = debt.accountId.isNotEmpty()
+    }
+
+    fun dismissDebtAction() {
+        selectedDebtForAction = null
+    }
+
+    fun addDebt(
+        type: String,
+        peerName: String,
+        amount: Double,
+        dueDate: String = "",
+        accountId: String = "",
+        note: String = "",
+        person: String = scopePerson,
+        createTxn: Boolean = false
+    ): Debt {
+        val debt = Debt(
+            id = newId("d"),
+            person = person.ifEmpty { scopePerson },
+            type = if (type.equals("BORROWED", ignoreCase = true)) "BORROWED" else "LENT",
+            peerName = peerName.trim(),
+            amount = amount,
+            dueDate = dueDate.trim(),
+            accountId = accountId,
+            settled = false,
+            settledAmount = 0.0,
+            note = note.trim(),
+            createdAt = System.currentTimeMillis()
+        )
+        val newTxns = mutableListOf<Txn>()
+        if (createTxn && accountId.isNotEmpty() && amount > 0.0) {
+            val isLent = debt.isLent
+            val txn = Txn(
+                id = newId("t"),
+                date = today(),
+                kind = if (isLent) "EXPENSE" else "INCOME",
+                amount = amount,
+                category = if (isLent) "Lent" else "Borrowed",
+                fromAccountId = if (isLent) accountId else "",
+                toAccountId = if (isLent) "" else accountId,
+                period = cycle(),
+                at = System.currentTimeMillis(),
+                note = if (isLent) "Lent to ${debt.peerName}" else "Borrowed from ${debt.peerName}"
+            )
+            newTxns.add(txn)
+            sync.upsertTxn(txn)
+        }
+        update { s ->
+            s.copy(
+                debts = s.debts + debt,
+                txns = if (newTxns.isNotEmpty()) s.txns + newTxns else s.txns
+            )
+        }
+        return debt
+    }
+
+    fun settleDebt(
+        debtId: String,
+        settleAmount: Double? = null,
+        accountId: String = "",
+        createTxn: Boolean = false
+    ) {
+        val debt = persisted.debts.firstOrNull { it.id == debtId } ?: return
+        val returnAmt = (settleAmount ?: debt.remainingAmount).coerceAtMost(debt.remainingAmount)
+        val newSettledAmount = debt.settledAmount + returnAmt
+        val isFullySettled = newSettledAmount >= (debt.amount - 0.01)
+        val updatedDebt = debt.copy(
+            settledAmount = newSettledAmount,
+            settled = isFullySettled,
+            settledDate = if (isFullySettled) today() else debt.settledDate
+        )
+        val newTxns = mutableListOf<Txn>()
+        val accId = accountId.ifEmpty { debt.accountId }
+        if (createTxn && accId.isNotEmpty() && returnAmt > 0.0) {
+            val isLent = debt.isLent
+            val txn = Txn(
+                id = newId("t"),
+                date = today(),
+                kind = if (isLent) "INCOME" else "EXPENSE",
+                amount = returnAmt,
+                category = if (isLent) "Lent Return" else "Borrowed Repayment",
+                fromAccountId = if (isLent) "" else accId,
+                toAccountId = if (isLent) accId else "",
+                period = cycle(),
+                at = System.currentTimeMillis(),
+                note = if (isLent) "Received back from ${debt.peerName}" else "Repaid to ${debt.peerName}"
+            )
+            newTxns.add(txn)
+            sync.upsertTxn(txn)
+        }
+        update { s ->
+            s.copy(
+                debts = s.debts.map { if (it.id == debtId) updatedDebt else it },
+                txns = if (newTxns.isNotEmpty()) s.txns + newTxns else s.txns
+            )
+        }
+    }
+
+    fun deleteDebt(debtId: String) {
+        update { s ->
+            s.copy(debts = s.debts.filterNot { it.id == debtId })
+        }
+        if (selectedDebtForAction?.id == debtId) {
+            selectedDebtForAction = null
+        }
+    }
+
+    fun debtNamed(name: String): Debt? {
+        val trimmed = name.trim()
+        return persisted.debts.firstOrNull {
+            it.peerName.equals(trimmed, ignoreCase = true) ||
+            "${it.type} ${it.peerName}".contains(trimmed, ignoreCase = true)
+        }
+    }
+
+    fun saveNewDebt(navigateHome: Boolean = false) {
+        val amount = newDebtDraft.amountText.toDoubleOrNull() ?: return
+        val peer = newDebtDraft.peerName.trim()
+        if (amount <= 0.0 || peer.isEmpty()) return
+        addDebt(
+            type = newDebtDraft.type,
+            peerName = peer,
+            amount = amount,
+            dueDate = newDebtDraft.dueDateText.trim(),
+            accountId = newDebtDraft.accountId,
+            note = newDebtDraft.note.trim(),
+            person = scopePerson,
+            createTxn = newDebtDraft.recordTxn
+        )
+        newDebtDraft = NewDebtDraft()
+        showAddDebtDialog = false
+        if (navigateHome) tab = Tab.HOME
+    }
+
     fun startEditCard(c: Card) {
         editingCardId = c.id
         cardDraft = NewCardDraft(
@@ -2265,12 +2428,25 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun scopedCardsFor(view: String): List<Card> =
         visibleCards.filter { inScopeFor(it.owner, view) }
 
+    val debts: List<Debt> get() = persisted.debts
+
+    fun scopedDebtsFor(view: String): List<Debt> =
+        persisted.debts.filter { inScopeFor(it.person, view) }
+
     private fun inScope(person: String) = inScopeFor(person, bucketView)
 
     val scopedEntries: List<Entry> get() = scopedEntriesFor(bucketView)
     val scopedAccounts: List<Account> get() = scopedAccountsFor(bucketView)
     val scopedLoans: List<Loan> get() = scopedLoansFor(bucketView)
     val scopedCards: List<Card> get() = scopedCardsFor(bucketView)
+    val scopedDebts: List<Debt> get() = scopedDebtsFor(bucketView)
+    val pendingDebts: List<Debt> get() = scopedDebts.filter { !it.settled && it.remainingAmount > 0.0 }
+    val pendingLent: List<Debt> get() = pendingDebts.filter { it.isLent }
+    val pendingBorrowed: List<Debt> get() = pendingDebts.filter { it.isBorrowed }
+    val totalLentPending: Double get() = pendingLent.sumOf { it.remainingAmount }
+    val totalBorrowedPending: Double get() = pendingBorrowed.sumOf { it.remainingAmount }
+    val netDebt: Double get() = totalLentPending - totalBorrowedPending
+    val pastClosedDebts: List<Debt> get() = scopedDebts.filter { it.settled || it.remainingAmount <= 0.0 }
 
     /**
      * Every account, for moving money between them.

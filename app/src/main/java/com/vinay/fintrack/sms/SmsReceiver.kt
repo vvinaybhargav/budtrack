@@ -37,8 +37,9 @@ class SmsReceiver : BroadcastReceiver() {
         Thread {
             try {
                 for ((sender, body) in joined) {
-                    if (!looksLikeBankSender(sender)) continue
-                    runCatching { importer.importOne(body.toString(), sender, receivedAt) }
+                    val text = body.toString()
+                    if (!looksLikeBankSender(sender) && !com.vinay.fintrack.data.looksLikeBankMessage(text)) continue
+                    runCatching { importer.importOne(text, sender, receivedAt) }
                         .onFailure { Log.w(TAG, "import failed", it) }
                 }
             } finally {

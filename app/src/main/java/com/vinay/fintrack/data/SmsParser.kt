@@ -32,7 +32,17 @@ data class ParsedSms(
 ) {
     /** A reference, account tail, or valid merchant is what separates a real
      *  transaction message from an advert that happens to mention rupees. */
-    val isUsable: Boolean get() = amount > 0 && (ref.isNotEmpty() || accountTail.isNotEmpty() || party.isNotEmpty())
+    val isUsable: Boolean get() = amount > 0 && (
+        ref.isNotEmpty() ||
+        accountTail.isNotEmpty() ||
+        party.isNotEmpty() ||
+        body.contains("paid", ignoreCase = true) ||
+        body.contains("debited", ignoreCase = true) ||
+        body.contains("credited", ignoreCase = true) ||
+        body.contains("spent", ignoreCase = true) ||
+        body.contains("sent", ignoreCase = true) ||
+        body.contains("received", ignoreCase = true)
+    )
 
     /**
      * Stable id for de-duplication when the bank omits a reference.
@@ -43,41 +53,67 @@ data class ParsedSms(
      * the transfer.
      */
     val dedupeKey: String
-        get() = (if (ref.isNotEmpty()) ref
-        else "$date|${"%.2f".format(amount)}|$accountTail|${party.take(12)}") +
-            if (isCredit) "|c" else "|d"
+        get() = when {
+            ref.isNotEmpty() -> "$ref|${if (isCredit) "c" else "d"}"
+            receivedAt > 0L -> {
+                // Window into 15-second buckets so same-moment duplicates (SMS receiver + notification listener)
+                // match, while separate transactions done moments apart are reliably recognized.
+                val timeBucket = receivedAt / 15_000L
+                "$date|${"%.2f".format(amount)}|$accountTail|${party.take(20)}|$timeBucket|${if (isCredit) "c" else "d"}"
+            }
+            else -> "$date|${"%.2f".format(amount)}|$accountTail|${party.take(20)}|${if (isCredit) "c" else "d"}"
+        }
 }
 
-private val AMOUNT = Regex("""(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
-private val DEBIT_WORDS = listOf("debited", "debit", "sent", "paid", "withdrawn", "spent", "purchase", "payment of", "payment to", "transferred", "transfer to", "charged", "auto-debited", "autodebit")
-private val CREDIT_WORDS = listOf("credited", "credit", "received", "deposited", "refund", "refunded", "reversed", "reversal", "money added", "cashback", "deposited into", "added to", "received from")
+private val AMOUNT_PREFIX = Regex("""(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
+private val AMOUNT_SUFFIX = Regex("""\b([\d,]+(?:\.\d{1,2})?)\s*(?:rs\.?|inr|₹|rupees?|/-)""", RegexOption.IGNORE_CASE)
+private val AMOUNT_ACTION = Regex(
+    """\b(?:debited(?:\s+(?:by|for|with|of))?|credited(?:\s+(?:by|for|with|of))?|paid|sent|received|spent|transferred(?:\s+(?:by|for|to))?|payment(?:\s+(?:of|to|for))?)\s*(?:of\s+)?(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)\b""",
+    RegexOption.IGNORE_CASE
+)
+
+private val DEBIT_WORDS = listOf(
+    "debited", "debit", "sent", "paid", "withdrawn", "spent", "purchase",
+    "payment of", "payment to", "payment for", "transferred", "transfer to",
+    "charged", "auto-debited", "autodebit", "auto-debit", "txn done"
+)
+private val CREDIT_WORDS = listOf(
+    "credited", "credit", "received", "deposited", "refund", "refunded",
+    "reversed", "reversal", "money added", "cashback", "deposited into",
+    "added to", "received from", "credited by", "credited with"
+)
 
 /** A credit that is money coming back rather than money earned. Netted off the
  *  spending it reverses instead of counted as income. */
 private val REFUND_WORDS = listOf("refund", "refunded", "reversed", "reversal", "returned", "cancelled order", "chargeback")
 
 private val ACCOUNT_TAIL = Regex(
-    """\b(?:a/?c|acct|account|card|ending(?:\s+(?:with|in|at))?)\s*(?:no\.?|number|ending(?:\s+(?:with|in|at))?)?\s*[:\-]?\s*[xX*.\u2026]*\s*(\d{3,6})\b""",
+    """\b(?:a/?c|acct|account|card|ending(?:\s+(?:with|in|at))?)\s*(?:no\.?|number|ending(?:\s+(?:with|in|at))?)?\s*[:\-]?\s*[\(\[]*\s*[xX*.\u2026]*\s*(\d{3,6})\b""",
     RegexOption.IGNORE_CASE
 )
-private val REF = Regex(
-    """(?:upi|imps|neft|rtgs|rrn|txn|transaction|ref(?:erence)?)\s*(?:ref(?:erence)?)?\s*(?:no\.?|id|num)?\s*[:\-/]?\s*([A-Za-z0-9]*\d{4,}[A-Za-z0-9]*)""",
-    RegexOption.IGNORE_CASE
+
+/** Comprehensive matchers for Indian bank and UPI reference numbers (UTR, UPI Ref, RRN, Txn ID, Order ID, etc.) */
+private val REF_PATTERNS = listOf(
+    // UPI slash formats: UPI/DR/123456789012 or UPI/CR/123456789012 or UPI/123456789012 or IMPS/123456789012
+    Regex("""\b(?:upi|imps|neft|rtgs)/(?:(?:cr|dr)/)?([A-Za-z0-9]*\d{4,}[A-Za-z0-9]*)""", RegexOption.IGNORE_CASE),
+    // Standard label formats: UTR: 12345, UPI Ref: 12345, Ref no: 12345, Txn ID: 12345, Order ID: 12345, RRN: 12345
+    Regex("""\b(?:upi|utr|imps|neft|rtgs|rrn|txn|trans|transaction|order|ref(?:erence)?)\s*(?:ref(?:erence)?)?\s*(?:no\.?|id|num)?\s*[:\-/]?\s*([A-Za-z0-9]*\d{4,}[A-Za-z0-9]*)""", RegexOption.IGNORE_CASE)
 )
+
 private val VPA = Regex("""(?:to|from)\s+(?:vpa\s+)?([A-Za-z0-9._-]+@[A-Za-z]+)""", RegexOption.IGNORE_CASE)
-private val TO_NAME = Regex("""\b(?:to|towards|for payment to)\s+([A-Za-z][A-Za-z0-9 .&'-]{2,40}?)(?=\s+on\b|\s+via\b|\s+using\b|\s+successfully\b|\s+was\b|[.;,]|$)""", RegexOption.IGNORE_CASE)
-private val FROM_NAME = Regex("""\bfrom\s+([A-Za-z][A-Za-z0-9 .&'-]{2,40}?)(?=\s+on\b|\s+via\b|\s+using\b|\s+successfully\b|\s+was\b|[.;,]|$)""", RegexOption.IGNORE_CASE)
+private val TO_NAME = Regex("""\b(?:to|towards|for payment to)\s+([A-Za-z0-9+][A-Za-z0-9 .&'-]{2,40}?)(?=\s+on\b|\s+via\b|\s+using\b|\s+successfully\b|\s+was\b|[.;,]|$)""", RegexOption.IGNORE_CASE)
+private val FROM_NAME = Regex("""\bfrom\s+([A-Za-z0-9+][A-Za-z0-9 .&'-]{2,40}?)(?=\s+on\b|\s+via\b|\s+using\b|\s+successfully\b|\s+was\b|[.;,]|$)""", RegexOption.IGNORE_CASE)
 
 /** ICICI's shape: "Acct XX391 debited for Rs 914.00 on 12-Aug-26; Eastern
  *  Power D credited." The payee is named before the word, not after a "to". */
 private val CREDITED_NAME = Regex(
-    """[;,]\s*([A-Za-z][A-Za-z0-9 .&'-]{2,40}?)\s+credited""",
+    """[;,]\s*([A-Za-z0-9][A-Za-z0-9 .&'-]{2,40}?)\s+credited""",
     RegexOption.IGNORE_CASE
 )
 
 /** Card spends: "spent on Card XX4321 at SWIGGY on 09-08-26". */
 private val AT_NAME = Regex(
-    """\bat\s+([A-Za-z][A-Za-z0-9 .&'-]{2,40}?)(?=\s+on\b|\s+via\b|\s+using\b|\s+successfully\b|\s+was\b|[.;,]|$)""",
+    """\bat\s+([A-Za-z0-9][A-Za-z0-9 .&'-]{2,40}?)(?=\s+on\b|\s+via\b|\s+using\b|\s+successfully\b|\s+was\b|[.;,]|$)""",
     RegexOption.IGNORE_CASE
 )
 
@@ -89,12 +125,24 @@ private val DATE_NUMERIC = Regex("""(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})""")
 private val DATE_NAMED = Regex("""(\d{1,2})[-\s]([A-Za-z]{3})[-\s](\d{2,4})""")
 private val MONTHS = listOf("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 
-/** Messages that mention money but move none. */
+/** Messages that mention money but move none. Naked 'request' avoided to prevent dropping legitimate 'per your request' debits. */
 private val NOT_A_TRANSACTION = listOf(
     "otp", "one time password", "will be debited", "will be deducted", "due on",
-    "is due", "reminder", "failed", "declined", "unsuccessful", "request",
+    "is due", "reminder", "failed", "declined", "unsuccessful",
+    "payment request", "collect request", "money request", "requested to pay", "request to pay",
     "cashback offer", "apply now", "eligible", "pre-approved", "e-mandate"
 )
+
+fun extractBankRef(body: String): String {
+    for (pattern in REF_PATTERNS) {
+        val m = pattern.find(body)
+        if (m != null) {
+            val candidate = m.groupValues.getOrNull(1).orEmpty().trim()
+            if (candidate.isNotBlank()) return candidate
+        }
+    }
+    return ""
+}
 
 /**
  * Parses a bank SMS into a transaction, or returns null if it isn't one.
@@ -105,10 +153,8 @@ private val NOT_A_TRANSACTION = listOf(
  */
 fun parseBankSms(
     body: String,
-    // Kept although unused: the sender decides whether a message is worth
-    // parsing at all, which callers check first, and naming it here keeps the
-    // pair together at every call site.
-    @Suppress("UNUSED_PARAMETER") sender: String = ""
+    @Suppress("UNUSED_PARAMETER") sender: String = "",
+    receivedAt: Long = 0L
 ): ParsedSms? {
     if (body.isBlank()) return null
     val lower = body.lowercase()
@@ -123,7 +169,16 @@ fun parseBankSms(
     val isCredit = firstIndexOf(directionBody, CREDIT_WORDS).let { credit ->
         val debit = firstIndexOf(directionBody, DEBIT_WORDS)
         when {
-            credit < 0 && debit < 0 -> return null
+            credit < 0 && debit < 0 -> {
+                val drMatch = Regex("""\bdr\.?\b""").find(directionBody)
+                val crMatch = Regex("""\bcr\.?\b""").find(directionBody)
+                when {
+                    crMatch == null && drMatch == null -> return null
+                    crMatch == null -> false
+                    drMatch == null -> true
+                    else -> crMatch.range.first < drMatch.range.first
+                }
+            }
             credit < 0 -> false
             debit < 0 -> true
             else -> credit < debit          // whichever the bank leads with
@@ -131,7 +186,7 @@ fun parseBankSms(
     }
 
     val (amount, amountText) = extractAmountPair(body) ?: return null
-    val ref = REF.find(body)?.groupValues?.getOrNull(1).orEmpty()
+    val ref = extractBankRef(body)
     val accountTail = ACCOUNT_TAIL.find(body)?.groupValues?.getOrNull(1).orEmpty()
 
     // Never the sender: an unnamed payment is better left unnamed than filed
@@ -156,7 +211,8 @@ fun parseBankSms(
         // Only a credit can be a refund; a debit that mentions "reversal" is
         // more likely a fee charged on one.
         isRefund = isCredit && REFUND_WORDS.any { lower.contains(it) },
-        body = if (sender.isNotBlank() && !body.startsWith("[")) "[$sender] ${body.take(300)}" else body.take(300)
+        body = if (sender.isNotBlank() && !body.startsWith("[")) "[$sender] ${body.take(300)}" else body.take(300),
+        receivedAt = receivedAt
     ).takeIf { it.isUsable }
 }
 
@@ -167,13 +223,25 @@ fun parseBankSms(
  */
 private fun extractAmountPair(body: String): Pair<Double, String>? {
     val lower = body.lowercase()
-    for (m in AMOUNT.findAll(body)) {
+
+    fun testMatch(m: MatchResult): Pair<Double, String>? {
         val before = lower.substring(maxOf(0, m.range.first - 28), m.range.first)
-        if (listOf("bal", "balance", "limit", "outstanding").any { before.contains(it) }) continue
+        if (listOf("bal", "balance", "limit", "outstanding", "avl", "available").any { before.contains(it) }) return null
         val raw = m.groupValues[1]
-        val value = raw.replace(",", "").toDoubleOrNull() ?: continue
-        if (value > 0) return value to raw
+        val value = raw.replace(",", "").toDoubleOrNull() ?: return null
+        return if (value > 0) value to raw else null
     }
+
+    for (m in AMOUNT_PREFIX.findAll(body)) {
+        testMatch(m)?.let { return it }
+    }
+    for (m in AMOUNT_SUFFIX.findAll(body)) {
+        testMatch(m)?.let { return it }
+    }
+    for (m in AMOUNT_ACTION.findAll(body)) {
+        testMatch(m)?.let { return it }
+    }
+
     return null
 }
 
@@ -336,8 +404,10 @@ fun looksLikeBankMessage(text: String): Boolean {
     if (text.isBlank()) return false
     val lower = text.lowercase()
     if (NOT_A_TRANSACTION.any { lower.contains(it) }) return false
-    val hasAmount = AMOUNT.containsMatchIn(text)
-    val hasDirection = DEBIT_WORDS.any { lower.contains(it) } || CREDIT_WORDS.any { lower.contains(it) }
+    val hasAmount = extractAmount(text) != null
+    val hasDirection = DEBIT_WORDS.any { lower.contains(it) } ||
+        CREDIT_WORDS.any { lower.contains(it) } ||
+        Regex("""\b(?:dr|cr)\.?\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
     return hasAmount && hasDirection
 }
 

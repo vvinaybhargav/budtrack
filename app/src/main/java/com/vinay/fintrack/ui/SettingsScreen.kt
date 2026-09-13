@@ -50,7 +50,6 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import com.vinay.fintrack.sms.FinTrackNotificationListener
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -585,7 +584,6 @@ private fun SmsImportSection(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
-    var hasNotifAccess by remember { mutableStateOf(FinTrackNotificationListener.isNotificationAccessGranted(context)) }
     var hasSmsPerm by remember { mutableStateOf(hasSmsPermission(context)) }
     var canNotify by remember { mutableStateOf(hasNotifyPermission(context)) }
 
@@ -597,9 +595,12 @@ private fun SmsImportSection(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                hasNotifAccess = FinTrackNotificationListener.isNotificationAccessGranted(context)
-                hasSmsPerm = hasSmsPermission(context)
+                val smsGranted = hasSmsPermission(context)
+                hasSmsPerm = smsGranted
                 canNotify = hasNotifyPermission(context)
+                if (smsGranted && !vm.smsImportOn && !asked) {
+                    vm.setSmsImport(true)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -617,11 +618,11 @@ private fun SmsImportSection(
 
     PfCard(padding = PaddingValues(Space.s4)) {
         SettingHeader(
-            icon = Icons.Default.NotificationsActive,
-            title = "Bank SMS & UPI Auto-Tracking",
-            subtitle = "Real-time tracking for Bank SMS, GPay, PhonePe, Paytm & CRED"
+            icon = Icons.Default.Sms,
+            title = "Bank SMS Auto-Tracking",
+            subtitle = "Automatic real-time expense tracking from incoming bank SMS"
         )
-        Muted("Catches transaction alerts from Bank SMS and UPI apps in real time without manual entry.")
+        Muted("Catches transaction alerts from Kotak, HDFC, SBI, ICICI, Axis and other banks directly at the phone level as they arrive.")
 
         Row(
             Modifier
@@ -632,8 +633,7 @@ private fun SmsImportSection(
         ) {
             Muted("Tracking Status")
             when {
-                vm.smsImportOn && hasNotifAccess -> Tag("Active (SMS + UPI)", Pf.Accent2_100, Pf.Accent2_800)
-                vm.smsImportOn && hasSmsPerm -> Tag("Active (SMS only)", Pf.Accent2_100, Pf.Accent2_800)
+                vm.smsImportOn && hasSmsPerm -> Tag("Active (Live SMS)", Pf.Accent2_100, Pf.Accent2_800)
                 vm.smsImportOn -> Tag("Permission Needed", Pf.Neutral100, Pf.Neutral800)
                 else -> OutlineTag("Paused")
             }
@@ -644,15 +644,21 @@ private fun SmsImportSection(
             horizontalArrangement = Arrangement.spacedBy(Space.s2),
             verticalArrangement = Arrangement.spacedBy(Space.s2)
         ) {
-            if (!hasNotifAccess) {
-                PrimaryButton("Enable Live Tracking (SMS & UPI)", onClick = {
-                    FinTrackNotificationListener.openNotificationAccessSettings(context)
-                })
+            if (!hasSmsPerm) {
+                if (blocked) {
+                    SecondaryButton("Open App Permissions", onClick = {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    })
+                } else {
+                    PrimaryButton("Enable Live SMS Tracking", onClick = {
+                        permissionLauncher.launch(smsPermissions())
+                    })
+                }
             } else if (vm.smsImportOn) {
                 SecondaryButton("Pause auto-tracking", { vm.setSmsImport(false) })
-                GhostButton("Tracking Access Settings", onClick = {
-                    FinTrackNotificationListener.openNotificationAccessSettings(context)
-                })
             } else {
                 PrimaryButton("Resume auto-tracking", { vm.setSmsImport(true) })
             }
@@ -664,24 +670,20 @@ private fun SmsImportSection(
                     enabled = !vm.scanning
                 )
                 SecondaryButton("Re-check accounts", { vm.rematchImports() })
-            } else if (!blocked) {
-                SecondaryButton("Allow SMS for past 60d import", onClick = {
-                    permissionLauncher.launch(smsPermissions())
-                })
             }
         }
 
-        if (hasNotifAccess) {
+        if (hasSmsPerm) {
             Column(Modifier.padding(top = Space.s2)) {
-                Muted("✓ Live tracking active: Bank SMS, Google Pay, PhonePe, Paytm & CRED alerts are logged automatically.")
+                Muted("✓ Direct SMS tracking active: bank transaction texts are recorded automatically in the background.")
             }
         } else {
             Column(Modifier.padding(top = Space.s2)) {
-                Muted("Enable Live Tracking to allow FinTrack to parse incoming Bank SMS and UPI payment banners. 100% private, processed on device.")
+                Muted("Grant SMS permissions to allow FinTrack to parse incoming bank alerts. 100% private, runs entirely on your device.")
             }
         }
 
-        if ((hasNotifAccess || hasSmsPerm) && !canNotify) {
+        if (hasSmsPerm && !canNotify) {
             Column(Modifier.padding(top = Space.s3)) {
                 Muted("Posting notifications is off, so recorded expenses happen silently.")
                 Row(Modifier.padding(top = Space.s2)) {

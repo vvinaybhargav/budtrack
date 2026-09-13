@@ -18,23 +18,37 @@ class SmsImporter(private val context: Context) {
 
     private val store = Store(context)
 
-    /** Reads one freshly-arrived message. Returns true if it became a transaction. */
     fun importOne(body: String, sender: String, receivedAt: Long): Boolean {
         val state = store.load()
         if (!state.smsImportOn) return false
 
-        val parsed = parseBankSms(body, sender)
+        val parsed = parseBankSms(body, sender, receivedAt)
         if (parsed == null) {
             // Recorded rather than dropped silently: without this there is no way
             // to tell a wrongly-worded alert from one that never arrived.
             store.save(state.copy(smsLog = note(state, "skipped $sender — ${skipReason(body)}")))
             return false
         }
-        if (parsed.dedupeKey in state.importedRefs) {
+
+        val isDuplicate = if (parsed.ref.isNotEmpty()) {
+            parsed.dedupeKey in state.importedRefs || state.txns.any { it.ref.isNotEmpty() && it.ref == parsed.ref }
+        } else {
+            parsed.dedupeKey in state.importedRefs ||
+                state.txns.any { t ->
+                    val wanted = if (parsed.isCredit) "INCOME" else "EXPENSE"
+                    t.kind == wanted &&
+                        kotlin.math.abs(t.amount - parsed.amount) < 0.01 &&
+                        t.date == parsed.date &&
+                        (t.note.equals(parsed.party, ignoreCase = true) || t.note.isEmpty() || parsed.party.isEmpty()) &&
+                        parsed.receivedAt > 0L && t.at > 0L && kotlin.math.abs(t.at - parsed.receivedAt) < 15_000L
+                }
+        }
+
+        if (isDuplicate) {
             store.save(state.copy(smsLog = note(state, "already had ${inr(parsed.amount)} ${parsed.party}")))
             return false
         }
-        val after = apply(state, listOf(parsed.copy(receivedAt = receivedAt)), maxOf(state.lastSmsScan, receivedAt))
+        val after = apply(state, listOf(parsed), maxOf(state.lastSmsScan, receivedAt))
         store.save(after)
 
         // Announce what the message became. The point is catching a wrong
@@ -78,7 +92,7 @@ class SmsImporter(private val context: Context) {
                     val at = c.getLong(dateCol)
                     newest = maxOf(newest, at)
                     if (!looksLikeBankSender(sender)) continue
-                    parseBankSms(body, sender)?.let { found += it.copy(receivedAt = at) }
+                    parseBankSms(body, sender, at)?.let { found += it }
                 }
             }
         }.onFailure { Log.w(TAG, "inbox read failed", it) }

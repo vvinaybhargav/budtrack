@@ -12,6 +12,7 @@ data class PersistedState(
     val accounts: List<Account> = Seed.accounts,
     val loans: List<Loan> = Seed.loans,
     val cards: List<Card> = Seed.cards,
+    val debts: List<Debt> = emptyList(),
     /** Actual money movements. Confirmation state is derived from these, not stored
      *  separately — so un-confirming is just deleting the transaction. */
     val txns: List<Txn> = emptyList(),

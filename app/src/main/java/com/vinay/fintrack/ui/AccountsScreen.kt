@@ -31,6 +31,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.getValue
@@ -64,7 +65,7 @@ fun AccountsScreen(vm: FinTrackViewModel) {
     val confirmedBillsCount = vm.commitments.count { vm.isConfirmed(it.id) }
     val settledCardsCount = vm.scopedCards.count { it.paid || it.balance == 0.0 }
     val pastCount = vm.pastClosedLoans.size + vm.pastClosedSetAsides.size + vm.pastClosedRecurring.size +
-            confirmedLoansCount + confirmedBillsCount + settledCardsCount
+            vm.pastClosedDebts.size + confirmedLoansCount + confirmedBillsCount + settledCardsCount
 
     val filterOptions = listOf(
         "All" to "All",
@@ -73,6 +74,7 @@ fun AccountsScreen(vm: FinTrackViewModel) {
         "Loans" to "Loans (${vm.scopedLoans.filter { !vm.isLoanCleared(it) }.size})",
         "Recurring" to "Recurring (${vm.commitments.size})",
         "Set Aside" to "Set Aside (${vm.annualSetAsides.size})",
+        "Lent & Borrow" to "Lent & Borrow (${vm.pendingDebts.size})",
         "Past" to "Past ($pastCount)"
     )
 
@@ -164,14 +166,21 @@ fun AccountsScreen(vm: FinTrackViewModel) {
             }
         }
 
-        // 7. Past / Completed Payments Section
+        // 7. Lent & Borrow Section (Below Set Aside)
+        if (selectedFilter == "All" || selectedFilter == "Lent & Borrow") {
+            item {
+                ManageLentBorrowSection(vm)
+            }
+        }
+
+        // 8. Past / Completed Payments Section
         if (selectedFilter == "All" || selectedFilter == "Past") {
             item {
                 ManagePastPaymentsSection(vm)
             }
         }
 
-        // 8. Incomplete Setup / Missing Details Health Check (at the end of accounts page)
+        // 9. Incomplete Setup / Missing Details Health Check (at the end of accounts page)
         item {
             IncompleteSetupSection(vm)
         }
@@ -181,6 +190,8 @@ fun AccountsScreen(vm: FinTrackViewModel) {
     CardSettleSheet(vm)
     LoanConfirmSheet(vm)
     SetupFixDialog(vm)
+    AddDebtDialog(vm)
+    DebtActionSheet(vm)
 }
 
 @Composable
@@ -878,6 +889,133 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
 }
 
 @Composable
+private fun ManageLentBorrowSection(vm: FinTrackViewModel) {
+    val pending = vm.pendingDebts
+    val totalLent = vm.totalLentPending
+    val totalBorrowed = vm.totalBorrowedPending
+    val net = vm.netDebt
+
+    Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+        SectionHeader(
+            icon = Icons.Default.SwapHoriz,
+            title = "Lent & Borrow",
+            badgeText = if (net >= 0) "Net +${inr(net)}" else "Net -${inr(-net)}",
+            onAddClick = { vm.openAddDebt() }
+        )
+
+        if (pending.isEmpty()) {
+            PfCard(padding = PaddingValues(Space.s4)) {
+                Text(
+                    "No active lent or borrowed records. Keep track of money lent to friends or borrowed from others.",
+                    color = Pf.Muted,
+                    fontSize = 14.sp
+                )
+                Spacer(Modifier.height(Space.s2))
+                SecondaryButton("+ Add Lent / Borrow", { vm.openAddDebt() })
+            }
+        } else {
+            PfCard(padding = PaddingValues(Space.s4)) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = Space.s3),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    Column {
+                        Muted("Lent (Receivable)")
+                        Text(
+                            inr(totalLent),
+                            color = Color(0xFF00BFA5), fontSize = 18.sp, fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Muted("Borrowed (Payable)")
+                        Text(
+                            inr(totalBorrowed),
+                            color = Color(0xFFFF5252), fontSize = 18.sp, fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+                    pending.forEach { d ->
+                        val isLent = d.isLent
+                        val statusColor = if (isLent) Color(0xFF00BFA5) else Color(0xFFFF5252)
+                        val typeLabel = if (isLent) "LENT" else "BORROWED"
+
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(Pf.Surface2.copy(alpha = 0.6f), Radius.Md)
+                                .border(1.dp, Pf.Hairline, Radius.Md)
+                                .clickable { vm.openDebtAction(d) }
+                                .padding(Space.s3)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    ) {
+                                        Tag(
+                                            typeLabel,
+                                            statusColor.copy(alpha = 0.15f),
+                                            statusColor
+                                        )
+                                        Text(
+                                            d.peerName,
+                                            color = Pf.Text,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Text(
+                                        inr(d.remainingAmount),
+                                        color = statusColor,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val subText = buildString {
+                                        if (d.settledAmount > 0) {
+                                            append("${inr(d.settledAmount)} of ${inr(d.amount)} returned · ")
+                                        }
+                                        if (d.dueDate.isNotEmpty()) {
+                                            append("Due ${prettyDate(d.dueDate)}")
+                                        } else if (d.note.isNotEmpty()) {
+                                            append(d.note)
+                                        } else {
+                                            append(if (isLent) "To receive" else "To pay back")
+                                        }
+                                    }
+                                    Muted(subText, size = 12)
+
+                                    GhostButton(if (isLent) "Received" else "Repay", { vm.openDebtAction(d) })
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ManagePastPaymentsSection(vm: FinTrackViewModel) {
     val confirmedLoans = vm.scopedLoans.filter { vm.isLoanConfirmed(it.id) }
     val confirmedRecurring = vm.commitments.filter { vm.isConfirmed(it.id) }
@@ -1209,6 +1347,49 @@ private fun ManagePastPaymentsSection(vm: FinTrackViewModel) {
                                     Tag("Inactive", Pf.Muted.copy(alpha = 0.2f), Pf.Muted)
                                     SecondaryButton("Reactivate", { vm.closeEntry(e.id, false) })
                                     IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Default.Delete, "Delete", Modifier.size(15.dp), tint = Pf.Accent400)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 8. Settled Lent & Borrow
+                val pastDebts = vm.pastClosedDebts
+                if (pastDebts.isNotEmpty()) {
+                    Text(
+                        "SETTLED LENT & BORROW",
+                        color = Pf.Muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(top = Space.s2)
+                    )
+                    pastDebts.forEach { d ->
+                        PfCard(padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f).padding(end = Space.s2)) {
+                                    Text(
+                                        "${if (d.isLent) "Lent to" else "Borrowed from"} ${d.peerName}",
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    val settledPart = if (d.settledDate.isNotEmpty()) "Settled: ${prettyDate(d.settledDate)}" else "Settled"
+                                    val subtitle = listOfNotNull("Amount: ${inr(d.amount)}", settledPart, d.note.ifEmpty { null }).joinToString(" · ")
+                                    Text(subtitle, color = Pf.Muted, fontSize = 12.sp)
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(Space.s1)
+                                ) {
+                                    Tag("Settled", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+                                    IconButton(onClick = { vm.deleteDebt(d.id) }, modifier = Modifier.size(28.dp)) {
                                         Icon(Icons.Default.Delete, "Delete", Modifier.size(15.dp), tint = Pf.Accent400)
                                     }
                                 }
@@ -1585,5 +1766,383 @@ fun SetupFixDialog(vm: FinTrackViewModel) {
         }
     }
 }
+
+@Composable
+fun AddDebtDialog(vm: FinTrackViewModel) {
+    if (!vm.showAddDebtDialog) return
+
+    val draft = vm.newDebtDraft
+    val isLent = draft.type == "LENT"
+    val accounts = vm.scopedAccounts
+    val accountOptions = listOf("None (Cash / Offline)") + accounts.map { it.name }
+    val selectedAccountName = accounts.firstOrNull { it.id == draft.accountId }?.name ?: "None (Cash / Offline)"
+
+    Dialog(onDismissRequest = { vm.showAddDebtDialog = false }) {
+        PfCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = Space.s2),
+            padding = PaddingValues(Space.s4),
+            shape = Radius.Lg
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Space.s3)
+            ) {
+                // Header
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        Box(
+                            Modifier
+                                .size(28.dp)
+                                .background(
+                                    if (isLent) Color(0xFF00BFA5).copy(alpha = 0.15f) else Color(0xFFFF5252).copy(alpha = 0.15f),
+                                    Radius.Sm
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.SwapHoriz,
+                                null,
+                                Modifier.size(16.dp),
+                                tint = if (isLent) Color(0xFF00BFA5) else Color(0xFFFF5252)
+                            )
+                        }
+                        Text(
+                            if (isLent) "Lent Money (I gave)" else "Borrowed Money (I took)",
+                            color = Pf.Text,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    IconButton(onClick = { vm.showAddDebtDialog = false }, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, "Close", tint = Pf.Muted)
+                    }
+                }
+
+                // Type Toggle: Lent vs Borrowed
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Pf.Surface2, Radius.Pill)
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .background(
+                                if (isLent) Color(0xFF00BFA5) else Color.Transparent,
+                                Radius.Pill
+                            )
+                            .clickable { vm.newDebtDraft = draft.copy(type = "LENT") }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "I Lent Money",
+                            color = if (isLent) Color.White else Pf.Muted,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .background(
+                                if (!isLent) Color(0xFFFF5252) else Color.Transparent,
+                                Radius.Pill
+                            )
+                            .clickable { vm.newDebtDraft = draft.copy(type = "BORROWED") }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "I Borrowed",
+                            color = if (!isLent) Color.White else Pf.Muted,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Person / Peer Name
+                PfField(
+                    label = if (isLent) "Lent to (Person Name)" else "Borrowed from (Person Name)",
+                    value = draft.peerName,
+                    onValueChange = { vm.newDebtDraft = draft.copy(peerName = it) },
+                    placeholder = "e.g. Rahul, Priya, Ajay"
+                )
+
+                // Amount
+                PfField(
+                    label = "Amount (₹)",
+                    value = draft.amountText,
+                    onValueChange = { vm.newDebtDraft = draft.copy(amountText = it) },
+                    placeholder = "e.g. 5000",
+                    numeric = true
+                )
+
+                // Expected Return Date
+                PfField(
+                    label = "Expected Return Date (Optional)",
+                    value = draft.dueDateText,
+                    onValueChange = { vm.newDebtDraft = draft.copy(dueDateText = it) },
+                    placeholder = "e.g. 15-10-2026 or 15th"
+                )
+
+                // Account Selection
+                Column {
+                    Muted("Bank Account (Optional)", size = 12)
+                    Spacer(Modifier.height(4.dp))
+                    PfSelect(
+                        value = selectedAccountName,
+                        options = accountOptions,
+                        onSelect = { chosen ->
+                            val accId = accounts.firstOrNull { it.name == chosen }?.id.orEmpty()
+                            vm.newDebtDraft = draft.copy(
+                                accountId = accId,
+                                recordTxn = accId.isNotEmpty()
+                            )
+                        }
+                    )
+                }
+
+                // If account is selected, show record transaction checkbox
+                if (draft.accountId.isNotEmpty()) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { vm.newDebtDraft = draft.copy(recordTxn = !draft.recordTxn) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        Box(
+                            Modifier
+                                .size(18.dp)
+                                .border(1.5.dp, if (draft.recordTxn) Pf.Accent else Pf.Muted, Radius.Sm)
+                                .background(if (draft.recordTxn) Pf.Accent else Color.Transparent, Radius.Sm),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (draft.recordTxn) {
+                                Icon(Icons.Default.CheckCircle, null, Modifier.size(14.dp), tint = Color.White)
+                            }
+                        }
+                        Text(
+                            if (isLent) "Debit $selectedAccountName now" else "Credit $selectedAccountName now",
+                            color = Pf.Text,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+
+                // Note
+                PfField(
+                    label = "Note / Purpose (Optional)",
+                    value = draft.note,
+                    onValueChange = { vm.newDebtDraft = draft.copy(note = it) },
+                    placeholder = "e.g. Dinner split, Emergency loan"
+                )
+
+                Spacer(Modifier.height(Space.s2))
+
+                // Action Buttons
+                val isValid = draft.peerName.isNotBlank() && (draft.amountText.toDoubleOrNull() ?: 0.0) > 0.0
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    GhostButton("Cancel", { vm.showAddDebtDialog = false }, Modifier.weight(1f))
+                    PrimaryButton(
+                        "Save Record",
+                        { vm.saveNewDebt() },
+                        Modifier.weight(1f),
+                        enabled = isValid
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DebtActionSheet(vm: FinTrackViewModel) {
+    val debt = vm.selectedDebtForAction ?: return
+    val isLent = debt.isLent
+    val statusColor = if (isLent) Color(0xFF00BFA5) else Color(0xFFFF5252)
+    val accounts = vm.scopedAccounts
+    val accountOptions = listOf("None (Cash / Offline)") + accounts.map { it.name }
+    val selectedAccountName = accounts.firstOrNull { it.id == vm.debtSettleAccountId }?.name ?: "None (Cash / Offline)"
+
+    Dialog(onDismissRequest = vm::dismissDebtAction) {
+        PfCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = Space.s2),
+            padding = PaddingValues(Space.s4),
+            shape = Radius.Lg
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Space.s3)
+            ) {
+                // Header
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        Box(
+                            Modifier
+                                .size(28.dp)
+                                .background(statusColor.copy(alpha = 0.15f), Radius.Sm),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.SwapHoriz, null, Modifier.size(16.dp), tint = statusColor)
+                        }
+                        Column {
+                            Text(
+                                if (isLent) "Lent to ${debt.peerName}" else "Borrowed from ${debt.peerName}",
+                                color = Pf.Text,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "Remaining: ${inr(debt.remainingAmount)} of ${inr(debt.amount)}",
+                                color = statusColor,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                    IconButton(onClick = vm::dismissDebtAction, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, "Close", tint = Pf.Muted)
+                    }
+                }
+
+                Hairline()
+
+                Text(
+                    if (isLent) "Record Money Received Back" else "Record Repayment",
+                    color = Pf.Text,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                // Quick full settle or partial amount
+                PfField(
+                    label = "Amount to Settle (₹)",
+                    value = vm.debtSettleAmountText,
+                    onValueChange = { vm.debtSettleAmountText = it },
+                    placeholder = "Amount",
+                    numeric = true
+                )
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    SecondaryButton("Full (${inr(debt.remainingAmount)})", {
+                        vm.debtSettleAmountText = debt.remainingAmount.toLong().toString()
+                    }, Modifier.weight(1f))
+                    if (debt.remainingAmount > 1000) {
+                        SecondaryButton("Half (${inr(debt.remainingAmount / 2)})", {
+                            vm.debtSettleAmountText = (debt.remainingAmount / 2).toLong().toString()
+                        }, Modifier.weight(1f))
+                    }
+                }
+
+                // Account selection
+                Column {
+                    Muted(if (isLent) "Deposit Return Into (Optional)" else "Pay Return From (Optional)", size = 12)
+                    Spacer(Modifier.height(4.dp))
+                    PfSelect(
+                        value = selectedAccountName,
+                        options = accountOptions,
+                        onSelect = { chosen ->
+                            val accId = accounts.firstOrNull { it.name == chosen }?.id.orEmpty()
+                            vm.debtSettleAccountId = accId
+                            vm.debtSettleRecordTxn = accId.isNotEmpty()
+                        }
+                    )
+                }
+
+                if (vm.debtSettleAccountId.isNotEmpty()) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { vm.debtSettleRecordTxn = !vm.debtSettleRecordTxn }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        Box(
+                            Modifier
+                                .size(18.dp)
+                                .border(1.5.dp, if (vm.debtSettleRecordTxn) Pf.Accent else Pf.Muted, Radius.Sm)
+                                .background(if (vm.debtSettleRecordTxn) Pf.Accent else Color.Transparent, Radius.Sm),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (vm.debtSettleRecordTxn) {
+                                Icon(Icons.Default.CheckCircle, null, Modifier.size(14.dp), tint = Color.White)
+                            }
+                        }
+                        Text(
+                            if (isLent) "Credit $selectedAccountName now" else "Debit $selectedAccountName now",
+                            color = Pf.Text,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(Space.s2))
+
+                // Actions
+                val settleAmt = vm.debtSettleAmountText.toDoubleOrNull() ?: 0.0
+                val canSettle = settleAmt > 0.0
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                ) {
+                    GhostButton("Delete", {
+                        vm.deleteDebt(debt.id)
+                    }, Modifier.weight(0.8f))
+
+                    PrimaryButton(
+                        if (settleAmt >= debt.remainingAmount - 0.01) "Settle in Full" else "Record ${inr(settleAmt)}",
+                        {
+                            vm.settleDebt(
+                                debtId = debt.id,
+                                settleAmount = settleAmt,
+                                accountId = vm.debtSettleAccountId,
+                                createTxn = vm.debtSettleRecordTxn
+                            )
+                            vm.dismissDebtAction()
+                        },
+                        Modifier.weight(1.2f),
+                        enabled = canSettle
+                    )
+                }
+            }
+        }
+    }
+}
+
 
 

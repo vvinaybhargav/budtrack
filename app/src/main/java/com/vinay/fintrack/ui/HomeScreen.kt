@@ -165,6 +165,47 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     hasPrior = true
                 }
 
+                // 1b. LENT & BORROW (Active Pending - Placed Below Set Aside)
+                val pendingDebts = vm.pendingDebts
+                if (pendingDebts.isNotEmpty()) {
+                    if (hasPrior) HomeSectionDivider()
+                    val net = vm.netDebt
+                    val netLabel = if (net >= 0) "Net +${inr(net)}" else "Net -${inr(-net)}"
+                    HomeListHeaderLabel("LENT & BORROW · $netLabel") {
+                        vm.accountsFilter = "Lent & Borrow"
+                        vm.tab = Tab.ACCOUNTS
+                    }
+                    pendingDebts.forEachIndexed { idx, d ->
+                        if (idx > 0) Hairline()
+                        val isLent = d.isLent
+                        val tagColor = if (isLent) Color(0xFF00BFA5) else Color(0xFFFF5252)
+                        val dueSubtitle = buildString {
+                            append(if (isLent) "Lent to " else "Borrowed from ")
+                            append(d.peerName)
+                            if (d.dueDate.isNotEmpty()) {
+                                val dayNum = d.dueDate.filter { it.isDigit() }
+                                val dayFormatted = if (d.dueDate.length >= 10 && d.dueDate.contains("-")) {
+                                    d.dueDate.split("-").lastOrNull()?.toIntOrNull()?.toString() ?: dayNum
+                                } else dayNum
+                                if (dayFormatted.isNotEmpty()) append(" · Due (${dayFormatted}th)")
+                            } else if (d.note.isNotEmpty()) {
+                                append(" · ${d.note}")
+                            }
+                        }
+
+                        HomeCompactDebtRow(
+                            index = idx + 1,
+                            title = d.peerName,
+                            type = if (isLent) "LENT" else "BORROWED",
+                            typeColor = tagColor,
+                            subtitle = dueSubtitle,
+                            amount = inr(d.remainingAmount),
+                            onClick = { vm.openDebtAction(d) }
+                        )
+                    }
+                    hasPrior = true
+                }
+
                 // 2. CREDIT CARDS (DUES)
                 if (pendingCards.isNotEmpty()) {
                     if (hasPrior) HomeSectionDivider()
@@ -303,6 +344,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
     CardSettleSheet(vm)
     LoanConfirmSheet(vm)
     InitialProfileDialog(vm)
+    AddDebtDialog(vm)
+    DebtActionSheet(vm)
 }
 
 @Composable
@@ -516,6 +559,67 @@ private fun HomeCompactSetAsideRow(
             height = 4,
             modifier = Modifier.fillMaxWidth()
         )
+    }
+}
+
+@Composable
+private fun HomeCompactDebtRow(
+    index: Int,
+    title: String,
+    type: String,
+    typeColor: Color,
+    subtitle: String,
+    amount: String,
+    onClick: (() -> Unit)? = null
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f).padding(end = Space.s2)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    "$index. $title",
+                    color = Pf.Text,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Tag(
+                    type,
+                    typeColor.copy(alpha = 0.15f),
+                    typeColor
+                )
+            }
+            Text(
+                subtitle,
+                color = Pf.Muted,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                amount,
+                color = typeColor,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                if (type == "LENT") "to receive" else "to repay",
+                color = Pf.Muted,
+                fontSize = 10.sp
+            )
+        }
     }
 }
 

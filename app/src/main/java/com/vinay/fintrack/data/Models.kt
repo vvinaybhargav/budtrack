@@ -119,6 +119,27 @@ data class MissingConfigItem(
     val missingFields: List<String>
 )
 
+@Serializable
+data class Debt(
+    val id: String,
+    val person: String,                // Profile owner e.g. "Vinay" or "Joint"
+    val type: String,                  // "LENT" (I gave money, they owe me) | "BORROWED" (I took money, I owe them)
+    val peerName: String,              // Person's name (e.g. "Rahul", "Priya")
+    val amount: Double,                // Total amount
+    val dueDate: String = "",          // Expected payback/return date (YYYY-MM-DD or DD-MM-YYYY)
+    val accountId: String = "",        // Linked account (if debited or credited)
+    val settled: Boolean = false,      // Fully returned / settled
+    val settledAmount: Double = 0.0,   // Amount returned so far
+    val settledDate: String = "",      // Date settled (YYYY-MM-DD)
+    val note: String = "",             // Note / purpose
+    val createdAt: Long = 0L           // Epoch millis
+) {
+    val remainingAmount: Double get() = (amount - settledAmount).coerceAtLeast(0.0)
+    val isLent: Boolean get() = type.equals("LENT", ignoreCase = true)
+    val isBorrowed: Boolean get() = type.equals("BORROWED", ignoreCase = true)
+}
+
+
 /**
  * An actual movement of money, unlike [Entry] which is only the recurring plan.
  * EXPENSE debits [fromAccountId]; INCOME credits [toAccountId]; TRANSFER does both

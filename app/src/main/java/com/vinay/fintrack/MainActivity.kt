@@ -120,6 +120,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun UnlockedShell(vm: FinTrackViewModel) {
     val canGoBack = vm.tab != Tab.HOME ||
+        vm.showAddDebtDialog ||
+        vm.selectedDebtForAction != null ||
         vm.editingTxnId != null ||
         vm.editingAccountId != null ||
         vm.editingCardId != null ||
@@ -131,6 +133,8 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
 
     BackHandler(enabled = canGoBack) {
         when {
+            vm.showAddDebtDialog -> vm.showAddDebtDialog = false
+            vm.selectedDebtForAction != null -> vm.dismissDebtAction()
             vm.pendingDeletion != null -> vm.cancelDeletion()
             vm.editingTxnId != null -> vm.cancelEditTxn()
             vm.editingAccountId != null -> vm.cancelEditAccount()

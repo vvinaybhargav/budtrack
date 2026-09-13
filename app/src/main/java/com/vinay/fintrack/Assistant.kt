@@ -299,6 +299,55 @@ class Assistant(private val vm: FinTrackViewModel) {
                 "Updated ${updated?.name}."
             }
 
+            "record_debt" -> {
+                val type = a.str("type")?.uppercase() ?: "LENT"
+                val peer = a.str("peer_name").orEmpty()
+                val amount = a.num("amount") ?: 0.0
+                if (peer.isEmpty() || amount <= 0.0) return@runCatching "Please specify person name and positive amount."
+                val acc = a.str("account")?.let { vm.accountNamed(it) }
+                val due = a.str("due_date").orEmpty()
+                val note = a.str("note").orEmpty()
+                val d = vm.addDebt(
+                    type = type,
+                    peerName = peer,
+                    amount = amount,
+                    dueDate = due,
+                    accountId = acc?.id.orEmpty(),
+                    note = note,
+                    createTxn = acc != null
+                )
+                val typeLabel = if (d.isLent) "Lent to" else "Borrowed from"
+                "Recorded in **Lent & Borrow**: $typeLabel **${d.peerName}** ${inr(d.amount)}" +
+                    (if (acc != null) " (linked to ${acc.name})" else "") +
+                    (if (d.dueDate.isNotEmpty()) ", expected by ${prettyDate(d.dueDate)}" else "") + "."
+            }
+            "settle_debt" -> {
+                val id = a.str("id")
+                val peer = a.str("peer_name").orEmpty()
+                val debt = (if (!id.isNullOrEmpty()) vm.debts.firstOrNull { it.id == id } else null)
+                    ?: (if (peer.isNotEmpty()) vm.debtNamed(peer) else null)
+                    ?: return@runCatching "No active lent or borrowed record found for '$peer'."
+                val amount = a.num("amount") ?: debt.remainingAmount
+                val acc = a.str("account")?.let { vm.accountNamed(it) }
+                vm.settleDebt(debt.id, amount, accountId = acc?.id.orEmpty(), createTxn = acc != null)
+                val actionLabel = if (debt.isLent) "Received back" else "Repaid"
+                "Recorded in **Lent & Borrow**: $actionLabel ${inr(amount)} for **${debt.peerName}**."
+            }
+            "list_debts" -> {
+                val status = a.str("status") ?: "pending"
+                val type = a.str("type") ?: "all"
+                var list = if (status == "settled") vm.pastClosedDebts else if (status == "all") vm.scopedDebts else vm.pendingDebts
+                if (type == "LENT") list = list.filter { it.isLent }
+                else if (type == "BORROWED") list = list.filter { it.isBorrowed }
+                if (list.isEmpty()) return@runCatching "No $status records found in Lent & Borrow."
+                val lines = list.map { d ->
+                    val kind = if (d.isLent) "Lent to" else "Borrowed from"
+                    val due = if (d.dueDate.isNotEmpty()) " (due ${prettyDate(d.dueDate)})" else ""
+                    "- **$kind ${d.peerName}**: ${inr(d.remainingAmount)} remaining of ${inr(d.amount)}$due"
+                }
+                "**Lent & Borrow:**\n" + lines.joinToString("\n")
+            }
+
             "set_budget" -> {
                 val cat = vm.categoryNamed(a.str("category").orEmpty())
                 val amount = a.num("amount") ?: 0.0
