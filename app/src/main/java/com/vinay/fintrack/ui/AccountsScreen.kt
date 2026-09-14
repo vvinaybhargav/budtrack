@@ -85,16 +85,16 @@ fun AccountsScreen(vm: FinTrackViewModel) {
     }
 
     val overdueBills = vm.commitments.filter {
-        it.dueDay in 1..31 && todayDay > it.dueDay && !vm.isConfirmed(it.id)
+        isItemOverdue(it.dueDate, it.dueDay) && !vm.isConfirmed(it.id)
     }
     val overdueCards = vm.scopedCards.filter {
-        it.dueDay in 1..31 && todayDay > it.dueDay && !it.paid && it.balance > 0.0
+        isItemOverdue(it.dueDate, it.dueDay) && !it.paid && it.balance > 0.0
     }
     val overdueLoans = vm.scopedLoans.filter {
-        it.dueDay in 1..31 && todayDay > it.dueDay && vm.isLoanActiveThisMonth(it) && !vm.isLoanConfirmed(it.id)
+        isItemOverdue(it.dueDate, it.dueDay) && vm.isLoanActiveThisMonth(it) && !vm.isLoanConfirmed(it.id)
     }
     val overdueSetAsides = vm.annualSetAsides.filter {
-        it.dueDay in 1..31 && todayDay > it.dueDay && !it.closed && vm.isSetAsideActiveThisMonth(it) && vm.setAsideLeft(it) > 0.0
+        isItemOverdue(it.dueDate, it.dueDay) && !it.closed && vm.isSetAsideActiveThisMonth(it) && vm.setAsideLeft(it) > 0.0
     }
     val totalOverdueCount = overdueBills.size + overdueCards.size + overdueLoans.size + overdueSetAsides.size
 
@@ -228,6 +228,37 @@ fun AccountsScreen(vm: FinTrackViewModel) {
     DebtActionSheet(vm)
 }
 
+private fun isItemOverdue(dueDateIso: String, dueDay: Int): Boolean {
+    val todayIso = today()
+    if (dueDateIso.isNotBlank() && dueDateIso.length >= 10) {
+        return dueDateIso < todayIso
+    }
+    if (dueDay in 1..31) {
+        val todayDay = try {
+            todayIso.split("-").getOrNull(2)?.toIntOrNull() ?: 1
+        } catch (e: Exception) { 1 }
+        return todayDay > dueDay
+    }
+    return false
+}
+
+private fun overdueDaysText(dueDateIso: String, dueDay: Int, todayDay: Int): String {
+    val todayIso = today()
+    if (dueDateIso.isNotBlank() && dueDateIso.length >= 10) {
+        val days = try {
+            val d1 = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).parse(dueDateIso)?.time ?: 0L
+            val d2 = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).parse(todayIso)?.time ?: 0L
+            ((d2 - d1) / (1000L * 60 * 60 * 24)).coerceAtLeast(1L).toInt()
+        } catch (e: Exception) {
+            maxOf(1, todayDay - dueDay)
+        }
+        val dayNum = dueDateIso.takeLast(2).toIntOrNull() ?: dueDay
+        return "Due on ${dayNum}th · $days day${if (days > 1) "s" else ""} overdue"
+    }
+    val diff = maxOf(1, todayDay - dueDay)
+    return "Due on ${dueDay}th · $diff day${if (diff > 1) "s" else ""} overdue"
+}
+
 @Composable
 private fun OverdueDuesSection(
     vm: FinTrackViewModel,
@@ -286,7 +317,7 @@ private fun OverdueDuesSection(
                         badge = "Bill",
                         badgeBg = Pf.Accent100,
                         badgeColor = Pf.Accent800,
-                        dueDayText = "Due on ${bill.dueDay}th · ${todayDay - bill.dueDay} days overdue",
+                        dueDayText = overdueDaysText(bill.dueDate, bill.dueDay, todayDay),
                         amountText = inr(bill.amount),
                         actionText = "Confirm",
                         onAction = { vm.requestConfirm(bill) }
@@ -301,7 +332,7 @@ private fun OverdueDuesSection(
                         badge = "Card",
                         badgeBg = Color(0xFF64B5F6).copy(alpha = 0.15f),
                         badgeColor = Color(0xFF2196F3),
-                        dueDayText = "Due on ${card.dueDay}th · ${todayDay - card.dueDay} days overdue",
+                        dueDayText = overdueDaysText(card.dueDate, card.dueDay, todayDay),
                         amountText = inr(card.balance),
                         actionText = "Settle",
                         onAction = { vm.startSettleCard(card.id) }
@@ -316,7 +347,7 @@ private fun OverdueDuesSection(
                         badge = "Loan EMI",
                         badgeBg = Color(0xFFFFB74D).copy(alpha = 0.15f),
                         badgeColor = Color(0xFFFF9800),
-                        dueDayText = "Due on ${loan.dueDay}th · ${todayDay - loan.dueDay} days overdue",
+                        dueDayText = overdueDaysText(loan.dueDate, loan.dueDay, todayDay),
                         amountText = inr(loan.emi),
                         actionText = "Confirm",
                         onAction = { vm.confirmLoan(loan) }
@@ -332,9 +363,9 @@ private fun OverdueDuesSection(
                         badge = if (sa.isLent) "Lent" else "Set Aside",
                         badgeBg = if (sa.isLent) Pf.AmberBg else Pf.Accent100,
                         badgeColor = if (sa.isLent) Pf.Amber else Pf.Accent800,
-                        dueDayText = "Due on ${sa.dueDay}th · ${todayDay - sa.dueDay} days overdue",
+                        dueDayText = overdueDaysText(sa.dueDate, sa.dueDay, todayDay),
                         amountText = inr(left),
-                        actionText = "Put Aside",
+                        actionText = if (sa.isLent) "Received" else "Put Aside",
                         onAction = { vm.requestConfirm(sa) }
                     )
                 }
@@ -1086,21 +1117,35 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(Modifier.weight(1f).padding(end = Space.s2)) {
-                                        Muted(
-                                            "${inr(e.monthly(vm.salaryResetDayFor(e.person)))}/mo · " +
-                                                if (put > 0) "${inr(put)} put by, ${inr(left)} left"
-                                                else "none put by yet",
-                                            size = 11
-                                        )
-                                        Muted(
-                                            if (e.nextDue.isNotEmpty()) {
-                                                val n = Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))
-                                                "${inr(pot)} of ${inr(e.amount)} saved · due ${prettyDate(e.nextDue)}, $n mo to go"
-                                            } else {
-                                                "${inr(pot)} of ${inr(e.amount)} saved · every ${e.everyMonths} mo"
-                                            },
-                                            size = 11
-                                        )
+                                        if (e.isLent) {
+                                            Text(
+                                                "Lent: ${inr(e.amount)} · Return by ${if (e.dueDate.isNotEmpty()) prettyDate(e.dueDate) else "target date"}",
+                                                color = Pf.Amber,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Muted(
+                                                if (left <= 0.0) "Fully received back"
+                                                else "${inr(left)} remaining to be returned",
+                                                size = 11
+                                            )
+                                        } else {
+                                            Muted(
+                                                "${inr(e.monthly(vm.salaryResetDayFor(e.person)))}/mo · " +
+                                                    if (put > 0) "${inr(put)} put by, ${inr(left)} left"
+                                                    else "none put by yet",
+                                                size = 11
+                                            )
+                                            Muted(
+                                                if (e.nextDue.isNotEmpty()) {
+                                                    val n = Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))
+                                                    "${inr(pot)} of ${inr(e.amount)} saved · due ${prettyDate(e.nextDue)}, $n mo to go"
+                                                } else {
+                                                    "${inr(pot)} of ${inr(e.amount)} saved · every ${e.everyMonths} mo"
+                                                },
+                                                size = 11
+                                            )
+                                        }
                                     }
 
                                     Row(
@@ -1112,7 +1157,7 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
                                         } else if (left <= 0.0) {
                                             SecondaryButton("Undo", { vm.requestConfirm(e) })
                                         } else {
-                                            PrimaryButton(if (put > 0) "Add" else "Set aside", { vm.requestConfirm(e) })
+                                            PrimaryButton(if (put > 0) "Add" else (if (e.isLent) "Received" else "Set aside"), { vm.requestConfirm(e) })
                                         }
                                         IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(28.dp)) {
                                             Icon(Icons.Default.Delete, "Delete", Modifier.size(15.dp), tint = Pf.Accent400)

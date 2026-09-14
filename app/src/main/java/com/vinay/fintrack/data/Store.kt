@@ -49,7 +49,7 @@ data class PersistedState(
      */
     val salaryDays: Map<String, Int> = emptyMap(),
     val salaries: Map<String, Double> = emptyMap(),
-    val smsImportOn: Boolean = false,
+    val smsImportOn: Boolean = true,
     /** Whether SMS access has ever been requested. Android only reveals that a
      *  permission is permanently denied after a first attempt, so without
      *  remembering this the app cannot tell "not asked yet" from "declined for

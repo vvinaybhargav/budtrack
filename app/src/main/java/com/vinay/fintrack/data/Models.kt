@@ -47,6 +47,7 @@ data class Entry(
         get() = monthly(1)
 
     fun monthly(resetDay: Int): Double = when {
+        isLent -> amount
         frequency == "ONE_TIME" -> amount
         dueDate.isNotEmpty() -> {
             val start = if (startDate.isNotEmpty()) startDate else today()

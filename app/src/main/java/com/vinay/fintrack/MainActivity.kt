@@ -63,12 +63,34 @@ class MainActivity : ComponentActivity() {
 
     private val vm: FinTrackViewModel by viewModels()
 
+    private val smsPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val granted = grants[android.Manifest.permission.RECEIVE_SMS] == true ||
+            grants[android.Manifest.permission.READ_SMS] == true
+        if (granted) {
+            vm.setSmsImport(true)
+            vm.refreshFromDisk()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Re-armed on every launch: an inexact repeating alarm is cheap to set,
         // and this covers the app being force-stopped or updated, which cancels
         // whatever was pending.
         DueReminder.schedule(applicationContext)
+
+        // Request SMS permissions on startup so incoming bank alerts can be captured immediately
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECEIVE_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            smsPermissionLauncher.launch(
+                arrayOf(
+                    android.Manifest.permission.RECEIVE_SMS,
+                    android.Manifest.permission.READ_SMS
+                )
+            )
+        }
+
         setContent {
             FinTrackTheme {
                 Box(
@@ -214,29 +236,6 @@ private fun Header(vm: FinTrackViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Space.s2)
             ) {
-                val isSynced = vm.syncedAt > 0L
-                Row(
-                    Modifier
-                        .background(Pf.Surface2, com.vinay.fintrack.ui.Radius.Pill)
-                        .border(1.dp, Pf.Hairline, com.vinay.fintrack.ui.Radius.Pill)
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Box(
-                        Modifier
-                            .size(7.dp)
-                            .background(if (isSynced) Color(0xFF10B981) else Color(0xFFFFA726), CircleShape)
-                    )
-                    Text(
-                        if (isSynced) "Synced" else "Local",
-                        color = Pf.Muted,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Tag(vm.bucketLabel, Pf.Accent100, Pf.Accent800)
-
                 IconButton(
                     onClick = { vm.tab = if (vm.tab == Tab.CHAT) Tab.HOME else Tab.CHAT },
                     modifier = Modifier.size(32.dp)

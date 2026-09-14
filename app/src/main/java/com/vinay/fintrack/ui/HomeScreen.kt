@@ -801,40 +801,41 @@ private fun UpcomingMonths2And3Section(vm: FinTrackViewModel, startingLeftover: 
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.Top
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                        ) {
-                            Box(
-                                Modifier
-                                    .size(28.dp)
-                                    .background(Pf.Accent.copy(alpha = 0.15f), CircleShape),
-                                contentAlignment = Alignment.Center
+                        Column(Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(
-                                    "$monthNumber",
-                                    color = Pf.Accent400,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Column {
+                                Box(
+                                    Modifier
+                                        .background(Pf.Accent.copy(alpha = 0.15f), Radius.Pill)
+                                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "Month $monthNumber",
+                                        color = Pf.Accent400,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                                 Text(
                                     month.label,
                                     color = Pf.Text,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold
                                 )
-                                if (month.loanEnding.isNotEmpty()) {
-                                    Text(
-                                        "🎉 ${month.loanEnding} ends this month!",
-                                        color = Color(0xFF10B981),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
+                            }
+                            if (month.loanEnding.isNotEmpty()) {
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    "🎉 ${month.loanEnding} ends this month!",
+                                    color = Color(0xFF10B981),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
                         }
 
@@ -846,6 +847,7 @@ private fun UpcomingMonths2And3Section(vm: FinTrackViewModel, startingLeftover: 
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
+                            Spacer(Modifier.height(2.dp))
                             Muted("Net Projected Leftover", size = 10)
                         }
                     }

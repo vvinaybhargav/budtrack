@@ -217,4 +217,34 @@ class SmsParserTest {
         assertFalse(parsed.isCredit)
         assertEquals("Ramesh", parsed.party)
     }
+
+    @Test
+    fun testCreditCardDebitWithDueInfo() {
+        val message = "Your SBI Card ending 4321 was debited for Rs 120.00 on 12-Sep-26 at ZOMATO. Total Amt Due: Rs 4,500.00 is due on 05-Oct-26."
+        assertTrue(looksLikeBankMessage(message))
+        val parsed = parseBankSms(message, "SBICRD")
+        assertNotNull("Expected credit card debit with due on to be parsed", parsed)
+        assertEquals(120.0, parsed!!.amount, 0.001)
+        assertFalse(parsed.isCredit)
+        assertEquals("4321", parsed.accountTail)
+        assertEquals("ZOMATO", parsed.party)
+    }
+
+    @Test
+    fun testLentEntryNoSplit() {
+        val lentEntry = com.vinay.fintrack.data.Entry(
+            id = "e1",
+            person = "Vinay",
+            type = "SAVINGS",
+            bucket = "PERSONAL",
+            category = "Lent",
+            amount = 50000.0,
+            frequency = "ANNUAL",
+            dueDate = "2026-11-15",
+            isLent = true
+        )
+        // Lent entry must return the full amount rather than dividing across instalments
+        assertEquals(50000.0, lentEntry.monthly(1), 0.001)
+        assertEquals(50000.0, lentEntry.monthly, 0.001)
+    }
 }

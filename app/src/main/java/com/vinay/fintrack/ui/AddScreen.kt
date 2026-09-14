@@ -941,20 +941,22 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             val selectedStartMonthLabel = payMonthOptions.firstOrNull { it.key == selectedStartMonthKey }?.label
                 ?: payMonthOptions.firstOrNull()?.label.orEmpty()
 
-            PfSelect(
-                label = "Start Pay Month",
-                value = selectedStartMonthLabel,
-                options = payMonthOptions.map { it.label },
-                onSelect = { label ->
-                    val opt = payMonthOptions.firstOrNull { it.label == label }
-                    if (opt != null) {
-                        vm.draft = vm.draft.copy(startMonth = opt.key)
+            if (!vm.draft.isLent) {
+                PfSelect(
+                    label = "Start Pay Month",
+                    value = selectedStartMonthLabel,
+                    options = payMonthOptions.map { it.label },
+                    onSelect = { label ->
+                        val opt = payMonthOptions.firstOrNull { it.label == label }
+                        if (opt != null) {
+                            vm.draft = vm.draft.copy(startMonth = opt.key)
+                        }
                     }
-                }
-            )
+                )
+            }
 
             PfField(
-                label = "Target / End Date",
+                label = if (vm.draft.isLent) "Target / Return Date" else "Target / End Date",
                 value = vm.draft.dueText,
                 onValueChange = { vm.draft = vm.draft.copy(dueText = it) },
                 placeholder = "dd-mm-yyyy",
@@ -963,8 +965,8 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
                     IconButton(onClick = { dueDatePickerDialog.show() }) {
                         Icon(
                             imageVector = Icons.Default.DateRange,
-                            contentDescription = "End Date",
-                            tint = Pf.Accent400
+                            contentDescription = if (vm.draft.isLent) "Return Date" else "End Date",
+                            tint = if (vm.draft.isLent) Pf.Amber else Pf.Accent400
                         )
                     }
                 }
@@ -975,7 +977,49 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             val instalments = vm.draftInstalments
             val evaluatedDraftAmount = MathEvaluator.evaluate(vm.draft.amountText) ?: vm.draft.amountText.toDoubleOrNull() ?: 0.0
 
-            if (vm.draftDueIso.isNotEmpty()) {
+            if (vm.draft.isLent) {
+                if (vm.draftDueIso.isNotEmpty()) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(Radius.Md)
+                            .background(Pf.Surface2)
+                            .border(1.dp, Pf.Amber.copy(alpha = 0.3f), Radius.Md)
+                            .padding(Space.s3)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "🤝 Lent Money (No Split)",
+                                    color = Pf.Amber,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Tag("Full Lump Sum", Pf.AmberBg, Pf.Amber)
+                            }
+                            if (evaluatedDraftAmount > 0.0) {
+                                Text(
+                                    "Full amount to receive: ${inr(evaluatedDraftAmount)}",
+                                    color = Pf.Text,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            Text(
+                                "Target return on ${prettyDate(vm.draftDueIso)} (${vm.draftDueIn}) · Received in that pay cycle",
+                                color = Pf.Muted,
+                                fontSize = 11.5.sp
+                            )
+                        }
+                    }
+                } else {
+                    Muted("Select expected return date. Tracked as a single full lump sum (not split across months).")
+                }
+            } else if (vm.draftDueIso.isNotEmpty()) {
                 Box(
                     Modifier
                         .fillMaxWidth()

@@ -1283,7 +1283,12 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         if (p.cardId.isNotEmpty()) {
             update { s ->
                 s.copy(cards = s.cards.map {
-                    if (it.id == p.cardId) it.copy(paid = true, balance = 0.0) else it
+                    if (it.id == p.cardId) {
+                        val nextDueDate = if (it.dueDay in 1..31) {
+                            resolveNextDueDate(it.dueDay, Ledger.addMonths(today(), 1))
+                        } else it.dueDate
+                        it.copy(paid = true, balance = 0.0, statementAmount = 0.0, dueDate = nextDueDate)
+                    } else it
                 })
             }
         }
@@ -1548,7 +1553,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val editingId = editingEntryId
-        val startIso = if (draft.startMonth.isNotBlank()) {
+        val startIso = if (draft.isLent) {
+            if (draftDueIso.isNotBlank()) draftDueIso else today()
+        } else if (draft.startMonth.isNotBlank()) {
             val resetDay = salaryResetDayFor(draft.person)
             val dayStr = resetDay.coerceIn(1, 28).toString().padStart(2, '0')
             "${draft.startMonth}-$dayStr"
@@ -4817,10 +4824,15 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     if (it.id == cardId) {
                         val nextBal = (it.balance - amount).coerceAtLeast(0.0)
                         val nextStatement = (it.statementAmount - amount).coerceAtLeast(0.0)
+                        val isPaid = (nextStatement <= 0.0 || nextBal <= 0.0)
+                        val nextDueDate = if (isPaid && it.dueDay in 1..31) {
+                            resolveNextDueDate(it.dueDay, Ledger.addMonths(today(), 1))
+                        } else it.dueDate
                         it.copy(
                             balance = nextBal,
                             statementAmount = nextStatement,
-                            paid = nextStatement <= 0.0
+                            paid = isPaid,
+                            dueDate = nextDueDate
                         )
                     } else it
                 }
@@ -4858,7 +4870,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 cards = s.cards.map {
                     if (it.id == cardId) {
                         val nextBal = (it.balance - settleAmount).coerceAtLeast(0.0)
-                        it.copy(balance = nextBal, statementAmount = 0.0, paid = true)
+                        val nextDueDate = if (it.dueDay in 1..31) {
+                            resolveNextDueDate(it.dueDay, Ledger.addMonths(today(), 1))
+                        } else it.dueDate
+                        it.copy(balance = nextBal, statementAmount = 0.0, paid = true, dueDate = nextDueDate)
                     } else it
                 }
             )

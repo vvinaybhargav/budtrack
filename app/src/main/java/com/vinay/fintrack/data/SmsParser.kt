@@ -59,9 +59,9 @@ data class ParsedSms(
                 // Window into 15-second buckets so same-moment duplicates (SMS receiver + notification listener)
                 // match, while separate transactions done moments apart are reliably recognized.
                 val timeBucket = receivedAt / 15_000L
-                "$date|${"%.2f".format(amount)}|$accountTail|${party.take(20)}|$timeBucket|${if (isCredit) "c" else "d"}"
+                "$date|${"%.2f".format(Locale.US, amount)}|$accountTail|${party.take(20)}|$timeBucket|${if (isCredit) "c" else "d"}"
             }
-            else -> "$date|${"%.2f".format(amount)}|$accountTail|${party.take(20)}|${if (isCredit) "c" else "d"}"
+            else -> "$date|${"%.2f".format(Locale.US, amount)}|$accountTail|${party.take(20)}|${if (isCredit) "c" else "d"}"
         }
 }
 
@@ -125,12 +125,14 @@ private val DATE_NUMERIC = Regex("""(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})""")
 private val DATE_NAMED = Regex("""(\d{1,2})[-\s]([A-Za-z]{3})[-\s](\d{2,4})""")
 private val MONTHS = listOf("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 
-/** Messages that mention money but move none. Naked 'request' avoided to prevent dropping legitimate 'per your request' debits. */
-private val NOT_A_TRANSACTION = listOf(
-    "otp", "one time password", "will be debited", "will be deducted", "due on",
-    "is due", "reminder", "failed", "declined", "unsuccessful",
-    "payment request", "collect request", "money request", "requested to pay", "request to pay",
-    "cashback offer", "apply now", "eligible", "pre-approved", "e-mandate"
+/** Messages that are definitely not transactions. */
+private val ALWAYS_REJECT = listOf(
+    "otp", "one time password", "failed", "declined", "unsuccessful",
+    "payment request", "collect request", "money request", "requested to pay", "request to pay"
+)
+
+private val FUTURE_OR_PROMO_PHRASES = listOf(
+    "will be debited", "will be deducted", "reminder", "cashback offer", "apply now", "eligible", "pre-approved", "e-mandate"
 )
 
 fun extractBankRef(body: String): String {
@@ -159,7 +161,15 @@ fun parseBankSms(
     if (body.isBlank()) return null
     val lower = body.lowercase()
 
-    if (NOT_A_TRANSACTION.any { lower.contains(it) }) return null
+    if (ALWAYS_REJECT.any { lower.contains(it) }) return null
+
+    // Pure future reminders or promotional offers without actual past debit/credit action
+    if (FUTURE_OR_PROMO_PHRASES.any { lower.contains(it) }) {
+        val hasActualPastAction = listOf("debited", "spent", "paid", "withdrawn", "credited", "deposited", "transferred").any {
+            lower.contains(it) && !lower.contains("will be $it")
+        }
+        if (!hasActualPastAction) return null
+    }
 
     val directionBody = lower
         .replace("credit card", "cc")
@@ -226,7 +236,13 @@ private fun extractAmountPair(body: String): Pair<Double, String>? {
 
     fun testMatch(m: MatchResult): Pair<Double, String>? {
         val before = lower.substring(maxOf(0, m.range.first - 28), m.range.first)
-        if (listOf("bal", "balance", "limit", "outstanding", "avl", "available").any { before.contains(it) }) return null
+        val balWords = listOf("bal", "balance", "limit", "outstanding", "avl", "available")
+        if (balWords.any { before.contains(it) }) {
+            val lastBalIndex = balWords.map { before.lastIndexOf(it) }.maxOrNull() ?: -1
+            val txnWords = listOf("debited", "debit", "spent", "paid", "credited", "sent", "transferred", "purchase")
+            val lastTxnIndex = txnWords.map { before.lastIndexOf(it) }.maxOrNull() ?: -1
+            if (lastTxnIndex <= lastBalIndex) return null
+        }
         val raw = m.groupValues[1]
         val value = raw.replace(",", "").toDoubleOrNull() ?: return null
         return if (value > 0) value to raw else null
