@@ -108,6 +108,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
     // State for Sinking Funds month filtering and Progressive Disclosure expansion
     var sinkingFundFilter by remember { mutableStateOf("ALL") }
+    var expandedBanks by remember { mutableStateOf(false) }
+    var expandedPast by remember { mutableStateOf(false) }
     var expandedSinkingFunds by remember { mutableStateOf(false) }
     var expandedLent by remember { mutableStateOf(false) }
     var expandedDebts by remember { mutableStateOf(false) }
@@ -159,12 +161,12 @@ fun HomeScreen(vm: FinTrackViewModel) {
                 balanceHidden = vm.balanceHidden,
                 onToggleVisibility = vm::toggleBalanceVisible,
                 onBankBalancesClick = {
-                    vm.accountsFilter = "Banks"
-                    vm.tab = Tab.ACCOUNTS
+                    expandedBanks = !expandedBanks
                 },
                 onExpensesClick = {
-                    vm.accountsFilter = "All"
-                    vm.tab = Tab.ACCOUNTS
+                    expandedCards = true
+                    expandedLoans = true
+                    expandedRecurring = true
                 }
             )
         }
@@ -172,6 +174,141 @@ fun HomeScreen(vm: FinTrackViewModel) {
         // 2b. SPENT TODAY BADGE
         item {
             SpentTodayBadge(vm)
+        }
+
+        // 2c. BANK ACCOUNTS CARD
+        val bankAccounts = vm.scopedAccounts
+        if (bankAccounts.isNotEmpty()) {
+            item {
+                PfCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
+                    shape = Radius.Lg
+                ) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { expandedBanks = !expandedBanks },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(28.dp)
+                                    .background(Color(0xFF3B82F6).copy(alpha = 0.15f), Radius.Sm),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.AccountBalance, null, Modifier.size(16.dp), tint = Color(0xFF3B82F6))
+                            }
+                            Text(
+                                "BANK ACCOUNTS · ${inr(totalBankBalances)}",
+                                color = Pf.Text,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.6.sp
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    vm.selectAddKind("BANK_ACCOUNT")
+                                    vm.tab = Tab.ADD
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.Add, "Add Bank", tint = Pf.Muted, modifier = Modifier.size(18.dp))
+                            }
+                            Icon(
+                                if (expandedBanks) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                "Expand",
+                                tint = Pf.Muted,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    val visibleAccounts = if (expandedBanks) bankAccounts else bankAccounts.take(3)
+                    visibleAccounts.forEachIndexed { idx, a ->
+                        Hairline()
+                        val bal = vm.balanceOf(a)
+                        val isNegative = bal < 0.0
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { vm.editAccountById(a.id) }
+                                .padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(32.dp)
+                                        .background(Pf.Surface2, CircleShape)
+                                        .border(1.dp, Pf.Hairline, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        a.name.take(1).uppercase(),
+                                        color = Pf.Text,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            a.name,
+                                            color = Pf.Text,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        if (a.person == "Joint") {
+                                            Spacer(Modifier.width(6.dp))
+                                            Tag("Joint", Pf.Surface2, Pf.Muted)
+                                        }
+                                    }
+                                    val subtitle = if (a.numberTail.isNotBlank()) "••••${a.numberTail}" else "Bank Account"
+                                    Text(subtitle, color = Pf.Muted, fontSize = 11.5.sp)
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    inr(bal),
+                                    color = if (isNegative) Color(0xFFEF4444) else Pf.Text,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Icon(Icons.Default.Edit, "Edit", tint = Pf.Muted.copy(alpha = 0.6f), modifier = Modifier.size(15.dp))
+                            }
+                        }
+                    }
+
+                    if (bankAccounts.size > 3) {
+                        ExpandCollapseButton(expandedBanks, bankAccounts.size - 3) {
+                            expandedBanks = !expandedBanks
+                        }
+                    }
+                }
+            }
         }
 
         // 3a. CONSOLIDATED SINKING FUNDS CARD (Combines SET ASIDE + Future Months into 1 Card with Filter Pills)
@@ -197,8 +334,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         icon = Icons.Default.Bookmark,
                         iconTint = Color(0xFF14B8A6)
                     ) {
-                        vm.accountsFilter = "Set Aside"
-                        vm.tab = Tab.ACCOUNTS
+                        expandedSinkingFunds = !expandedSinkingFunds
                     }
 
                     // Horizontal Month Filter Pills
@@ -320,8 +456,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         icon = Icons.Default.ArrowDownward,
                         iconTint = Color(0xFF10B981)
                     ) {
-                        vm.accountsFilter = "Set Aside"
-                        vm.tab = Tab.ACCOUNTS
+                        expandedLent = !expandedLent
                     }
 
                     val visibleLent = if (expandedLent) lentSetAsidesThisMonth else lentSetAsidesThisMonth.take(3)
@@ -371,8 +506,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         icon = Icons.Default.SwapHoriz,
                         iconTint = Pf.Accent400
                     ) {
-                        vm.accountsFilter = "Lent & Borrow"
-                        vm.tab = Tab.ACCOUNTS
+                        expandedDebts = !expandedDebts
                     }
 
                     val visibleDebts = if (expandedDebts) pendingDebts else pendingDebts.take(3)
@@ -423,8 +557,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         icon = Icons.Default.CreditCard,
                         iconTint = Color(0xFFF59E0B)
                     ) {
-                        vm.accountsFilter = "Cards"
-                        vm.tab = Tab.ACCOUNTS
+                        expandedCards = !expandedCards
                     }
 
                     val visibleCards = if (expandedCards) pendingCards else pendingCards.take(3)
@@ -436,17 +569,76 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         val duePart = if (c.dueText.isNotBlank()) formatDueDisplay(c.dueText) else null
                         val tailPart = if (c.numberTail.isNotBlank()) "••••${c.numberTail}" else null
                         val ownerPart = if (c.owner == "Joint") "Joint" else null
-                        val subtitle = listOfNotNull(duePart, tailPart, ownerPart).joinToString(" · ").ifEmpty { "Credit Card" }
+                        val limitPart = if (c.limit > 0.0) "Limit: ${inr(c.limit)}" else null
+                        val subtitle = listOfNotNull(duePart, tailPart, limitPart, ownerPart).joinToString(" · ").ifEmpty { "Credit Card" }
 
-                        HomeCompactRow(
-                            title = "${idx + 1}. $cleanName",
-                            subtitle = subtitle,
-                            amount = inr(c.balance),
-                            amountColor = Pf.Text,
-                            icon = Icons.Default.CreditCard,
-                            iconTint = Color(0xFFF59E0B),
-                            onClick = { vm.startSettleCard(c.id) }
-                        )
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                Modifier.weight(1f).padding(end = Space.s2).clickable { vm.editCardById(c.id) },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(28.dp)
+                                        .background(Color(0xFFF59E0B).copy(alpha = 0.14f), Radius.Sm),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.CreditCard, null, Modifier.size(15.dp), tint = Color(0xFFF59E0B))
+                                }
+                                Column {
+                                    Text(
+                                        "${idx + 1}. $cleanName",
+                                        color = Pf.Text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        subtitle,
+                                        color = Pf.Muted,
+                                        fontSize = 11.5.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    inr(c.balance),
+                                    color = Pf.Text,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Box(
+                                    Modifier
+                                        .clip(Radius.Pill)
+                                        .background(Pf.Surface2)
+                                        .clickable { vm.startSettleCard(c.id) }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text("Settle", color = Pf.Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                                IconButton(
+                                    onClick = { vm.editCardById(c.id) },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(Icons.Default.Edit, "Edit Card", tint = Pf.Muted, modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        }
                     }
 
                     if (pendingCards.size > 3) {
@@ -471,8 +663,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         icon = Icons.Default.DateRange,
                         iconTint = Color(0xFF8B5CF6)
                     ) {
-                        vm.accountsFilter = "Recurring"
-                        vm.tab = Tab.ACCOUNTS
+                        expandedRecurring = !expandedRecurring
                     }
 
                     val visibleRecurring = if (expandedRecurring) pendingRecurring else pendingRecurring.take(3)
@@ -513,8 +704,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         icon = Icons.Default.AccountBalance,
                         iconTint = Color(0xFF3B82F6)
                     ) {
-                        vm.accountsFilter = "Loans"
-                        vm.tab = Tab.ACCOUNTS
+                        expandedLoans = !expandedLoans
                     }
 
                     val visibleLoans = if (expandedLoans) pendingLoans else pendingLoans.take(3)
@@ -568,6 +758,117 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             fontSize = 13.5.sp,
                             fontWeight = FontWeight.Medium
                         )
+                    }
+                }
+            }
+        }
+
+        // 3h. PAST & SETTLED ITEMS (Expandable)
+        val clearedLoans = vm.scopedLoans.filter { vm.isLoanCleared(it) }
+        val closedEntries = vm.closedEntries
+        val pastDebts = vm.pastClosedDebts
+        val totalPastCount = clearedLoans.size + closedEntries.size + pastDebts.size
+
+        if (totalPastCount > 0) {
+            item {
+                PfCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
+                    shape = Radius.Lg
+                ) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { expandedPast = !expandedPast },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(28.dp)
+                                    .background(Color(0xFF10B981).copy(alpha = 0.15f), Radius.Sm),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.CheckCircle, null, Modifier.size(16.dp), tint = Color(0xFF10B981))
+                            }
+                            Text(
+                                "PAST & SETTLED · $totalPastCount items",
+                                color = Pf.Text,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.6.sp
+                            )
+                        }
+
+                        Icon(
+                            if (expandedPast) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            "Expand",
+                            tint = Pf.Muted,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    if (expandedPast) {
+                        Column(
+                            Modifier.fillMaxWidth().padding(top = Space.s2),
+                            verticalArrangement = Arrangement.spacedBy(Space.s2)
+                        ) {
+                            clearedLoans.forEach { l ->
+                                Hairline()
+                                Row(
+                                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(l.name, color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("Cleared Loan · EMI ${inr(l.monthlyEmi)}", color = Pf.Muted, fontSize = 11.5.sp)
+                                    }
+                                    Tag("Cleared", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+                                }
+                            }
+
+                            closedEntries.forEach { e ->
+                                Hairline()
+                                Row(
+                                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(e.note.ifEmpty { e.category }, color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                        val sub = if (e.isSetAside) "Completed Set Aside · Total ${inr(e.amount)}" else "Closed Bill · ${inr(e.amount)}/mo"
+                                        Text(sub, color = Pf.Muted, fontSize = 11.5.sp)
+                                    }
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Tag("Closed", Pf.Muted.copy(alpha = 0.15f), Pf.Muted)
+                                        SecondaryButton("Reopen", { vm.closeEntry(e.id, false) })
+                                    }
+                                }
+                            }
+
+                            pastDebts.forEach { d ->
+                                Hairline()
+                                Row(
+                                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(d.peerName, color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("Settled · ${if (d.isLent) "Lent" else "Borrowed"} ${inr(d.totalAmount)}", color = Pf.Muted, fontSize = 11.5.sp)
+                                    }
+                                    Tag("Settled", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2365,7 +2666,7 @@ private fun OverviewUpcomingDues(vm: FinTrackViewModel) {
                             Muted("$dueInfo · due ${c.dueText}", size = 11)
                         }
                         SecondaryButton("Pay / Settle", {
-                            vm.homeTab = HomeTab.ACCOUNTS
+                            vm.startSettleCard(c.id)
                         })
                     }
                 }

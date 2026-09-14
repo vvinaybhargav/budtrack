@@ -176,10 +176,8 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
 
     Column(Modifier.fillMaxSize()) {
         Header(vm)
-        Box(Modifier.weight(1f)) {
             when (vm.tab) {
-                Tab.HOME -> HomeScreen(vm)
-                Tab.ACCOUNTS -> AccountsScreen(vm)
+                Tab.HOME, Tab.ACCOUNTS -> HomeScreen(vm)
                 Tab.ENTRIES -> EntriesScreen(vm)
                 Tab.ADD -> AddScreen(vm)
                 Tab.CHAT -> ChatScreen(vm)
@@ -189,6 +187,7 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
         BottomNav(vm)
     }
     com.vinay.fintrack.ui.DetectedAccountDialog(vm)
+    com.vinay.fintrack.ui.SetupFixDialog(vm)
 }
 
 @Composable
@@ -280,8 +279,8 @@ private fun BottomNav(vm: FinTrackViewModel) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             NavItem(Icons.Default.Home, "Home", vm.tab == Tab.HOME, Modifier.weight(1f)) { vm.tab = Tab.HOME }
-            NavItem(Icons.Default.AccountBalanceWallet, "Accounts", vm.tab == Tab.ACCOUNTS, Modifier.weight(1f)) { vm.tab = Tab.ACCOUNTS }
-            
+            NavItem(Icons.AutoMirrored.Filled.List, "Transactions", vm.tab == Tab.ENTRIES, Modifier.weight(1f)) { vm.tab = Tab.ENTRIES }
+
             // Center Floating Elevated Add Button with subtle dark halo separation
             Box(
                 Modifier
@@ -315,7 +314,7 @@ private fun BottomNav(vm: FinTrackViewModel) {
                 }
             }
 
-            NavItem(Icons.AutoMirrored.Filled.List, "Transactions", vm.tab == Tab.ENTRIES, Modifier.weight(1f)) { vm.tab = Tab.ENTRIES }
+            NavItem(Icons.AutoMirrored.Filled.Chat, "Assistant", vm.tab == Tab.CHAT, Modifier.weight(1f)) { vm.tab = Tab.CHAT }
             NavItem(Icons.Default.Settings, "Settings", vm.tab == Tab.SETTINGS, Modifier.weight(1f)) { vm.tab = Tab.SETTINGS }
         }
     }
