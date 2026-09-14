@@ -53,6 +53,8 @@ import com.vinay.fintrack.ui.Muted
 import com.vinay.fintrack.ui.Pf
 import com.vinay.fintrack.ui.SettingsScreen
 import com.vinay.fintrack.ui.Space
+import com.vinay.fintrack.ui.DetectedAccountDialog
+import com.vinay.fintrack.ui.SetupFixDialog
 import com.vinay.fintrack.ui.Tag
 
 import androidx.activity.compose.BackHandler
@@ -187,8 +189,8 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
         }
         BottomNav(vm)
     }
-    com.vinay.fintrack.ui.DetectedAccountDialog(vm)
-    com.vinay.fintrack.ui.SetupFixDialog(vm)
+    DetectedAccountDialog(vm)
+    SetupFixDialog(vm)
 }
 
 @Composable
