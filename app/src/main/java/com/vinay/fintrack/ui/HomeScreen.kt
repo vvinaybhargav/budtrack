@@ -863,7 +863,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                                 ) {
                                     Column(Modifier.weight(1f)) {
                                         Text(d.peerName, color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                        Text("Settled · ${if (d.isLent) "Lent" else "Borrowed"} ${inr(d.totalAmount)}", color = Pf.Muted, fontSize = 11.5.sp)
+                                        Text("Settled · ${if (d.isLent) "Lent" else "Borrowed"} ${inr(d.amount)}", color = Pf.Muted, fontSize = 11.5.sp)
                                     }
                                     Tag("Settled", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
                                 }

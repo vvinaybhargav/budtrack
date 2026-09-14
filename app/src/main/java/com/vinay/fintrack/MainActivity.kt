@@ -176,6 +176,7 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
 
     Column(Modifier.fillMaxSize()) {
         Header(vm)
+        Box(Modifier.weight(1f)) {
             when (vm.tab) {
                 Tab.HOME, Tab.ACCOUNTS -> HomeScreen(vm)
                 Tab.ENTRIES -> EntriesScreen(vm)
