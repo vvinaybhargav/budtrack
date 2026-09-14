@@ -58,16 +58,20 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material3.IconButton
 import com.vinay.fintrack.ui.AccountsScreen
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
 
     private val vm: FinTrackViewModel by viewModels()
 
     private val smsPermissionLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+        ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
-        val granted = grants[android.Manifest.permission.RECEIVE_SMS] == true ||
-            grants[android.Manifest.permission.READ_SMS] == true
+        val granted = grants[Manifest.permission.RECEIVE_SMS] == true ||
+            grants[Manifest.permission.READ_SMS] == true
         if (granted) {
             vm.setSmsImport(true)
             vm.refreshFromDisk()
@@ -82,11 +86,11 @@ class MainActivity : ComponentActivity() {
         DueReminder.schedule(applicationContext)
 
         // Request SMS permissions on startup so incoming bank alerts can be captured immediately
-        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECEIVE_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
             smsPermissionLauncher.launch(
                 arrayOf(
-                    android.Manifest.permission.RECEIVE_SMS,
-                    android.Manifest.permission.READ_SMS
+                    Manifest.permission.RECEIVE_SMS,
+                    Manifest.permission.READ_SMS
                 )
             )
         }
