@@ -117,7 +117,7 @@ object Ledger {
         txns.filter { it.entryId == entryId }
             .sumOf {
                 when (it.kind) {
-                    "TRANSFER" -> it.amount
+                    "TRANSFER", "INCOME" -> it.amount
                     "EXPENSE" -> -it.amount
                     else -> 0.0
                 }
@@ -126,7 +126,7 @@ object Ledger {
 
     /** How much has already been put by for a set-aside this cycle. */
     fun setAsideDone(txns: List<Txn>, entryId: String, cycle: String): Double = paise(
-        txns.filter { it.entryId == entryId && it.month == cycle && it.kind == "TRANSFER" }
+        txns.filter { it.entryId == entryId && it.month == cycle && (it.kind == "TRANSFER" || it.kind == "INCOME") }
             .sumOf { it.amount }
     )
 

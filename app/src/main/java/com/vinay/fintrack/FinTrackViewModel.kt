@@ -1113,7 +1113,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun confirmKindFor(e: Entry): String = when {
-        e.type == "INCOME" -> "INCOME"
+        e.type == "INCOME" || e.isLent -> "INCOME"
         // Annual provisions and savings stay your money — they move, they aren't spent.
         // Any set-aside, not just yearly ones: a quarterly bill is put by a
         // month at a time exactly the same way.
@@ -1124,9 +1124,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     /** Tapping confirm: undo if already confirmed this month, otherwise open the sheet. */
     fun requestConfirm(e: Entry) {
         val kind = confirmKindFor(e)
-        // A set-aside can be part-paid, so tapping it again tops it up rather
-        // than undoing what has already been put by.
-        val partial = kind == "TRANSFER" && e.isSetAside
+        // A set-aside or lent entry can be part-paid, so tapping it again tops it up rather
+        // than undoing what has already been put by or received.
+        val partial = (kind == "TRANSFER" || e.isLent) && e.isSetAside
         if (isConfirmed(e.id) && !partial) {
             removeTxns { it.entryId == e.id && it.month == cycleFor(e.person) }
             return
@@ -2657,7 +2657,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             val on = upcomingPaydayDate(person, ahead)
             val onYm = on.take(7)
 
-            val setAside = annualSetAsides.sumOf { e ->
+            val normalSetAsides = annualSetAsides.filter { !it.isLent }
+            val lentSetAsides = annualSetAsides.filter { it.isLent }
+
+            val setAside = normalSetAsides.sumOf { e ->
                 if (e.dueDate.isEmpty()) {
                     Ledger.monthlyShare(e.amount, e.everyMonths)
                 } else {
@@ -2672,14 +2675,24 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
             }
+
+            val lentReturn = lentSetAsides.sumOf { e ->
+                if (e.dueDate.isNotEmpty() && e.dueDate.take(7) == onYm) {
+                    e.amount
+                } else {
+                    0.0
+                }
+            }
+
             val running = scopedLoans.filter { it.remainingMonths >= ahead && it.isStarted(on, salaryResetDayFor(it.person, on)) }
             val ending = scopedLoans.firstOrNull { it.remainingMonths == ahead && it.isStarted(on, salaryResetDayFor(it.person, on)) }
 
-            val income = if (bucketView == "JOINT") {
+            val baseSalary = if (bucketView == "JOINT") {
                 profileNames.sumOf { upcomingSalaryFor(it, ahead) }
             } else {
                 upcomingSalaryFor(person, ahead)
             }
+            val income = baseSalary + lentReturn
 
             val out = Ledger.paise(plannedRecurring + running.sumOf { it.monthlyEmi } + setAside)
             val monthNet = Ledger.paise(income - out)

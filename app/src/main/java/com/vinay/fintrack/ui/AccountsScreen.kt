@@ -1007,14 +1007,24 @@ private fun ManageRecurringSection(vm: FinTrackViewModel) {
 @Composable
 private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
     val items = vm.annualSetAsides
-    val totalDone = vm.annualSetAsideDone
-    val totalNeeded = vm.annualSetAsideMonthly
+    val normalItems = items.filter { !it.isLent }
+    val lentItems = items.filter { it.isLent }
+    val normalNeeded = normalItems.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { it.monthly }
+    val lentNeeded = lentItems.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { it.amount }
+    val normalDone = normalItems.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { vm.setAsideDone(it).coerceAtMost(it.monthly) }
+    val lentDone = lentItems.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { vm.setAsideDone(it).coerceAtMost(it.amount) }
+
+    val badge = if (lentNeeded > 0.0) {
+        "(${inr(normalNeeded)}) · +${inr(lentNeeded)}"
+    } else {
+        "(${inr(normalNeeded)})/mo"
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
         SectionHeader(
             icon = Icons.Default.TrendingUp,
             title = "Set Aside",
-            badgeText = "${inr(totalNeeded)}/mo",
+            badgeText = badge,
             onAddClick = {
                 vm.selectAddKind("SET_ASIDE")
                 vm.tab = Tab.ADD
@@ -1046,12 +1056,18 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
                     Column {
                         Muted("Needed each month")
                         Text(
-                            inr(totalNeeded),
+                            "(${inr(normalNeeded)})",
                             color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold
                         )
+                        if (lentNeeded > 0.0) {
+                            Text(
+                                "Lent to receive: +${inr(lentNeeded)}",
+                                color = Pf.Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                     Muted(
-                        "${inr(totalDone)} done · ${inr((totalNeeded - totalDone).coerceAtLeast(0.0))} left",
+                        "${inr(normalDone + lentDone)} done · ${inr((normalNeeded - normalDone).coerceAtLeast(0.0))} left",
                         size = 12
                     )
                 }
@@ -1126,13 +1142,13 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
                                             )
                                             Muted(
                                                 if (left <= 0.0) "Fully received back"
-                                                else "${inr(left)} remaining to be returned",
+                                                else "+${inr(left)} remaining to be returned",
                                                 size = 11
                                             )
                                         } else {
                                             Muted(
-                                                "${inr(e.monthly(vm.salaryResetDayFor(e.person)))}/mo · " +
-                                                    if (put > 0) "${inr(put)} put by, ${inr(left)} left"
+                                                "(${inr(e.monthly(vm.salaryResetDayFor(e.person)))})/mo · " +
+                                                    if (put > 0) "${inr(put)} put by, (${inr(left)}) left"
                                                     else "none put by yet",
                                                 size = 11
                                             )

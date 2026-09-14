@@ -80,7 +80,11 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
     // Partition Set Asides by active cycle/month:
     val pendingSetAsidesThisMonth = vm.annualSetAsides.filter { vm.isSetAsideActiveThisMonth(it) && vm.setAsideLeft(it) > 0.0 }
-    val totalSetAsidePending = pendingSetAsidesThisMonth.sumOf { vm.setAsideLeft(it) }
+    val normalSetAsidesThisMonth = pendingSetAsidesThisMonth.filter { !it.isLent }
+    val lentSetAsidesThisMonth = pendingSetAsidesThisMonth.filter { it.isLent }
+
+    val totalNormalSetAsidePending = normalSetAsidesThisMonth.sumOf { vm.setAsideLeft(it) }
+    val totalLentPendingToReceive = lentSetAsidesThisMonth.sumOf { vm.setAsideLeft(it) }
 
     val futureSetAsidesMap = vm.futureSetAsidesGrouped()
 
@@ -90,8 +94,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
         vm.upcomingSalaryFor(vm.activeProfile.orEmpty(), 1)
     }
 
-    val otherExpenses = totalCardDues + totalLoanEmis + totalRecurring + totalSetAsidePending
-    val netBalance = totalBankBalances - otherExpenses + upcomingSalary
+    val otherExpenses = totalCardDues + totalLoanEmis + totalRecurring + totalNormalSetAsidePending
+    val netBalance = totalBankBalances - otherExpenses + upcomingSalary + totalLentPendingToReceive
 
     LazyColumn(
         Modifier.fillMaxWidth(),
@@ -104,13 +108,14 @@ fun HomeScreen(vm: FinTrackViewModel) {
         // Alert if SMS transactions need account link
         item { UnmatchedAccountAlert(vm) }
 
-        // 2. HERO CARD: Net Balance (Bank Balances - Current Month Expenses + Upcoming 1 Salary)
+        // 2. HERO CARD: Net Balance (Bank Balances - Current Month Expenses + Upcoming 1 Salary + Lent Return)
         item {
             AfterAllExpensesCard(
                 netBalance = netBalance,
                 bankBalances = totalBankBalances,
                 otherExpenses = otherExpenses,
                 upcomingSalary = upcomingSalary,
+                lentToReceive = totalLentPendingToReceive,
                 balanceHidden = vm.balanceHidden,
                 onToggleVisibility = vm::toggleBalanceVisible,
                 onBankBalancesClick = {
@@ -138,13 +143,13 @@ fun HomeScreen(vm: FinTrackViewModel) {
             ) {
                 var hasPrior = false
 
-                // 1. CURRENT MONTH SET ASIDE (Active in This Cycle)
-                if (pendingSetAsidesThisMonth.isNotEmpty()) {
-                    HomeListHeaderLabel("SET ASIDE · ${inr(totalSetAsidePending)}") {
+                // 1. CURRENT MONTH SET ASIDE (Active in This Cycle - Expenses / Provisions)
+                if (normalSetAsidesThisMonth.isNotEmpty()) {
+                    HomeListHeaderLabel("SET ASIDE · (${inr(totalNormalSetAsidePending)})") {
                         vm.accountsFilter = "Set Aside"
                         vm.tab = Tab.ACCOUNTS
                     }
-                    pendingSetAsidesThisMonth.forEachIndexed { idx, e ->
+                    normalSetAsidesThisMonth.forEachIndexed { idx, e ->
                         if (idx > 0) Hairline()
                         val left = vm.setAsideLeft(e)
                         val pot = vm.setAsidePot(e)
@@ -158,7 +163,35 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             index = idx + 1,
                             title = e.note.ifEmpty { e.category },
                             subtitle = subtitle,
-                            amount = inr(left),
+                            amount = "(${inr(left)})",
+                            fraction = fraction,
+                            pct = pct,
+                            onClick = { vm.requestConfirm(e) }
+                        )
+                    }
+                    hasPrior = true
+                }
+
+                // 1b. LENT MONEY TO RECEIVE (Active in This Cycle - Inflow / Addition)
+                if (lentSetAsidesThisMonth.isNotEmpty()) {
+                    if (hasPrior) HomeSectionDivider()
+                    HomeListHeaderLabel("🤝 LENT MONEY (TO RECEIVE) · +${inr(totalLentPendingToReceive)}") {
+                        vm.accountsFilter = "Set Aside"
+                        vm.tab = Tab.ACCOUNTS
+                    }
+                    lentSetAsidesThisMonth.forEachIndexed { idx, e ->
+                        if (idx > 0) Hairline()
+                        val left = vm.setAsideLeft(e)
+                        val pot = vm.setAsidePot(e)
+                        val fraction = safeFraction(pot, e.amount)
+                        val pct = (fraction * 100).toInt()
+                        val subtitle = "Target return on ${prettyDate(e.dueDate)} · Lump sum to receive in this cycle"
+
+                        HomeCompactSetAsideRow(
+                            index = idx + 1,
+                            title = e.note.ifEmpty { e.category },
+                            subtitle = subtitle,
+                            amount = "+${inr(left)}",
                             fraction = fraction,
                             pct = pct,
                             onClick = { vm.requestConfirm(e) }
@@ -631,6 +664,7 @@ private fun AfterAllExpensesCard(
     bankBalances: Double,
     otherExpenses: Double,
     upcomingSalary: Double = 0.0,
+    lentToReceive: Double = 0.0,
     balanceHidden: Boolean,
     onToggleVisibility: () -> Unit,
     onBankBalancesClick: (() -> Unit)? = null,
@@ -729,7 +763,7 @@ private fun AfterAllExpensesCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    if (balanceHidden) "••••••" else inr(otherExpenses),
+                    if (balanceHidden) "••••••" else "(${inr(otherExpenses)})",
                     color = Color.White,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -756,6 +790,32 @@ private fun AfterAllExpensesCard(
                     Text(
                         if (balanceHidden) "••••••" else inr(upcomingSalary),
                         color = Color(0xFF10B981),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            if (lentToReceive > 0.0) {
+                Text("+", color = Pf.Amber, fontSize = 13.sp, modifier = Modifier.padding(horizontal = Space.s1))
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 2.dp),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    Text(
+                        "Lent Return",
+                        color = Pf.Amber,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        if (balanceHidden) "••••••" else "+${inr(lentToReceive)}",
+                        color = Pf.Amber,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
