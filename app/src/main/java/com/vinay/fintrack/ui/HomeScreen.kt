@@ -52,6 +52,11 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -63,6 +68,9 @@ import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.friendlyCycle
 import com.vinay.fintrack.data.monthsToDate
 import com.vinay.fintrack.data.prettyDate
+import com.vinay.fintrack.data.formatDueDisplay
+import com.vinay.fintrack.data.formatInstalmentsLeft
+import com.vinay.fintrack.data.ordinal
 import com.vinay.fintrack.data.today
 import com.vinay.fintrack.data.DetectedAccountParser
 
@@ -97,10 +105,35 @@ fun HomeScreen(vm: FinTrackViewModel) {
     val otherExpenses = totalCardDues + totalLoanEmis + totalRecurring + totalNormalSetAsidePending
     val netBalance = totalBankBalances - otherExpenses + upcomingSalary + totalLentPendingToReceive
 
+    // State for Sinking Funds month filtering and Progressive Disclosure expansion
+    var sinkingFundFilter by remember { mutableStateOf("ALL") }
+    var expandedSinkingFunds by remember { mutableStateOf(false) }
+    var expandedLent by remember { mutableStateOf(false) }
+    var expandedDebts by remember { mutableStateOf(false) }
+    var expandedCards by remember { mutableStateOf(false) }
+    var expandedRecurring by remember { mutableStateOf(false) }
+    var expandedLoans by remember { mutableStateOf(false) }
+
+    // Sinking Fund Filter Pills: All, This Mo, Oct, Nov, Dec...
+    val currentMonthShort = Ledger.fullMonthName(today()).take(3)
+    val sinkingPills = remember(normalSetAsidesThisMonth, futureSetAsidesMap) {
+        buildList {
+            val totalCount = normalSetAsidesThisMonth.size + futureSetAsidesMap.values.sumOf { it.size }
+            add(Triple("ALL", "All", totalCount))
+            if (normalSetAsidesThisMonth.isNotEmpty()) {
+                add(Triple("CURRENT", currentMonthShort, normalSetAsidesThisMonth.size))
+            }
+            futureSetAsidesMap.forEach { (ym, list) ->
+                val monthTitle = Ledger.fullMonthName("$ym-01").take(3)
+                add(Triple(ym, monthTitle, list.size))
+            }
+        }
+    }
+
     LazyColumn(
         Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(bottom = 90.dp, top = Space.s2, start = Space.s4, end = Space.s4),
-        verticalArrangement = Arrangement.spacedBy(Space.s3)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // 1. Scope Switch (Personal / Joint ledger toggle) + billing cycle
         item { ScopeSwitch(vm) }
@@ -129,63 +162,169 @@ fun HomeScreen(vm: FinTrackViewModel) {
             )
         }
 
-        // 2b. SPENT TODAY BADGE (Suggestion 4)
+        // 2b. SPENT TODAY BADGE
         item {
             SpentTodayBadge(vm)
         }
 
-        // 3. UNIFIED 1-BY-1 CLEAN LIST (Set Aside -> Credit Cards -> Recurring -> Loans -> Salary)
-        item {
-            PfCard(
-                modifier = Modifier.fillMaxWidth(),
-                padding = PaddingValues(horizontal = Space.s4, vertical = Space.s2),
-                shape = Radius.Lg
-            ) {
-                var hasPrior = false
+        // 3a. CONSOLIDATED SINKING FUNDS CARD (Combines SET ASIDE + Future Months into 1 Card with Filter Pills)
+        val hasSinkingFunds = normalSetAsidesThisMonth.isNotEmpty() || futureSetAsidesMap.isNotEmpty()
+        if (hasSinkingFunds) {
+            item {
+                PfCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
+                    shape = Radius.Lg
+                ) {
+                    val headerAmount = when (sinkingFundFilter) {
+                        "ALL", "CURRENT" -> "(${inr(totalNormalSetAsidePending)})"
+                        else -> {
+                            val list = futureSetAsidesMap[sinkingFundFilter].orEmpty()
+                            val sum = list.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
+                            "${inr(sum)}/mo"
+                        }
+                    }
 
-                // 1. CURRENT MONTH SET ASIDE (Active in This Cycle - Expenses / Provisions)
-                if (normalSetAsidesThisMonth.isNotEmpty()) {
-                    HomeListHeaderLabel("SET ASIDE · (${inr(totalNormalSetAsidePending)})") {
+                    HomeListHeaderLabel(
+                        label = "SINKING FUNDS · $headerAmount",
+                        icon = Icons.Default.Bookmark,
+                        iconTint = Color(0xFF14B8A6)
+                    ) {
                         vm.accountsFilter = "Set Aside"
                         vm.tab = Tab.ACCOUNTS
                     }
-                    normalSetAsidesThisMonth.forEachIndexed { idx, e ->
-                        if (idx > 0) Hairline()
-                        val left = vm.setAsideLeft(e)
-                        val pot = vm.setAsidePot(e)
-                        val fraction = safeFraction(pot, e.amount)
-                        val pct = (fraction * 100).toInt()
-                        val resetDay = vm.salaryResetDayFor(e.person)
-                        val n = Ledger.instalmentsUntil(today(), e.nextDue, resetDay)
-                        val subtitle = "${inr(pot)}/${inr(e.amount)} ($pct%) · Due (${resetDay}th) · ${n}mo left"
 
-                        HomeCompactSetAsideRow(
-                            index = idx + 1,
-                            title = (e.note.ifEmpty { e.category }) + if (e.formula.isNotEmpty()) " · ${e.formula}" else "",
-                            subtitle = subtitle,
-                            amount = "(${inr(left)})",
-                            fraction = fraction,
-                            pct = pct,
-                            onClick = { vm.requestConfirm(e) }
-                        )
+                    // Horizontal Month Filter Pills
+                    if (sinkingPills.size > 1) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            sinkingPills.forEach { (id, label, count) ->
+                                val isSelected = sinkingFundFilter == id
+                                Box(
+                                    Modifier
+                                        .clip(Radius.Pill)
+                                        .background(if (isSelected) Color(0xFF14B8A6) else Pf.Surface2)
+                                        .clickable {
+                                            sinkingFundFilter = id
+                                            expandedSinkingFunds = false
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        "$label ($count)",
+                                        color = if (isSelected) Color.Black else Pf.Text,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
                     }
-                    hasPrior = true
+
+                    // Filtered Sinking Fund Items
+                    val currentItems = if (sinkingFundFilter == "ALL" || sinkingFundFilter == "CURRENT") normalSetAsidesThisMonth else emptyList()
+                    val futureItems = when (sinkingFundFilter) {
+                        "ALL" -> futureSetAsidesMap.entries.flatMap { entry -> entry.value.map { entry.key to it } }
+                        "CURRENT" -> emptyList()
+                        else -> futureSetAsidesMap[sinkingFundFilter].orEmpty().map { sinkingFundFilter to it }
+                    }
+
+                    val totalItemCount = currentItems.size + futureItems.size
+                    val maxDisplay = if (expandedSinkingFunds) totalItemCount else 3
+                    var displayedCount = 0
+
+                    // Current Month Active Items
+                    currentItems.forEach { e ->
+                        if (displayedCount < maxDisplay) {
+                            if (displayedCount > 0) Hairline()
+                            val left = vm.setAsideLeft(e)
+                            val pot = vm.setAsidePot(e)
+                            val fraction = safeFraction(pot, e.amount)
+                            val pct = (fraction * 100).toInt()
+                            val resetDay = vm.salaryResetDayFor(e.person)
+                            val n = Ledger.instalmentsUntil(today(), e.nextDue, resetDay)
+                            val subtitle = "${inr(pot)}/${inr(e.amount)} ($pct%) · Due ${ordinal(resetDay)} · ${formatInstalmentsLeft(n)}"
+
+                            HomeCompactSetAsideRow(
+                                index = displayedCount + 1,
+                                title = (e.note.ifEmpty { e.category }) + if (e.formula.isNotEmpty()) " · ${e.formula}" else "",
+                                subtitle = subtitle,
+                                amount = "(${inr(left)})",
+                                fraction = fraction,
+                                pct = pct,
+                                accentColor = Color(0xFF14B8A6),
+                                onClick = { vm.requestConfirm(e) }
+                            )
+                            displayedCount++
+                        }
+                    }
+
+                    // Future Items
+                    futureItems.forEach { (ym, e) ->
+                        if (displayedCount < maxDisplay) {
+                            if (displayedCount > 0) Hairline()
+                            val resetDay = vm.salaryResetDayFor(e.person)
+                            val start = if (e.startDate.isNotEmpty()) e.startDate else today()
+                            val n = Ledger.instalmentsBetween(start, e.nextDue, resetDay)
+                            val monthlyAmt = e.monthly(resetDay)
+                            val monthTitle = Ledger.fullMonthName("$ym-01")
+                            val subtitle = "Starts in $monthTitle · Due ${ordinal(resetDay)} · ${formatInstalmentsLeft(n)} · Total: ${inr(e.amount)}"
+
+                            HomeCompactRow(
+                                title = "${displayedCount + 1}. ${e.note.ifEmpty { e.category }}",
+                                subtitle = subtitle,
+                                amount = inr(monthlyAmt),
+                                amountColor = Pf.Muted,
+                                icon = Icons.Default.Bookmark,
+                                iconTint = Color(0xFF14B8A6),
+                                onClick = { vm.openEditEntry(e) }
+                            )
+                            displayedCount++
+                        }
+                    }
+
+                    // Progressive Disclosure Toggle
+                    if (totalItemCount > 3) {
+                        ExpandCollapseButton(expandedSinkingFunds, totalItemCount - 3) {
+                            expandedSinkingFunds = !expandedSinkingFunds
+                        }
+                    }
                 }
+            }
+        }
 
-                // 1b. LENT MONEY TO RECEIVE (Active in This Cycle - Inflow / Addition)
-                if (lentSetAsidesThisMonth.isNotEmpty()) {
-                    if (hasPrior) HomeSectionDivider()
-                    HomeListHeaderLabel("🤝 LENT MONEY (TO RECEIVE) · +${inr(totalLentPendingToReceive)}") {
+        // 3b. LENT MONEY (TO RECEIVE) ELEVATED CARD
+        if (lentSetAsidesThisMonth.isNotEmpty()) {
+            item {
+                PfCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
+                    shape = Radius.Lg
+                ) {
+                    HomeListHeaderLabel(
+                        label = "🤝 LENT MONEY (TO RECEIVE) · +${inr(totalLentPendingToReceive)}",
+                        icon = Icons.Default.ArrowDownward,
+                        iconTint = Color(0xFF10B981)
+                    ) {
                         vm.accountsFilter = "Set Aside"
                         vm.tab = Tab.ACCOUNTS
                     }
-                    lentSetAsidesThisMonth.forEachIndexed { idx, e ->
+
+                    val visibleLent = if (expandedLent) lentSetAsidesThisMonth else lentSetAsidesThisMonth.take(3)
+                    visibleLent.forEachIndexed { idx, e ->
                         if (idx > 0) Hairline()
                         val left = vm.setAsideLeft(e)
                         val pot = vm.setAsidePot(e)
                         val fraction = safeFraction(pot, e.amount)
                         val pct = (fraction * 100).toInt()
-                        val subtitle = "Target return on ${prettyDate(e.dueDate)} · Lump sum to receive in this cycle"
+                        val dueDisplay = formatDueDisplay(e.dueDate)
+                        val subtitle = "Target return on $dueDisplay · Lump sum to receive in this cycle"
 
                         HomeCompactSetAsideRow(
                             index = idx + 1,
@@ -194,23 +333,42 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             amount = "+${inr(left)}",
                             fraction = fraction,
                             pct = pct,
+                            accentColor = Color(0xFF10B981),
                             onClick = { vm.requestConfirm(e) }
                         )
                     }
-                    hasPrior = true
-                }
 
-                // 1b. LENT & BORROW (Active Pending - Placed Below Set Aside)
-                val pendingDebts = vm.pendingDebts
-                if (pendingDebts.isNotEmpty()) {
-                    if (hasPrior) HomeSectionDivider()
+                    if (lentSetAsidesThisMonth.size > 3) {
+                        ExpandCollapseButton(expandedLent, lentSetAsidesThisMonth.size - 3) {
+                            expandedLent = !expandedLent
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3c. LENT & BORROW (DEBTS) ELEVATED CARD
+        val pendingDebts = vm.pendingDebts
+        if (pendingDebts.isNotEmpty()) {
+            item {
+                PfCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
+                    shape = Radius.Lg
+                ) {
                     val net = vm.netDebt
                     val netLabel = if (net >= 0) "Net +${inr(net)}" else "Net -${inr(-net)}"
-                    HomeListHeaderLabel("LENT & BORROW · $netLabel") {
+                    HomeListHeaderLabel(
+                        label = "LENT & BORROW · $netLabel",
+                        icon = Icons.Default.SwapHoriz,
+                        iconTint = Pf.Accent400
+                    ) {
                         vm.accountsFilter = "Lent & Borrow"
                         vm.tab = Tab.ACCOUNTS
                     }
-                    pendingDebts.forEachIndexed { idx, d ->
+
+                    val visibleDebts = if (expandedDebts) pendingDebts else pendingDebts.take(3)
+                    visibleDebts.forEachIndexed { idx, d ->
                         if (idx > 0) Hairline()
                         val isLent = d.isLent
                         val tagColor = if (isLent) Color(0xFF00BFA5) else Color(0xFFFF5252)
@@ -218,11 +376,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             append(if (isLent) "Lent to " else "Borrowed from ")
                             append(d.peerName)
                             if (d.dueDate.isNotEmpty()) {
-                                val dayNum = d.dueDate.filter { it.isDigit() }
-                                val dayFormatted = if (d.dueDate.length >= 10 && d.dueDate.contains("-")) {
-                                    d.dueDate.split("-").lastOrNull()?.toIntOrNull()?.toString() ?: dayNum
-                                } else dayNum
-                                if (dayFormatted.isNotEmpty()) append(" · Due (${dayFormatted}th)")
+                                append(" · ${formatDueDisplay(d.dueDate)}")
                             } else if (d.note.isNotEmpty()) {
                                 append(" · ${d.note}")
                             }
@@ -238,23 +392,40 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             onClick = { vm.openDebtAction(d) }
                         )
                     }
-                    hasPrior = true
-                }
 
-                // 2. CREDIT CARDS (DUES)
-                if (pendingCards.isNotEmpty()) {
-                    if (hasPrior) HomeSectionDivider()
-                    HomeListHeaderLabel("CREDIT CARDS · ${inr(totalCardDues)}") {
+                    if (pendingDebts.size > 3) {
+                        ExpandCollapseButton(expandedDebts, pendingDebts.size - 3) {
+                            expandedDebts = !expandedDebts
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3d. CREDIT CARDS ELEVATED CARD
+        if (pendingCards.isNotEmpty()) {
+            item {
+                PfCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
+                    shape = Radius.Lg
+                ) {
+                    HomeListHeaderLabel(
+                        label = "CREDIT CARDS · ${inr(totalCardDues)}",
+                        icon = Icons.Default.CreditCard,
+                        iconTint = Color(0xFFF59E0B)
+                    ) {
                         vm.accountsFilter = "Cards"
                         vm.tab = Tab.ACCOUNTS
                     }
-                    pendingCards.forEachIndexed { idx, c ->
+
+                    val visibleCards = if (expandedCards) pendingCards else pendingCards.take(3)
+                    visibleCards.forEachIndexed { idx, c ->
                         if (idx > 0) Hairline()
                         val cleanName = if (c.name.contains("••") && c.numberTail.isNotBlank()) {
                             c.name.substringBefore("••").trim().ifEmpty { c.name }
                         } else c.name
-                        val dayDigits = c.dueText.filter { it.isDigit() }
-                        val duePart = if (c.dueText.isNotBlank()) "Due (${if (dayDigits.isNotEmpty()) "${dayDigits}th" else c.dueText})" else null
+                        val duePart = if (c.dueText.isNotBlank()) formatDueDisplay(c.dueText) else null
                         val tailPart = if (c.numberTail.isNotBlank()) "••••${c.numberTail}" else null
                         val ownerPart = if (c.owner == "Joint") "Joint" else null
                         val subtitle = listOfNotNull(duePart, tailPart, ownerPart).joinToString(" · ").ifEmpty { "Credit Card" }
@@ -264,99 +435,129 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             subtitle = subtitle,
                             amount = inr(c.balance),
                             amountColor = Pf.Text,
+                            icon = Icons.Default.CreditCard,
+                            iconTint = Color(0xFFF59E0B),
                             onClick = { vm.startSettleCard(c.id) }
                         )
                     }
-                    hasPrior = true
-                }
 
-                // 3. RECURRING
-                if (pendingRecurring.isNotEmpty()) {
-                    if (hasPrior) HomeSectionDivider()
-                    HomeListHeaderLabel("RECURRING · ${inr(totalRecurring)}/mo") {
+                    if (pendingCards.size > 3) {
+                        ExpandCollapseButton(expandedCards, pendingCards.size - 3) {
+                            expandedCards = !expandedCards
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3e. RECURRING BILLS ELEVATED CARD
+        if (pendingRecurring.isNotEmpty()) {
+            item {
+                PfCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
+                    shape = Radius.Lg
+                ) {
+                    HomeListHeaderLabel(
+                        label = "RECURRING · ${inr(totalRecurring)}/mo",
+                        icon = Icons.Default.DateRange,
+                        iconTint = Color(0xFF8B5CF6)
+                    ) {
                         vm.accountsFilter = "Recurring"
                         vm.tab = Tab.ACCOUNTS
                     }
-                    pendingRecurring.forEachIndexed { idx, e ->
+
+                    val visibleRecurring = if (expandedRecurring) pendingRecurring else pendingRecurring.take(3)
+                    visibleRecurring.forEachIndexed { idx, e ->
                         if (idx > 0) Hairline()
-                        val day = e.nextDue.takeLast(2).toIntOrNull()
-                        val when_ = if (day != null) "Due (${day}th)" else if (e.nextDue.isNotEmpty()) "Due (${e.nextDue})" else null
-                        val subtitle = listOfNotNull(e.person, e.category, when_).joinToString(" · ")
+                        val duePart = if (e.nextDue.isNotEmpty()) formatDueDisplay(e.nextDue) else null
+                        val subtitle = listOfNotNull(e.person, e.category, duePart).joinToString(" · ")
                         HomeCompactRow(
                             title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
                             subtitle = subtitle,
                             amount = inr(e.monthly),
                             amountColor = Pf.Text,
+                            icon = Icons.Default.DateRange,
+                            iconTint = Color(0xFF8B5CF6),
                             onClick = { vm.requestConfirm(e) }
                         )
                     }
-                    hasPrior = true
-                }
 
-                // 4. LOANS (Active this cycle)
-                if (pendingLoans.isNotEmpty()) {
-                    if (hasPrior) HomeSectionDivider()
-                    HomeListHeaderLabel("LOANS · ${inr(totalLoanEmis)}/mo") {
+                    if (pendingRecurring.size > 3) {
+                        ExpandCollapseButton(expandedRecurring, pendingRecurring.size - 3) {
+                            expandedRecurring = !expandedRecurring
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3f. LOANS (EMIS) ELEVATED CARD
+        if (pendingLoans.isNotEmpty()) {
+            item {
+                PfCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
+                    shape = Radius.Lg
+                ) {
+                    HomeListHeaderLabel(
+                        label = "LOANS · ${inr(totalLoanEmis)}/mo",
+                        icon = Icons.Default.AccountBalance,
+                        iconTint = Color(0xFF3B82F6)
+                    ) {
                         vm.accountsFilter = "Loans"
                         vm.tab = Tab.ACCOUNTS
                     }
-                    pendingLoans.forEachIndexed { idx, l ->
+
+                    val visibleLoans = if (expandedLoans) pendingLoans else pendingLoans.take(3)
+                    visibleLoans.forEachIndexed { idx, l ->
                         if (idx > 0) Hairline()
-                        val day = if (l.dueDay > 0) l.dueDay else l.nextDue.takeLast(2).toIntOrNull()
-                        val duePart = if (day != null) " · Due (${day}th)" else ""
-                        val subtitle = "${l.remainingMonths} mo left · EMI ${inr(l.monthlyEmi)}$duePart"
+                        val duePart = if (l.dueDay > 0) "Due ${ordinal(l.dueDay)}" else if (l.nextDue.isNotEmpty()) formatDueDisplay(l.nextDue) else ""
+                        val subtitle = "${formatInstalmentsLeft(l.remainingMonths)} · EMI ${inr(l.monthlyEmi)}${if (duePart.isNotEmpty()) " · $duePart" else ""}"
                         HomeCompactRow(
                             title = "${idx + 1}. ${l.name}",
                             subtitle = subtitle,
                             amount = inr(l.monthlyEmi),
                             amountColor = Pf.Text,
+                            icon = Icons.Default.AccountBalance,
+                            iconTint = Color(0xFF3B82F6),
                             onClick = { vm.startConfirmLoan(l) }
                         )
                     }
-                    hasPrior = true
-                }
 
-                // 5. FUTURE SET ASIDES (Grouped by starting payday month - placed UNDER loans)
-                if (futureSetAsidesMap.isNotEmpty()) {
-                    futureSetAsidesMap.forEach { (yearMonth, entriesList) ->
-                        if (hasPrior) HomeSectionDivider()
-                        val monthDateIso = "$yearMonth-01"
-                        val monthTitle = Ledger.fullMonthName(monthDateIso)
-                        val totalFutureMonth = entriesList.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
-                        HomeListHeaderLabel("SET ASIDE ($monthTitle) · ${inr(totalFutureMonth)}/mo") {
-                            vm.accountsFilter = "Set Aside"
-                            vm.tab = Tab.ACCOUNTS
+                    if (pendingLoans.size > 3) {
+                        ExpandCollapseButton(expandedLoans, pendingLoans.size - 3) {
+                            expandedLoans = !expandedLoans
                         }
-                        entriesList.forEachIndexed { idx, e ->
-                            if (idx > 0) Hairline()
-                            val resetDay = vm.salaryResetDayFor(e.person)
-                            val start = if (e.startDate.isNotEmpty()) e.startDate else today()
-                            val n = Ledger.instalmentsBetween(start, e.nextDue, resetDay)
-                            val monthlyAmt = e.monthly(resetDay)
-                            val subtitle = "Starts in $monthTitle · Due (${resetDay}th) · ${n}mo · Total: ${inr(e.amount)}"
-
-                            HomeCompactRow(
-                                title = "${idx + 1}. ${e.note.ifEmpty { e.category }}",
-                                subtitle = subtitle,
-                                amount = inr(monthlyAmt),
-                                amountColor = Pf.Muted,
-                                onClick = { vm.openEditEntry(e) }
-                            )
-                        }
-                        hasPrior = true
                     }
                 }
+            }
+        }
 
-                if (!hasPrior) {
+        // 3g. ALL CLEAR EMPTY STATE
+        val hasAnyCommitments = hasSinkingFunds ||
+            lentSetAsidesThisMonth.isNotEmpty() ||
+            pendingDebts.isNotEmpty() ||
+            pendingCards.isNotEmpty() ||
+            pendingRecurring.isNotEmpty() ||
+            pendingLoans.isNotEmpty()
+
+        if (!hasAnyCommitments) {
+            item {
+                PfCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    padding = PaddingValues(vertical = Space.s4, horizontal = Space.s4),
+                    shape = Radius.Lg
+                ) {
                     Row(
-                        Modifier.fillMaxWidth().padding(vertical = Space.s4),
+                        Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             "All dues, bills, and set-asides for this cycle are clear! 🎉",
                             color = Pf.Muted,
-                            fontSize = 13.sp,
+                            fontSize = 13.5.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
@@ -451,28 +652,77 @@ private fun SpentTodayBadge(vm: FinTrackViewModel) {
 }
 
 @Composable
-private fun HomeListHeaderLabel(label: String, onClick: (() -> Unit)? = null) {
+private fun ExpandCollapseButton(
+    expanded: Boolean,
+    remainingCount: Int,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(Radius.Sm)
+            .clickable { onClick() }
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+            null,
+            Modifier.size(16.dp),
+            tint = Pf.Accent400
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            if (expanded) "Show less" else "Show $remainingCount more",
+            color = Pf.Accent400,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun HomeListHeaderLabel(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    iconTint: Color = Pf.Accent400,
+    onClick: (() -> Unit)? = null
+) {
     Row(
         Modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
-            .padding(top = 10.dp, bottom = 4.dp),
+            .padding(top = 8.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = label,
-            color = Pf.Accent400,
-            fontSize = 11.5.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.8.sp
-        )
+        Row(
+            modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (icon != null) {
+                Icon(icon, null, Modifier.size(14.dp), tint = iconTint)
+            }
+            Text(
+                text = label,
+                color = if (icon != null) iconTint else Pf.Accent400,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
         if (onClick != null) {
             Text(
                 text = "View all →",
                 color = Pf.Muted,
                 fontSize = 11.sp,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                softWrap = false,
+                modifier = Modifier.padding(start = 4.dp)
             )
         }
     }
@@ -486,7 +736,7 @@ private fun HomeSectionDivider() {
             .fillMaxWidth()
             .height(1.dp)
             .background(
-                if (Pf.isDark) Color(0xFF4B5563)
+                if (Pf.isDark) Color(0xFF262833)
                 else Color(0xFFCBD5E1)
             )
     )
@@ -499,39 +749,68 @@ private fun HomeCompactRow(
     subtitle: String,
     amount: String,
     amountColor: Color,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    iconTint: Color = Pf.Accent400,
     onClick: (() -> Unit)? = null
 ) {
-    Row(
+    Column(
         Modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
-            .padding(vertical = 9.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(vertical = 8.dp)
     ) {
-        Column(Modifier.weight(1f).padding(end = Space.s2)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                Modifier.weight(1f).padding(end = Space.s2),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (icon != null) {
+                    Box(
+                        Modifier
+                            .size(28.dp)
+                            .background(iconTint.copy(alpha = 0.14f), Radius.Sm),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            icon,
+                            null,
+                            Modifier.size(15.dp),
+                            tint = iconTint
+                        )
+                    }
+                }
+                Text(
+                    title,
+                    color = Pf.Text,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             Text(
-                title,
-                color = Pf.Text,
+                amount,
+                color = amountColor,
                 fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                fontWeight = FontWeight.Bold
             )
+        }
+        if (subtitle.isNotBlank()) {
+            Spacer(Modifier.height(3.dp))
             Text(
                 subtitle,
                 color = Pf.Muted,
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                fontSize = 11.5.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = if (icon != null) Modifier.padding(start = 36.dp) else Modifier
             )
         }
-        Text(
-            amount,
-            color = amountColor,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold
-        )
     }
 }
 
@@ -543,32 +822,43 @@ private fun HomeCompactSetAsideRow(
     amount: String,
     fraction: Float,
     pct: Int,
+    accentColor: Color = Color(0xFF14B8A6),
     onClick: (() -> Unit)? = null
 ) {
     Column(
         Modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
-            .padding(vertical = 9.dp)
+            .padding(vertical = 8.dp)
     ) {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.weight(1f).padding(end = Space.s2)) {
+            Row(
+                Modifier.weight(1f).padding(end = Space.s2),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .background(accentColor.copy(alpha = 0.14f), Radius.Sm),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Bookmark,
+                        null,
+                        Modifier.size(15.dp),
+                        tint = accentColor
+                    )
+                }
                 Text(
                     "$index. $title",
                     color = Pf.Text,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    subtitle,
-                    color = Pf.Muted,
-                    fontSize = 11.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -587,12 +877,21 @@ private fun HomeCompactSetAsideRow(
                 )
             }
         }
+        Spacer(Modifier.height(3.dp))
+        Text(
+            subtitle,
+            color = Pf.Muted,
+            fontSize = 11.5.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 36.dp)
+        )
         Spacer(Modifier.height(6.dp))
         ProgressBar(
             fraction = fraction,
-            color = if (pct >= 100) Color(0xFF00BFA5) else Pf.Accent,
+            color = if (pct >= 100) Color(0xFF00BFA5) else accentColor,
             height = 4,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth().padding(start = 36.dp)
         )
     }
 }
@@ -607,19 +906,35 @@ private fun HomeCompactDebtRow(
     amount: String,
     onClick: (() -> Unit)? = null
 ) {
-    Row(
+    Column(
         Modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
-            .padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(vertical = 8.dp)
     ) {
-        Column(Modifier.weight(1f).padding(end = Space.s2)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Row(
+                Modifier.weight(1f).padding(end = Space.s2),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .background(typeColor.copy(alpha = 0.14f), Radius.Sm),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.SwapHoriz,
+                        null,
+                        Modifier.size(15.dp),
+                        tint = typeColor
+                    )
+                }
                 Text(
                     "$index. $title",
                     color = Pf.Text,
@@ -635,24 +950,21 @@ private fun HomeCompactDebtRow(
                 )
             }
             Text(
-                subtitle,
-                color = Pf.Muted,
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
                 amount,
                 color = typeColor,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold
             )
+        }
+        if (subtitle.isNotBlank()) {
+            Spacer(Modifier.height(3.dp))
             Text(
-                if (type == "LENT") "to receive" else "to repay",
+                subtitle,
                 color = Pf.Muted,
-                fontSize = 10.sp
+                fontSize = 11.5.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 36.dp)
             )
         }
     }
@@ -678,7 +990,7 @@ private fun AfterAllExpensesCard(
                 else Brush.linearGradient(listOf(Color(0xFF1F2937), Color(0xFF111827))),
                 Radius.Lg
             )
-            .border(1.dp, Pf.Hairline, Radius.Lg)
+            .border(1.dp, if (Pf.isDark) Color(0xFF262833) else Pf.Hairline, Radius.Lg)
             .padding(horizontal = Space.s4, vertical = Space.s4)
     ) {
         Row(
@@ -713,111 +1025,145 @@ private fun AfterAllExpensesCard(
             overflow = TextOverflow.Ellipsis
         )
 
-        Row(
+        // Clean 2x2 Data Grid (Category icons, dedicated width, never truncates!)
+        Column(
             Modifier
                 .fillMaxWidth()
-                .background(Color.White.copy(alpha = 0.08f), Radius.Sm)
-                .padding(horizontal = Space.s3, vertical = Space.s2),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .background(Color.White.copy(alpha = 0.08f), Radius.Md)
+                .padding(horizontal = Space.s3, vertical = Space.s3),
+            verticalArrangement = Arrangement.spacedBy(Space.s2)
         ) {
-            Column(
-                Modifier
-                    .weight(1f)
-                    .clip(Radius.Sm)
-                    .then(if (onBankBalancesClick != null) Modifier.clickable { onBankBalancesClick() } else Modifier)
-                    .padding(vertical = 2.dp)
+            // Row 1: Bank Balances & Current Expenses
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s3)
             ) {
-                Text(
-                    "Bank Balances ↗",
-                    color = Color(0xFF9CA3AF),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    if (balanceHidden) "••••••" else inr(bankBalances),
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Text("—", color = Color(0xFF9CA3AF), fontSize = 13.sp, modifier = Modifier.padding(horizontal = Space.s1))
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(Radius.Sm)
-                    .then(if (onExpensesClick != null) Modifier.clickable { onExpensesClick() } else Modifier)
-                    .padding(vertical = 2.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    "Expenses ↗",
-                    color = Color(0xFF9CA3AF),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    if (balanceHidden) "••••••" else "(${inr(otherExpenses)})",
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            if (upcomingSalary > 0.0) {
-                Text("+", color = Color(0xFF10B981), fontSize = 13.sp, modifier = Modifier.padding(horizontal = Space.s1))
+                // Bank Balances (Left)
                 Column(
-                    modifier = Modifier
-                        .weight(1.1f)
-                        .padding(vertical = 2.dp),
-                    horizontalAlignment = Alignment.End
+                    Modifier
+                        .weight(1f)
+                        .clip(Radius.Sm)
+                        .then(if (onBankBalancesClick != null) Modifier.clickable { onBankBalancesClick() } else Modifier)
                 ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text("🏦", fontSize = 11.sp)
+                        Text(
+                            "Bank Balances ↗",
+                            color = Color(0xFF9CA3AF),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(Modifier.height(2.dp))
                     Text(
-                        "Next Salary",
-                        color = Color(0xFF10B981),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
+                        if (balanceHidden) "••••••" else inr(bankBalances),
+                        color = Color.White,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                }
+
+                // Expenses (Right)
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(Radius.Sm)
+                        .then(if (onExpensesClick != null) Modifier.clickable { onExpensesClick() } else Modifier)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text("💳", fontSize = 11.sp)
+                        Text(
+                            "Expenses (Dues) ↗",
+                            color = Color(0xFF9CA3AF),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(Modifier.height(2.dp))
                     Text(
-                        if (balanceHidden) "••••••" else inr(upcomingSalary),
-                        color = Color(0xFF10B981),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        if (balanceHidden) "••••••" else "(${inr(otherExpenses)})",
+                        color = Color(0xFFF87171),
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
-            if (lentToReceive > 0.0) {
-                Text("+", color = Pf.Amber, fontSize = 13.sp, modifier = Modifier.padding(horizontal = Space.s1))
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(vertical = 2.dp),
-                    horizontalAlignment = Alignment.End
-                ) {
+
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color.White.copy(alpha = 0.08f))
+            )
+
+            // Row 2: Expected Salary & Lent Return
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s3)
+            ) {
+                // Expected Salary (Left)
+                Column(Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text("💰", fontSize = 11.sp)
+                        Text(
+                            "Next Salary",
+                            color = Color(0xFF10B981),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(Modifier.height(2.dp))
                     Text(
-                        "Lent Return",
-                        color = Pf.Amber,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
+                        if (balanceHidden) "••••••" else if (upcomingSalary > 0) "+${inr(upcomingSalary)}" else "Not set",
+                        color = if (upcomingSalary > 0) Color(0xFF10B981) else Color(0xFF9CA3AF),
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                }
+
+                // Lent to Receive (Right)
+                Column(Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text("🤝", fontSize = 11.sp)
+                        Text(
+                            "Lent Return",
+                            color = Pf.Amber,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(Modifier.height(2.dp))
                     Text(
-                        if (balanceHidden) "••••••" else "+${inr(lentToReceive)}",
-                        color = Pf.Amber,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        if (balanceHidden) "••••••" else if (lentToReceive > 0) "+${inr(lentToReceive)}" else "₹0.00",
+                        color = if (lentToReceive > 0) Pf.Amber else Color(0xFF9CA3AF),
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -900,15 +1246,35 @@ private fun UpcomingMonths2And3Section(vm: FinTrackViewModel, startingLeftover: 
                         }
 
                         Column(horizontalAlignment = Alignment.End) {
-                            val isSurplus = month.left >= 0.0
-                            Text(
-                                if (vm.balanceHidden) "••••••" else if (isSurplus) "+${inr(month.left)}" else "-${inr(Math.abs(month.left))}",
-                                color = if (isSurplus) Color(0xFF10B981) else Color(0xFFEF4444),
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Muted("Net Projected Leftover", size = 10)
+                            val isIncomeUnset = month.income <= 0.0
+                            if (isIncomeUnset && month.left < 0) {
+                                Box(
+                                    Modifier
+                                        .clip(Radius.Pill)
+                                        .background(Color(0xFFF59E0B).copy(alpha = 0.16f))
+                                        .clickable { vm.tab = Tab.SETTINGS }
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        "Set salary to calculate ↗",
+                                        color = Color(0xFFF59E0B),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Spacer(Modifier.height(2.dp))
+                                Muted("Salary unset", size = 10)
+                            } else {
+                                val isSurplus = month.left >= 0.0
+                                Text(
+                                    if (vm.balanceHidden) "••••••" else if (isSurplus) "+${inr(month.left)}" else "-${inr(Math.abs(month.left))}",
+                                    color = if (isSurplus) Color(0xFF10B981) else Color(0xFFEF4444),
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Muted("Net Projected Leftover", size = 10)
+                            }
                         }
                     }
 
@@ -933,6 +1299,7 @@ private fun UpcomingMonths2And3Section(vm: FinTrackViewModel, startingLeftover: 
                     }
 
                     // 2. Expected Salary
+                    val isIncomeUnset = month.income <= 0.0
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -942,12 +1309,42 @@ private fun UpcomingMonths2And3Section(vm: FinTrackViewModel, startingLeftover: 
                             Box(Modifier.size(6.dp).background(Color(0xFF10B981), CircleShape))
                             Muted("Expected Salary", size = 12)
                         }
-                        Text(
-                            if (vm.balanceHidden) "••••••" else "+${inr(month.income)}",
-                            color = Color(0xFF10B981),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        if (isIncomeUnset) {
+                            Text(
+                                "+₹0.00 (Tap to set ↗)",
+                                color = Color(0xFFF59E0B),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clickable { vm.tab = Tab.SETTINGS }
+                            )
+                        } else {
+                            Text(
+                                if (vm.balanceHidden) "••••••" else "+${inr(month.income)}",
+                                color = Color(0xFF10B981),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    if (isIncomeUnset && month.left < 0) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFF59E0B).copy(alpha = 0.08f), Radius.Sm)
+                                .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.2f), Radius.Sm)
+                                .padding(horizontal = Space.s3, vertical = Space.s2),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("💡", fontSize = 12.sp)
+                            Text(
+                                "Expected salary for ${month.label} defaults to ₹0. Set anticipated salary in Settings to calculate your true projected surplus.",
+                                color = Pf.Muted,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+                        }
                     }
 
                     if (month.loans > 0.0) {

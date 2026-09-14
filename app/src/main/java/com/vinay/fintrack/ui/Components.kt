@@ -61,13 +61,17 @@ fun PfCard(
     modifier: Modifier = Modifier,
     padding: PaddingValues = PaddingValues(Space.s3),
     shape: RoundedCornerShape = Radius.Md,
+    backgroundColor: Color? = null,
+    borderColor: Color? = null,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
 ) {
+    val bg = backgroundColor ?: (if (Pf.isDark) Color(0xFF16181F) else Pf.Surface)
+    val border = borderColor ?: (if (Pf.isDark) Color(0xFF262833) else Pf.Hairline)
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Pf.Surface, shape)
-            .border(1.dp, Pf.Hairline, shape)
+            .background(bg, shape)
+            .border(1.dp, border, shape)
             .padding(padding),
         content = content
     )

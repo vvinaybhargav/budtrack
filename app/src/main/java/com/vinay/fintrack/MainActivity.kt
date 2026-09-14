@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
@@ -281,27 +282,36 @@ private fun BottomNav(vm: FinTrackViewModel) {
             NavItem(Icons.Default.Home, "Home", vm.tab == Tab.HOME, Modifier.weight(1f)) { vm.tab = Tab.HOME }
             NavItem(Icons.Default.AccountBalanceWallet, "Accounts", vm.tab == Tab.ACCOUNTS, Modifier.weight(1f)) { vm.tab = Tab.ACCOUNTS }
             
-            // Center Floating Elevated Add Button
+            // Center Floating Elevated Add Button with subtle dark halo separation
             Box(
                 Modifier
                     .weight(1.1f)
-                    .padding(vertical = 2.dp),
+                    .offset(y = (-8).dp),
                 contentAlignment = Alignment.Center
             ) {
+                // Subtle dark halo ring matching background so it cleanly separates from the bar hairline
                 Box(
                     Modifier
-                        .size(46.dp)
-                        .background(Pf.Accent, CircleShape)
-                        .border(1.dp, Pf.Hairline, CircleShape)
-                        .clickable { vm.tab = Tab.ADD },
+                        .size(54.dp)
+                        .background(Pf.Bg, CircleShape)
+                        .padding(3.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.Add,
-                        "Add",
-                        Modifier.size(24.dp),
-                        tint = Pf.OnAccent
-                    )
+                    Box(
+                        Modifier
+                            .size(48.dp)
+                            .background(Pf.Accent, CircleShape)
+                            .border(1.dp, Pf.Hairline, CircleShape)
+                            .clickable { vm.tab = Tab.ADD },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            "Add",
+                            Modifier.size(24.dp),
+                            tint = Pf.OnAccent
+                        )
+                    }
                 }
             }
 

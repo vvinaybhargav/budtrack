@@ -369,6 +369,76 @@ fun isoFromDayFirst(text: String): String? {
     return String.format(Locale("en", "IN"), "%04d-%02d-%02d", year, month, day)
 }
 
+fun ordinal(n: Int): String = when {
+    n % 100 in 11..13 -> "${n}th"
+    n % 10 == 1 -> "${n}st"
+    n % 10 == 2 -> "${n}nd"
+    n % 10 == 3 -> "${n}rd"
+    else -> "${n}th"
+}
+
+fun formatInstalmentsLeft(n: Int): String = when {
+    n <= 0 -> "due this cycle"
+    n == 1 -> "1 mo left"
+    else -> "$n mos left"
+}
+
+/**
+ * Formats a due date string cleanly:
+ * - "6" -> "Due 6th"
+ * - "2026-09-13" -> "Due 13 Sep"
+ * - "13-09-2026" -> "Due 13 Sep"
+ * - "13 Sep 2026" -> "Due 13 Sep 2026"
+ * Prevents concatenated digit bugs like "Due (132026th)".
+ */
+fun formatDueDisplay(raw: String): String {
+    val trimmed = raw.trim()
+        .removePrefix("Due")
+        .removePrefix("due")
+        .removePrefix(":")
+        .trim()
+        .removeSurrounding("(", ")")
+        .trim()
+    if (trimmed.isEmpty()) return ""
+
+    val dayOnly = trimmed.toIntOrNull()
+    if (dayOnly != null && dayOnly in 1..31) {
+        return "Due ${ordinal(dayOnly)}"
+    }
+
+    if (trimmed.matches(Regex("""\d{4}-\d{2}-\d{2}"""))) {
+        return runCatching {
+            val d = isoDate.parse(trimmed)!!
+            val nowYear = Calendar.getInstance().get(Calendar.YEAR)
+            val c = Calendar.getInstance().apply { time = d }
+            val fmt = if (c.get(Calendar.YEAR) == nowYear) {
+                java.text.SimpleDateFormat("d MMM", Locale("en", "IN"))
+            } else {
+                java.text.SimpleDateFormat("d MMM yyyy", Locale("en", "IN"))
+            }
+            "Due ${fmt.format(d)}"
+        }.getOrDefault("Due $trimmed")
+    }
+
+    val iso = isoFromDayFirst(trimmed)
+    if (iso != null) {
+        return formatDueDisplay(iso)
+    }
+
+    // If it ends with ordinal suffix like 13th
+    val suffixRegex = Regex("""^(\d{1,2})(st|nd|rd|th)$""", RegexOption.IGNORE_CASE)
+    val suffixMatch = suffixRegex.matchEntire(trimmed)
+    if (suffixMatch != null) {
+        val d = suffixMatch.groupValues[1].toIntOrNull()
+        if (d != null && d in 1..31) {
+            return "Due ${ordinal(d)}"
+        }
+    }
+
+    return if (trimmed.startsWith("Due", ignoreCase = true)) trimmed else "Due $trimmed"
+}
+
+
 /** Converts both DD-MM-YYYY and YYYY-MM-DD to standard ISO YYYY-MM-DD. */
 fun normalizeDateToIso(text: String): String? {
     val trimmed = text.trim()

@@ -48,6 +48,7 @@ import com.vinay.fintrack.Tab
 import com.vinay.fintrack.data.Entry
 import com.vinay.fintrack.data.Ledger
 import com.vinay.fintrack.data.inr
+import com.vinay.fintrack.data.formatDueDisplay
 import com.vinay.fintrack.data.prettyDate
 import com.vinay.fintrack.data.today
 import com.vinay.fintrack.data.MissingConfigItem
@@ -726,7 +727,7 @@ private fun ManageCardsSection(vm: FinTrackViewModel) {
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                val duePart = if (c.dueText.isNotBlank()) "Due: ${c.dueText}" else null
+                                val duePart = if (c.dueText.isNotBlank()) formatDueDisplay(c.dueText) else null
                                 val tailPart = if (c.numberTail.isNotBlank()) "••••${c.numberTail}" else null
                                 val ownerPart = if (c.owner == "Joint") "Joint" else null
                                 val subtitle = listOfNotNull(duePart, tailPart, ownerPart).joinToString(" · ").ifEmpty { "Credit Card" }
