@@ -161,7 +161,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
                         HomeCompactSetAsideRow(
                             index = idx + 1,
-                            title = e.note.ifEmpty { e.category },
+                            title = (e.note.ifEmpty { e.category }) + if (e.formula.isNotEmpty()) " · ${e.formula}" else "",
                             subtitle = subtitle,
                             amount = "(${inr(left)})",
                             fraction = fraction,
@@ -189,7 +189,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
                         HomeCompactSetAsideRow(
                             index = idx + 1,
-                            title = e.note.ifEmpty { e.category },
+                            title = (e.note.ifEmpty { e.category }) + if (e.formula.isNotEmpty()) " · ${e.formula}" else "",
                             subtitle = subtitle,
                             amount = "+${inr(left)}",
                             fraction = fraction,

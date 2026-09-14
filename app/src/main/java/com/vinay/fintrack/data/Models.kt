@@ -32,7 +32,8 @@ data class Entry(
      */
     val closed: Boolean = false,
     /** Marked as money lent to someone, tracked inside Set a Side. */
-    val isLent: Boolean = false
+    val isLent: Boolean = false,
+    val formula: String = ""
 ) {
     val everyMonths: Int
         get() = when {
@@ -193,7 +194,8 @@ data class Txn(
      * can record those digits against it — after which every later message from
      * that account matches on its own.
      */
-    val accountTail: String = ""
+    val accountTail: String = "",
+    val formula: String = ""
 ) {
     val month: String get() = period.ifEmpty { date.take(7) }
 

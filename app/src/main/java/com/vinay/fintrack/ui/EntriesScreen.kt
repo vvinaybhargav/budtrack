@@ -559,6 +559,14 @@ fun EntriesScreen(vm: FinTrackViewModel) {
                                         fontWeight = FontWeight.Medium,
                                         maxLines = 1
                                     )
+                                    if (t.formula.isNotEmpty()) {
+                                        Text(
+                                            t.formula,
+                                            color = Pf.Accent400,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
                                     Spacer(Modifier.height(2.dp))
                                     Muted(t.whenText, size = 11)
                                 }

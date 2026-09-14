@@ -188,9 +188,11 @@ fun AddScreen(vm: FinTrackViewModel) {
 private fun HeroAmountInput(
     amountText: String,
     onAmountChange: (String) -> Unit,
+    formulaText: String = "",
+    onFormulaChange: ((String) -> Unit)? = null,
     onQuickAdd: (Long) -> Unit
 ) {
-    var calculationFormula by remember(amountText.isEmpty()) { mutableStateOf("") }
+    var calculationFormula by remember(amountText.isEmpty(), formulaText) { mutableStateOf(formulaText) }
     val hasMath = MathEvaluator.hasMathOperation(amountText)
 
     Box(
@@ -219,6 +221,7 @@ private fun HeroAmountInput(
                 if (amountText.isNotEmpty()) {
                     GhostButton("Clear", {
                         calculationFormula = ""
+                        onFormulaChange?.invoke("")
                         onAmountChange("")
                     })
                 }
@@ -277,7 +280,9 @@ private fun HeroAmountInput(
                             val res = MathEvaluator.evaluate(amountText)
                             if (res != null) {
                                 val formatted = MathEvaluator.formatResult(res)
-                                calculationFormula = "$amountText = $formatted"
+                                val expr = amountText.trim()
+                                calculationFormula = expr
+                                onFormulaChange?.invoke(expr)
                                 onAmountChange(formatted)
                             }
                         },
@@ -292,10 +297,11 @@ private fun HeroAmountInput(
                 }
             }
 
-            if (calculationFormula.isNotEmpty()) {
+            val displayFormula = if (calculationFormula.isNotEmpty()) calculationFormula else formulaText
+            if (displayFormula.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    calculationFormula,
+                    displayFormula,
                     color = Pf.Accent400,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
@@ -582,6 +588,8 @@ private fun OneTimePaymentForm(vm: FinTrackViewModel) {
         HeroAmountInput(
             amountText = vm.draft.amountText,
             onAmountChange = { vm.draft = vm.draft.copy(amountText = it) },
+            formulaText = vm.draft.formula,
+            onFormulaChange = { vm.draft = vm.draft.copy(formula = it) },
             onQuickAdd = { delta ->
                 val cur = MathEvaluator.evaluate(vm.draft.amountText) ?: vm.draft.amountText.toDoubleOrNull() ?: 0.0
                 vm.draft = vm.draft.copy(amountText = MathEvaluator.formatResult(cur + delta))
@@ -858,6 +866,8 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
         HeroAmountInput(
             amountText = vm.draft.amountText,
             onAmountChange = { vm.draft = vm.draft.copy(amountText = it) },
+            formulaText = vm.draft.formula,
+            onFormulaChange = { vm.draft = vm.draft.copy(formula = it) },
             onQuickAdd = { delta ->
                 val cur = MathEvaluator.evaluate(vm.draft.amountText) ?: vm.draft.amountText.toDoubleOrNull() ?: 0.0
                 vm.draft = vm.draft.copy(amountText = MathEvaluator.formatResult(cur + delta))

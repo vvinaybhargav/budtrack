@@ -1106,6 +1106,10 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
+                                        if (e.formula.isNotEmpty()) {
+                                            Spacer(Modifier.width(6.dp))
+                                            Tag(e.formula, Pf.Surface, Pf.Accent400)
+                                        }
                                         if (e.isLent) {
                                             Spacer(Modifier.width(6.dp))
                                             Tag("Lent", Pf.AmberBg, Pf.Amber)

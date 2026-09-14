@@ -91,7 +91,8 @@ data class Draft(
     val startDateText: String = "",
     /** When the bill is due, as the form takes it (dd-mm-yyyy). Optional. */
     val dueText: String = "",
-    val isLent: Boolean = false
+    val isLent: Boolean = false,
+    val formula: String = ""
 ) {
     /**
      * Derived, never stored. As its own field it defaulted to JOINT and stayed
@@ -1317,7 +1318,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             startMonth = startMonthKey,
             startDateText = startFormatted,
             dueText = dueFormatted,
-            isLent = e.isLent
+            isLent = e.isLent,
+            formula = e.formula
         )
     }
 
@@ -1510,6 +1512,14 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         val fromAccount = if (kind == "EXPENSE" && !isCard) account else if (kind == "TRANSFER") account else ""
         val card = if (isCard) oneOffCardId else ""
 
+        val mathFormula = if (com.vinay.fintrack.data.MathEvaluator.hasMathOperation(draft.amountText)) {
+            draft.amountText.trim()
+        } else if (draft.formula.isNotEmpty()) {
+            draft.formula
+        } else {
+            ""
+        }
+
         addTxn { id ->
             Txn(
                 id = id,
@@ -1522,7 +1532,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 cardId = card,
                 period = Ledger.cycleOf(date, cycleResetDay),
                 note = draft.note.ifEmpty { if (kind == "TRANSFER") "Transfer" else draft.category },
-                at = if (date == today()) System.currentTimeMillis() else 0L
+                at = if (date == today()) System.currentTimeMillis() else 0L,
+                formula = mathFormula
             )
         }
 
@@ -1564,6 +1575,13 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             today()
         }
+        val mathFormula = if (com.vinay.fintrack.data.MathEvaluator.hasMathOperation(draft.amountText)) {
+            draft.amountText.trim()
+        } else if (draft.formula.isNotEmpty()) {
+            draft.formula
+        } else {
+            ""
+        }
         update { s ->
             val entry = Entry(
                 id = editingId ?: newId("e"),
@@ -1579,7 +1597,8 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 periodMonths = draft.periodMonths,
                 startDate = startIso,
                 dueDate = draftDueIso,
-                isLent = draft.isLent
+                isLent = draft.isLent,
+                formula = mathFormula
             )
             if (editingId != null) {
                 s.copy(entries = s.entries.map { if (it.id == entry.id) entry else it })
