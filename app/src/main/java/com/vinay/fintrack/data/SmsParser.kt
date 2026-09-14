@@ -303,7 +303,13 @@ private fun iso(year: Int, month: Int, day: Int): String =
  */
 fun skipReason(body: String): String {
     val lower = body.lowercase()
-    NOT_A_TRANSACTION.firstOrNull { lower.contains(it) }?.let { return "not a payment (\"$it\")" }
+    ALWAYS_REJECT.firstOrNull { lower.contains(it) }?.let { return "not a payment (\"$it\")" }
+    FUTURE_OR_PROMO_PHRASES.firstOrNull { lower.contains(it) }?.let { phrase ->
+        val hasActualPastAction = listOf("debited", "spent", "paid", "withdrawn", "credited", "deposited", "transferred").any {
+            lower.contains(it) && !lower.contains("will be $it")
+        }
+        if (!hasActualPastAction) return "future or promo (\"$phrase\")"
+    }
     val hasDirection = DEBIT_WORDS.any { lower.contains(it) } || CREDIT_WORDS.any { lower.contains(it) }
     if (!hasDirection) return "no debit or credit wording"
     if (extractAmountOrNull(body) == null) return "no amount found"
@@ -419,7 +425,13 @@ fun looksLikeBankSender(sender: String): Boolean {
 fun looksLikeBankMessage(text: String): Boolean {
     if (text.isBlank()) return false
     val lower = text.lowercase()
-    if (NOT_A_TRANSACTION.any { lower.contains(it) }) return false
+    if (ALWAYS_REJECT.any { lower.contains(it) }) return false
+    if (FUTURE_OR_PROMO_PHRASES.any { lower.contains(it) }) {
+        val hasActualPastAction = listOf("debited", "spent", "paid", "withdrawn", "credited", "deposited", "transferred").any {
+            lower.contains(it) && !lower.contains("will be $it")
+        }
+        if (!hasActualPastAction) return false
+    }
     val hasAmount = extractAmount(text) != null
     val hasDirection = DEBIT_WORDS.any { lower.contains(it) } ||
         CREDIT_WORDS.any { lower.contains(it) } ||
