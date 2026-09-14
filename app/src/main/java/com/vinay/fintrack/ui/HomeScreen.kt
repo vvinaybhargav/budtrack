@@ -72,6 +72,7 @@ import com.vinay.fintrack.data.formatDueDisplay
 import com.vinay.fintrack.data.formatInstalmentsLeft
 import com.vinay.fintrack.data.ordinal
 import com.vinay.fintrack.data.today
+import com.vinay.fintrack.data.normalizeDateToIso
 import com.vinay.fintrack.data.DetectedAccountParser
 
 private const val ALERT_PCT = 0.90f
@@ -127,6 +128,12 @@ fun HomeScreen(vm: FinTrackViewModel) {
                 val monthTitle = Ledger.fullMonthName("$ym-01").take(3)
                 add(Triple(ym, monthTitle, list.size))
             }
+        }
+    }
+
+    LaunchedEffect(sinkingPills) {
+        if (sinkingPills.none { it.first == sinkingFundFilter }) {
+            sinkingFundFilter = "ALL"
         }
     }
 
@@ -270,7 +277,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         if (displayedCount < maxDisplay) {
                             if (displayedCount > 0) Hairline()
                             val resetDay = vm.salaryResetDayFor(e.person)
-                            val start = if (e.startDate.isNotEmpty()) e.startDate else today()
+                            val rawStart = if (e.startDate.isNotEmpty()) e.startDate else today()
+                            val start = normalizeDateToIso(rawStart) ?: rawStart
                             val n = Ledger.instalmentsBetween(start, e.nextDue, resetDay)
                             val monthlyAmt = e.monthly(resetDay)
                             val monthTitle = Ledger.fullMonthName("$ym-01")

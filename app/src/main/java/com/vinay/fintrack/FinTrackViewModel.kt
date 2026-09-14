@@ -976,8 +976,10 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun firstPaydayOf(e: Entry): String {
         val resetDay = salaryResetDayFor(e.person)
-        val start = if (e.startDate.isNotEmpty()) e.startDate else today()
-        val due = if (e.dueDate.isNotEmpty()) e.dueDate else e.nextDue
+        val rawStart = if (e.startDate.isNotEmpty()) e.startDate else today()
+        val start = normalizeDateToIso(rawStart) ?: rawStart
+        val rawDue = if (e.dueDate.isNotEmpty()) e.dueDate else e.nextDue
+        val due = normalizeDateToIso(rawDue) ?: rawDue
         val paydays = Ledger.allPaydayDatesBetween(start, due, resetDay)
         return paydays.firstOrNull() ?: start.ifEmpty { due }
     }
@@ -985,32 +987,49 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun isSetAsideActiveThisMonth(e: Entry): Boolean {
         if (e.closed || !e.isSetAside) return false
         val resetDay = salaryResetDayFor(e.person)
-        val nextPayday = Ledger.nextSalaryDate(today(), resetDay)
-        val firstPay = firstPaydayOf(e)
-        return firstPay <= nextPayday
+        val currentCycle = cycleFor(e.person)
+
+        if (e.isLent) {
+            val rawDue = if (e.dueDate.isNotEmpty()) e.dueDate else e.nextDue
+            val dueIso = if (rawDue.isNotEmpty()) (normalizeDateToIso(rawDue) ?: rawDue) else today()
+            val dueCycle = Ledger.cycleOf(dueIso, resetDay)
+            return dueCycle <= currentCycle
+        }
+
+        val rawStart = if (e.startDate.isNotEmpty()) e.startDate else today()
+        val startIso = normalizeDateToIso(rawStart) ?: rawStart
+        val startCycle = Ledger.cycleOf(startIso, resetDay)
+        if (startCycle > currentCycle || (startIso.length >= 7 && startIso.take(7) > currentCycle)) {
+            return false
+        }
+        return true
     }
 
     fun futureSetAsidesGrouped(): Map<String, List<Entry>> {
         val future = annualSetAsides.filter { !isSetAsideActiveThisMonth(it) && !it.closed }
         return future.groupBy { e ->
-            val firstPay = firstPaydayOf(e)
-            firstPay.take(7)
+            val resetDay = salaryResetDayFor(e.person)
+            val rawStart = if (e.startDate.isNotEmpty()) e.startDate else firstPaydayOf(e)
+            val startIso = normalizeDateToIso(rawStart) ?: rawStart
+            if (startIso.length >= 10) Ledger.cycleOf(startIso, resetDay) else startIso.take(7)
         }.toSortedMap()
     }
 
     fun setAsideMonthBucket(e: Entry): Int {
         // 0 = Current cycle / month, 1 = Next month, 2 = Month after next, 3+ = Later
+        if (isSetAsideActiveThisMonth(e)) return 0
         val resetDay = salaryResetDayFor(e.person)
-        val nextPayday = Ledger.nextSalaryDate(today(), resetDay)
-        val firstPay = firstPaydayOf(e)
-        if (firstPay <= nextPayday) return 0
-        
-        val nextPayday2 = Ledger.nextSalaryDate(Ledger.addMonths(nextPayday, 1), resetDay)
-        if (firstPay <= nextPayday2) return 1
-        
-        val nextPayday3 = Ledger.nextSalaryDate(Ledger.addMonths(nextPayday, 2), resetDay)
-        if (firstPay <= nextPayday3) return 2
-        
+        val currentCycle = cycleFor(e.person)
+        val rawStart = if (e.startDate.isNotEmpty()) e.startDate else firstPaydayOf(e)
+        val startIso = normalizeDateToIso(rawStart) ?: rawStart
+        val cycle = if (startIso.length >= 10) Ledger.cycleOf(startIso, resetDay) else startIso.take(7)
+
+        val nextCycle = Ledger.cycleBefore(currentCycle, -1)
+        if (cycle <= nextCycle) return 1
+
+        val monthAfterNextCycle = Ledger.cycleBefore(currentCycle, -2)
+        if (cycle <= monthAfterNextCycle) return 2
+
         return 3
     }
 
