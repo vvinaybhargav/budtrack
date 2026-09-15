@@ -115,7 +115,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
         val resetDay = vm.salaryResetDayFor(e.person)
         val rawStart = when {
             e.nextDue.isNotBlank() -> e.nextDue
-            e.due.isNotBlank() -> e.due
+            e.dueDate.isNotBlank() -> e.dueDate
             e.startDate.isNotBlank() -> e.startDate
             else -> vm.firstPaydayOf(e)
         }
