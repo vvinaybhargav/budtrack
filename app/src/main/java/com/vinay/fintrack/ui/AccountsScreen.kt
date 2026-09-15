@@ -1048,18 +1048,12 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
                     Column {
                         Muted("Needed each month")
                         Text(
-                            "(${inr(normalNeeded)})",
+                            "(${inr(needed)})",
                             color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold
                         )
-                        if (lentNeeded > 0.0) {
-                            Text(
-                                "Lent to receive: +${inr(lentNeeded)}",
-                                color = Pf.Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold
-                            )
-                        }
                     }
                     Muted(
-                        "${inr(normalDone + lentDone)} done · ${inr((normalNeeded - normalDone).coerceAtLeast(0.0))} left",
+                        "${inr(done)} done · ${inr((needed - done).coerceAtLeast(0.0))} left",
                         size = 12
                     )
                 }
