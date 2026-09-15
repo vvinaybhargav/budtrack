@@ -313,63 +313,6 @@ fun HomeScreen(vm: FinTrackViewModel) {
         }
     }
 
-    // Card Pills
-    val cardPills = remember(pendingCards, currentCalMonth) {
-        buildList {
-            add(Triple("ALL", "All", pendingCards.size))
-            rollingMonthNums.forEach { m ->
-                val count = pendingCards.count { getCardMonthNum(it) == m }
-                if (m == nextCalMonth || count > 0) {
-                    val monthName = Ledger.fullMonthName("2026-%02d-01".format(m)).take(3)
-                    add(Triple(m.toString(), monthName, count))
-                }
-            }
-        }
-    }
-    LaunchedEffect(cardPills) {
-        if (cardPills.none { it.first == cardFilter }) {
-            cardFilter = if (cardPills.any { it.first == nextCalMonthStr }) nextCalMonthStr else "ALL"
-        }
-    }
-
-    // Loan Pills
-    val loanPills = remember(pendingLoans, currentCalMonth) {
-        buildList {
-            add(Triple("ALL", "All", pendingLoans.size))
-            rollingMonthNums.forEach { m ->
-                val count = pendingLoans.count { isLoanInMonth(it, m) }
-                if (m == nextCalMonth || count > 0) {
-                    val monthName = Ledger.fullMonthName("2026-%02d-01".format(m)).take(3)
-                    add(Triple(m.toString(), monthName, count))
-                }
-            }
-        }
-    }
-    LaunchedEffect(loanPills) {
-        if (loanPills.none { it.first == loanFilter }) {
-            loanFilter = if (loanPills.any { it.first == nextCalMonthStr }) nextCalMonthStr else "ALL"
-        }
-    }
-
-    // Debt Pills
-    val debtPills = remember(pendingDebts, currentCalMonth) {
-        buildList {
-            add(Triple("ALL", "All", pendingDebts.size))
-            rollingMonthNums.forEach { m ->
-                val count = pendingDebts.count { getDebtMonthNum(it) == m || (it.dueDate.isBlank() && m == nextCalMonth) }
-                if (m == nextCalMonth || count > 0) {
-                    val monthName = Ledger.fullMonthName("2026-%02d-01".format(m)).take(3)
-                    add(Triple(m.toString(), monthName, count))
-                }
-            }
-        }
-    }
-    LaunchedEffect(debtPills) {
-        if (debtPills.none { it.first == debtFilter }) {
-            debtFilter = if (debtPills.any { it.first == nextCalMonthStr }) nextCalMonthStr else "ALL"
-        }
-    }
-
     LazyColumn(
         Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(bottom = 90.dp, top = Space.s2, start = Space.s4, end = Space.s4),
@@ -680,7 +623,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         pendingDebts
                     } else {
                         val filterM = debtFilter.toIntOrNull()
-                        pendingDebts.filter { getDebtMonthNum(it) == filterM || (it.dueDate.isBlank() && filterM == nextCalMonth) }
+                        pendingDebts.filter { getDebtMonthNum(it) == filterM || (it.dueDate.isBlank() && filterM == nextCycleMonth) }
                     }
                     val totalDebtCount = filteredDebts.size
 
@@ -962,7 +905,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     val filteredLoans = if (loanFilter == "ALL") {
                         pendingLoans
                     } else {
-                        val filterM = loanFilter.toIntOrNull() ?: nextCalMonth
+                        val filterM = loanFilter.toIntOrNull() ?: nextCycleMonth
                         pendingLoans.filter { isLoanInMonth(it, filterM) }
                     }
                     val totalLoanFilterEmis = filteredLoans.sumOf { it.monthlyEmi }
