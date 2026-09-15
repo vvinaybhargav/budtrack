@@ -96,9 +96,11 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
     val pendingLoans = vm.scopedLoans.filter { vm.isLoanActiveThisMonth(it) && !vm.isLoanConfirmed(it.id) }
     val currentPendingLoanEmis = pendingLoans.sumOf { it.monthlyEmi }
+    val totalLoanEmis = currentPendingLoanEmis
 
     val pendingRecurring = vm.commitments.filter { !vm.isConfirmed(it.id) }
     val currentPendingRecurring = pendingRecurring.sumOf { it.monthly }
+    val totalRecurring = currentPendingRecurring
 
     // All unclosed sinking funds
     val allSinkingFunds = vm.annualSetAsides.filter { !it.closed }
