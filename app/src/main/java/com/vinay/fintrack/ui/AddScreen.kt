@@ -217,7 +217,7 @@ fun AddScreen(vm: FinTrackViewModel) {
         if (showCard) item { CardForm(vm) }
         if (showDebt) item { DebtForm(vm) }
         if (showOneTime) item { OneTimePaymentForm(vm) }
-        if (showGeneric) item { GenericForm(vm, isEditing) }
+        if (showGeneric) item { GenericForm(vm, isEditing, onDeleteClick = { showDeleteEntryConfirm = true }) }
     }
 }
 
@@ -886,7 +886,7 @@ private fun OneTimePaymentForm(vm: FinTrackViewModel) {
 }
 
 @Composable
-private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
+private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean, onDeleteClick: (() -> Unit)? = null) {
     val categoryOptions = if (!isEditing && vm.addKind == "INVESTMENT") {
         vm.categories.filter { it in INVEST_PICKABLE }.ifEmpty { vm.categories }
     } else {
@@ -1077,11 +1077,13 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(Space.s2)
             ) {
-                SecondaryButton(
-                    "Delete",
-                    onClick = { showDeleteEntryConfirm = true },
-                    modifier = Modifier.weight(1f)
-                )
+                if (onDeleteClick != null) {
+                    SecondaryButton(
+                        "Delete",
+                        onClick = onDeleteClick,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
                 PrimaryButton(
                     "Save changes",
                     vm::saveDraft,
