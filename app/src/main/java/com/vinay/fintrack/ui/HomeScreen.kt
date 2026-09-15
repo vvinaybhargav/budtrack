@@ -89,15 +89,15 @@ fun HomeScreen(vm: FinTrackViewModel) {
     val pendingRecurring = vm.commitments.filter { !vm.isConfirmed(it.id) }
     val totalRecurring = pendingRecurring.sumOf { it.monthly }
 
-    // Partition Set Asides by active cycle/month:
-    val pendingSetAsidesThisMonth = vm.annualSetAsides.filter { vm.isSetAsideActiveThisMonth(it) && vm.setAsideLeft(it) > 0.0 }
-    val normalSetAsidesThisMonth = pendingSetAsidesThisMonth.filter { !it.isLent }
-    val lentSetAsidesThisMonth = pendingSetAsidesThisMonth.filter { it.isLent }
+    // All unclosed sinking funds (excluding lent money which is tracked in its own card below)
+    val allSinkingFunds = vm.annualSetAsides.filter { !it.isLent && !it.closed }
+    val lentSetAsides = vm.annualSetAsides.filter { it.isLent && !it.closed }
 
-    val totalNormalSetAsidePending = normalSetAsidesThisMonth.sumOf { vm.setAsideLeft(it) }
+    val pendingSetAsidesThisMonth = allSinkingFunds.filter { vm.isSetAsideActiveThisMonth(it) && vm.setAsideLeft(it) > 0.0 }
+    val lentSetAsidesThisMonth = lentSetAsides.filter { vm.isSetAsideActiveThisMonth(it) && vm.setAsideLeft(it) > 0.0 }
+
+    val totalNormalSetAsidePending = pendingSetAsidesThisMonth.sumOf { vm.setAsideLeft(it) }
     val totalLentPendingToReceive = lentSetAsidesThisMonth.sumOf { vm.setAsideLeft(it) }
-
-    val futureSetAsidesMap = vm.futureSetAsidesGrouped()
 
     val upcomingSalary = if (vm.bucketView == "JOINT") {
         vm.profileNames.sumOf { vm.upcomingSalaryFor(it, 1) }
@@ -107,6 +107,22 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
     val otherExpenses = totalCardDues + totalLoanEmis + totalRecurring + totalNormalSetAsidePending
     val netBalance = totalBankBalances - otherExpenses + upcomingSalary + totalLentPendingToReceive
+
+    // Helper: determine target calendar month (1..12) for any sinking fund entry
+    fun getSetAsideMonthNum(e: Entry): Int {
+        val rawStart = when {
+            e.startDate.isNotBlank() -> e.startDate
+            else -> vm.firstPaydayOf(e)
+        }
+        val startIso = normalizeDateToIso(rawStart) ?: rawStart
+        val parts = startIso.split("-")
+        if (parts.size >= 2) {
+            val m = parts[1].toIntOrNull()
+            if (m != null && m in 1..12) return m
+        }
+        val todayParts = today().split("-")
+        return todayParts.getOrNull(1)?.toIntOrNull() ?: 1
+    }
 
     // State for Sinking Funds month filtering and Progressive Disclosure expansion
     var sinkingFundFilter by remember { mutableStateOf("ALL") }
@@ -119,18 +135,19 @@ fun HomeScreen(vm: FinTrackViewModel) {
     var expandedRecurring by remember { mutableStateOf(false) }
     var expandedLoans by remember { mutableStateOf(false) }
 
-    // Sinking Fund Filter Pills: All, This Mo, Oct, Nov, Dec...
-    val currentMonthShort = Ledger.fullMonthName(today()).take(3)
-    val sinkingPills = remember(normalSetAsidesThisMonth, futureSetAsidesMap) {
+    // Sinking Fund Filter Pills in chronological month order (omits months with 0 items)
+    val currentCalMonth = today().split("-").getOrNull(1)?.toIntOrNull() ?: 1
+    val rollingMonthNums = (0..11).map { offset -> ((currentCalMonth - 1 + offset) % 12) + 1 }
+
+    val sinkingPills = remember(allSinkingFunds, currentCalMonth) {
         buildList {
-            val totalCount = normalSetAsidesThisMonth.size + futureSetAsidesMap.values.sumOf { it.size }
-            add(Triple("ALL", "All", totalCount))
-            if (normalSetAsidesThisMonth.isNotEmpty()) {
-                add(Triple("CURRENT", currentMonthShort, normalSetAsidesThisMonth.size))
-            }
-            futureSetAsidesMap.forEach { (ym, list) ->
-                val monthTitle = Ledger.fullMonthName("$ym-01").take(3)
-                add(Triple(ym, monthTitle, list.size))
+            add(Triple("ALL", "All", allSinkingFunds.size))
+            rollingMonthNums.forEach { m ->
+                val count = allSinkingFunds.count { getSetAsideMonthNum(it) == m }
+                if (count > 0) {
+                    val monthName = Ledger.fullMonthName("2026-%02d-01".format(m)).take(3)
+                    add(Triple(m.toString(), monthName, count))
+                }
             }
         }
     }
@@ -314,7 +331,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
         }
 
         // 3a. CONSOLIDATED SINKING FUNDS CARD (Combines SET ASIDE + Future Months into 1 Card with Filter Pills)
-        val hasSinkingFunds = normalSetAsidesThisMonth.isNotEmpty() || futureSetAsidesMap.isNotEmpty()
+        val hasSinkingFunds = allSinkingFunds.isNotEmpty()
         if (hasSinkingFunds) {
             item {
                 PfCard(
@@ -322,14 +339,20 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
                     shape = Radius.Lg
                 ) {
-                    val headerAmount = when (sinkingFundFilter) {
-                        "ALL", "CURRENT" -> "(${inr(totalNormalSetAsidePending)})"
-                        else -> {
-                            val list = futureSetAsidesMap[sinkingFundFilter].orEmpty()
-                            val sum = list.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
-                            "${inr(sum)}/mo"
+                    val filteredSinkingFunds = if (sinkingFundFilter == "ALL") {
+                        allSinkingFunds.sortedBy { e ->
+                            val m = getSetAsideMonthNum(e)
+                            (m - currentCalMonth + 12) % 12
                         }
+                    } else {
+                        val filterM = sinkingFundFilter.toIntOrNull()
+                        allSinkingFunds.filter { getSetAsideMonthNum(it) == filterM }
                     }
+
+                    val totalItemCount = filteredSinkingFunds.size
+                    val activePendingInSelection = filteredSinkingFunds.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { vm.setAsideLeft(it) }
+                    val monthlySumInSelection = filteredSinkingFunds.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
+                    val headerAmount = if (activePendingInSelection > 0.0) "(${inr(activePendingInSelection)})" else "${inr(monthlySumInSelection)}/mo"
 
                     HomeListHeaderLabel(
                         label = "SINKING FUNDS · $headerAmount",
@@ -372,65 +395,52 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         Spacer(Modifier.height(4.dp))
                     }
 
-                    // Filtered Sinking Fund Items
-                    val currentItems = if (sinkingFundFilter == "ALL" || sinkingFundFilter == "CURRENT") normalSetAsidesThisMonth else emptyList()
-                    val futureItems = when (sinkingFundFilter) {
-                        "ALL" -> futureSetAsidesMap.entries.flatMap { entry -> entry.value.map { entry.key to it } }
-                        "CURRENT" -> emptyList()
-                        else -> futureSetAsidesMap[sinkingFundFilter].orEmpty().map { sinkingFundFilter to it }
-                    }
-
-                    val totalItemCount = currentItems.size + futureItems.size
                     val maxDisplay = if (expandedSinkingFunds) totalItemCount else 3
                     var displayedCount = 0
 
-                    // Current Month Active Items
-                    currentItems.forEach { e ->
+                    filteredSinkingFunds.forEach { e ->
                         if (displayedCount < maxDisplay) {
                             if (displayedCount > 0) Hairline()
-                            val left = vm.setAsideLeft(e)
+                            val resetDay = vm.salaryResetDayFor(e.person)
+                            val isActiveThisMonth = vm.isSetAsideActiveThisMonth(e)
                             val pot = vm.setAsidePot(e)
-                            val fraction = safeFraction(pot, e.amount)
-                            val pct = (fraction * 100).toInt()
-                            val resetDay = vm.salaryResetDayFor(e.person)
-                            val n = Ledger.instalmentsUntil(today(), e.nextDue, resetDay)
-                            val subtitle = "${inr(pot)}/${inr(e.amount)} ($pct%) · Due ${ordinal(resetDay)} · ${formatInstalmentsLeft(n)}"
 
-                            HomeCompactSetAsideRow(
-                                index = displayedCount + 1,
-                                title = (e.note.ifEmpty { e.category }) + if (e.formula.isNotEmpty()) " · ${e.formula}" else "",
-                                subtitle = subtitle,
-                                amount = "(${inr(left)})",
-                                fraction = fraction,
-                                pct = pct,
-                                accentColor = Color(0xFF14B8A6),
-                                onClick = { vm.requestConfirm(e) }
-                            )
-                            displayedCount++
-                        }
-                    }
+                            if (isActiveThisMonth && pot > 0.0) {
+                                val left = vm.setAsideLeft(e)
+                                val fraction = safeFraction(pot, e.amount)
+                                val pct = (fraction * 100).toInt()
+                                val n = Ledger.instalmentsUntil(today(), e.nextDue, resetDay)
+                                val subtitle = "${inr(pot)}/${inr(e.amount)} ($pct%) · Due ${ordinal(resetDay)} · ${formatInstalmentsLeft(n)}"
 
-                    // Future Items
-                    futureItems.forEach { (ym, e) ->
-                        if (displayedCount < maxDisplay) {
-                            if (displayedCount > 0) Hairline()
-                            val resetDay = vm.salaryResetDayFor(e.person)
-                            val rawStart = if (e.startDate.isNotEmpty()) e.startDate else today()
-                            val start = normalizeDateToIso(rawStart) ?: rawStart
-                            val n = Ledger.instalmentsBetween(start, e.nextDue, resetDay)
-                            val monthlyAmt = e.monthly(resetDay)
-                            val monthTitle = Ledger.fullMonthName("$ym-01")
-                            val subtitle = "Starts in $monthTitle · Due ${ordinal(resetDay)} · ${formatInstalmentsLeft(n)} · Total: ${inr(e.amount)}"
+                                HomeCompactSetAsideRow(
+                                    index = displayedCount + 1,
+                                    title = (e.note.ifEmpty { e.category }) + if (e.formula.isNotEmpty()) " · ${e.formula}" else "",
+                                    subtitle = subtitle,
+                                    amount = "(${inr(left)})",
+                                    fraction = fraction,
+                                    pct = pct,
+                                    accentColor = Color(0xFF14B8A6),
+                                    onClick = { vm.requestConfirm(e) }
+                                )
+                            } else {
+                                val rawStart = if (e.startDate.isNotEmpty()) e.startDate else vm.firstPaydayOf(e)
+                                val start = normalizeDateToIso(rawStart) ?: rawStart
+                                val n = Ledger.instalmentsBetween(start, e.nextDue, resetDay)
+                                val monthlyAmt = e.monthly(resetDay)
+                                val monthNum = getSetAsideMonthNum(e)
+                                val monthTitle = Ledger.fullMonthName("2026-%02d-01".format(monthNum))
+                                val subtitle = "Starts in $monthTitle · Due ${ordinal(resetDay)} · ${formatInstalmentsLeft(n)} · Total: ${inr(e.amount)}"
 
-                            HomeCompactRow(
-                                title = "${displayedCount + 1}. ${e.note.ifEmpty { e.category }}",
-                                subtitle = subtitle,
-                                amount = inr(monthlyAmt),
-                                amountColor = Pf.Muted,
-                                icon = Icons.Default.Bookmark,
-                                iconTint = Color(0xFF14B8A6),
-                                onClick = { vm.openEditEntry(e) }
-                            )
+                                HomeCompactRow(
+                                    title = "${displayedCount + 1}. ${e.note.ifEmpty { e.category }}",
+                                    subtitle = subtitle,
+                                    amount = inr(monthlyAmt),
+                                    amountColor = Pf.Muted,
+                                    icon = Icons.Default.Bookmark,
+                                    iconTint = Color(0xFF14B8A6),
+                                    onClick = { vm.openEditEntry(e) }
+                                )
+                            }
                             displayedCount++
                         }
                     }

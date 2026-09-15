@@ -996,7 +996,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             return dueCycle <= currentCycle
         }
 
-        val rawStart = if (e.startDate.isNotEmpty()) e.startDate else today()
+        val rawStart = if (e.startDate.isNotEmpty()) e.startDate else firstPaydayOf(e)
         val startIso = normalizeDateToIso(rawStart) ?: rawStart
         val startCycle = Ledger.cycleOf(startIso, resetDay)
         if (startCycle > currentCycle || (startIso.length >= 7 && startIso.take(7) > currentCycle)) {
