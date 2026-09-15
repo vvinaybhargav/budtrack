@@ -2008,34 +2008,86 @@ fun SetupFixDialog(vm: FinTrackViewModel) {
                 Spacer(Modifier.height(Space.s2))
 
                 // Actions
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                ) {
-                    SecondaryButton(text = "Cancel", onClick = vm::closeSetupFix, modifier = Modifier.weight(1f))
-                    PrimaryButton(
-                        text = "Save Details",
-                        onClick = {
-                            when (item.entityType) {
-                                "Account" -> {
-                                    vm.saveAccount()
+                var showDeleteConfirm by remember(item.entityId) { mutableStateOf(false) }
+
+                if (showDeleteConfirm) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFEF4444).copy(alpha = 0.1f), Radius.Md)
+                            .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.3f), Radius.Md)
+                            .padding(Space.s3),
+                        verticalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        Text(
+                            "Delete this ${item.entityType.lowercase()}?",
+                            color = Color(0xFFEF4444),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                        ) {
+                            SecondaryButton(
+                                text = "Cancel",
+                                onClick = { showDeleteConfirm = false },
+                                modifier = Modifier.weight(1f)
+                            )
+                            PrimaryButton(
+                                text = "Yes, Delete",
+                                onClick = {
+                                    when (item.entityType) {
+                                        "Account" -> vm.deleteAccount(item.entityId)
+                                        "Card" -> vm.deleteCard(item.entityId)
+                                        "Loan" -> vm.deleteLoan(item.entityId)
+                                        else -> vm.deleteEntry(item.entityId)
+                                    }
                                     vm.closeSetupFix()
+                                },
+                                modifier = Modifier.weight(1.2f)
+                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        GhostButton(
+                            text = "Delete",
+                            onClick = { showDeleteConfirm = true }
+                        )
+                        SecondaryButton(
+                            text = "Cancel",
+                            onClick = vm::closeSetupFix,
+                            modifier = Modifier.weight(1f)
+                        )
+                        PrimaryButton(
+                            text = "Save Details",
+                            onClick = {
+                                when (item.entityType) {
+                                    "Account" -> {
+                                        vm.saveAccount()
+                                        vm.closeSetupFix()
+                                    }
+                                    "Card" -> {
+                                        vm.saveCard()
+                                        vm.closeSetupFix()
+                                    }
+                                    "Loan" -> {
+                                        vm.saveLoan()
+                                        vm.closeSetupFix()
+                                    }
+                                    else -> {
+                                        vm.saveSetupEntry(item.entityId)
+                                    }
                                 }
-                                "Card" -> {
-                                    vm.saveCard()
-                                    vm.closeSetupFix()
-                                }
-                                "Loan" -> {
-                                    vm.saveLoan()
-                                    vm.closeSetupFix()
-                                }
-                                else -> {
-                                    vm.saveSetupEntry(item.entityId)
-                                }
-                            }
-                        },
-                        modifier = Modifier.weight(1.5f)
-                    )
+                            },
+                            modifier = Modifier.weight(1.5f)
+                        )
+                    }
                 }
             }
         }

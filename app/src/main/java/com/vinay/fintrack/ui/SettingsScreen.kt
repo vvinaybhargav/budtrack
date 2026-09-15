@@ -1537,7 +1537,7 @@ private fun FeaturesGuideSection() {
                 // Feature 3: Set-A-Side (Sinking Funds)
                 FeatureGuideItem(
                     emoji = "🎯",
-                    title = "Set-A-Side (Sinking Funds)",
+                    title = "Set-A-Side",
                     tag = "Smart Planning",
                     tagColor = Pf.Accent.copy(alpha = 0.2f),
                     tagTextColor = Pf.Accent400,

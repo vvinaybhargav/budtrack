@@ -50,6 +50,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import com.vinay.fintrack.FinTrackViewModel
@@ -94,6 +95,35 @@ private fun periodFromLabel(label: String) =
 @Composable
 fun AddScreen(vm: FinTrackViewModel) {
     val isEditing = vm.editingEntryId != null
+    var showDeleteEntryConfirm by remember(vm.editingEntryId) { mutableStateOf(false) }
+
+    if (showDeleteEntryConfirm) {
+        Dialog(onDismissRequest = { showDeleteEntryConfirm = false }) {
+            PfCard(
+                modifier = Modifier.fillMaxWidth().padding(Space.s3),
+                padding = PaddingValues(Space.s4),
+                shape = Radius.Lg
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
+                    Text("Delete Entry?", color = Pf.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("This will permanently remove this commitment/entry.", color = Pf.Muted, fontSize = 13.sp)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        SecondaryButton("Cancel", { showDeleteEntryConfirm = false }, modifier = Modifier.weight(1f))
+                        PrimaryButton("Delete", {
+                            vm.editingEntryId?.let { id ->
+                                vm.deleteEntry(id)
+                                vm.cancelEdit()
+                            }
+                            showDeleteEntryConfirm = false
+                        }, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
 
     LazyColumn(
         Modifier.fillMaxWidth(),
@@ -107,8 +137,11 @@ fun AddScreen(vm: FinTrackViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("EDIT COMMITMENT", color = Pf.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    GhostButton("Cancel", vm::cancelEdit)
+                    Text("EDIT ENTRY", color = Pf.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        GhostButton("Delete", onClick = { showDeleteEntryConfirm = true })
+                        GhostButton("Cancel", vm::cancelEdit)
+                    }
                 }
             }
         } else {
@@ -1039,11 +1072,30 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             placeholder = notePlaceholder
         )
         val finalEvaluatedAmount = MathEvaluator.evaluate(vm.draft.amountText) ?: vm.draft.amountText.toDoubleOrNull() ?: 0.0
-        PrimaryButton(
-            if (isEditing) "Save changes" else "Save entry",
-            vm::saveDraft,
-            Modifier.fillMaxWidth(),
-            enabled = finalEvaluatedAmount > 0
-        )
+        if (isEditing) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                SecondaryButton(
+                    "Delete",
+                    onClick = { showDeleteEntryConfirm = true },
+                    modifier = Modifier.weight(1f)
+                )
+                PrimaryButton(
+                    "Save changes",
+                    vm::saveDraft,
+                    modifier = Modifier.weight(2f),
+                    enabled = finalEvaluatedAmount > 0
+                )
+            }
+        } else {
+            PrimaryButton(
+                "Save entry",
+                vm::saveDraft,
+                Modifier.fillMaxWidth(),
+                enabled = finalEvaluatedAmount > 0
+            )
+        }
     }
 }
