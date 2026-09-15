@@ -30,7 +30,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.TrendingUp
@@ -2257,6 +2259,14 @@ fun DebtActionSheet(vm: FinTrackViewModel) {
     val accountOptions = listOf("None (Cash / Offline)") + accounts.map { it.name }
     val selectedAccountName = accounts.firstOrNull { it.id == vm.debtSettleAccountId }?.name ?: "None (Cash / Offline)"
 
+    var isEditing by remember(debt.id) { mutableStateOf(false) }
+    var editPeerName by remember(debt.id, debt.peerName) { mutableStateOf(debt.peerName) }
+    var editAmountText by remember(debt.id, debt.amount) {
+        mutableStateOf(if (debt.amount % 1.0 == 0.0) debt.amount.toLong().toString() else debt.amount.toString())
+    }
+    var editDueDate by remember(debt.id, debt.dueDate) { mutableStateOf(debt.dueDate) }
+    var editNote by remember(debt.id, debt.note) { mutableStateOf(debt.note) }
+
     Dialog(onDismissRequest = vm::dismissDebtAction) {
         PfCard(
             modifier = Modifier
@@ -2279,7 +2289,8 @@ fun DebtActionSheet(vm: FinTrackViewModel) {
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2),
+                        modifier = Modifier.weight(1f, fill = false)
                     ) {
                         Box(
                             Modifier
@@ -2294,7 +2305,9 @@ fun DebtActionSheet(vm: FinTrackViewModel) {
                                 if (isLent) "Lent to ${debt.peerName}" else "Borrowed from ${debt.peerName}",
                                 color = Pf.Text,
                                 fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 "Remaining: ${inr(debt.remainingAmount)} of ${inr(debt.amount)}",
@@ -2304,113 +2317,184 @@ fun DebtActionSheet(vm: FinTrackViewModel) {
                             )
                         }
                     }
-                    IconButton(onClick = vm::dismissDebtAction, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Close, "Close", tint = Pf.Muted)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { isEditing = !isEditing }, modifier = Modifier.size(28.dp)) {
+                            Icon(
+                                if (isEditing) Icons.Default.Check else Icons.Default.Edit,
+                                contentDescription = if (isEditing) "Done" else "Edit Details",
+                                tint = if (isEditing) Pf.Accent else Pf.Muted,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        IconButton(onClick = vm::dismissDebtAction, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Close, "Close", tint = Pf.Muted, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
 
                 Hairline()
 
-                Text(
-                    if (isLent) "Record Money Received Back" else "Record Repayment",
-                    color = Pf.Text,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                // Quick full settle or partial amount
-                PfField(
-                    label = "Amount to Settle (₹)",
-                    value = vm.debtSettleAmountText,
-                    onValueChange = { vm.debtSettleAmountText = it },
-                    placeholder = "Amount",
-                    numeric = true
-                )
-
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                ) {
-                    SecondaryButton("Full (${inr(debt.remainingAmount)})", {
-                        vm.debtSettleAmountText = debt.remainingAmount.toLong().toString()
-                    }, Modifier.weight(1f))
-                    if (debt.remainingAmount > 1000) {
-                        SecondaryButton("Half (${inr(debt.remainingAmount / 2)})", {
-                            vm.debtSettleAmountText = (debt.remainingAmount / 2).toLong().toString()
-                        }, Modifier.weight(1f))
-                    }
-                }
-
-                // Account selection
-                Column {
-                    Muted(if (isLent) "Deposit Return Into (Optional)" else "Pay Return From (Optional)", size = 12)
-                    Spacer(Modifier.height(4.dp))
-                    PfSelect(
-                        value = selectedAccountName,
-                        options = accountOptions,
-                        onSelect = { chosen ->
-                            val accId = accounts.firstOrNull { it.name == chosen }?.id.orEmpty()
-                            vm.debtSettleAccountId = accId
-                            vm.debtSettleRecordTxn = accId.isNotEmpty()
-                        }
+                if (isEditing) {
+                    Text(
+                        "Edit Details",
+                        color = Pf.Text,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
                     )
-                }
 
-                if (vm.debtSettleAccountId.isNotEmpty()) {
+                    PfField(
+                        label = if (isLent) "Lent To (Person Name)" else "Borrowed From (Person Name)",
+                        value = editPeerName,
+                        onValueChange = { editPeerName = it },
+                        placeholder = "e.g. Rahul"
+                    )
+
+                    PfField(
+                        label = "Total Amount (₹)",
+                        value = editAmountText,
+                        onValueChange = { editAmountText = it },
+                        placeholder = "Total Amount",
+                        numeric = true
+                    )
+
+                    PfField(
+                        label = "Due Date (YYYY-MM-DD)",
+                        value = editDueDate,
+                        onValueChange = { editDueDate = it },
+                        placeholder = "YYYY-MM-DD (Optional)"
+                    )
+
+                    PfField(
+                        label = "Note / Purpose",
+                        value = editNote,
+                        onValueChange = { editNote = it },
+                        placeholder = "Optional note..."
+                    )
+
                     Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { vm.debtSettleRecordTxn = !vm.debtSettleRecordTxn }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(Space.s2)
                     ) {
-                        Box(
-                            Modifier
-                                .size(18.dp)
-                                .border(1.5.dp, if (vm.debtSettleRecordTxn) Pf.Accent else Pf.Muted, Radius.Sm)
-                                .background(if (vm.debtSettleRecordTxn) Pf.Accent else Color.Transparent, Radius.Sm),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (vm.debtSettleRecordTxn) {
-                                Icon(Icons.Default.CheckCircle, null, Modifier.size(14.dp), tint = Color.White)
-                            }
-                        }
-                        Text(
-                            if (isLent) "Credit $selectedAccountName now" else "Debit $selectedAccountName now",
-                            color = Pf.Text,
-                            fontSize = 13.sp
+                        GhostButton("Cancel", { isEditing = false }, Modifier.weight(1f))
+                        PrimaryButton(
+                            "Save Changes",
+                            {
+                                val amt = editAmountText.toDoubleOrNull() ?: debt.amount
+                                vm.updateDebt(
+                                    debtId = debt.id,
+                                    peerName = editPeerName,
+                                    amount = amt,
+                                    dueDate = editDueDate,
+                                    note = editNote
+                                )
+                                isEditing = false
+                            },
+                            Modifier.weight(1f),
+                            enabled = editPeerName.isNotBlank() && (editAmountText.toDoubleOrNull() ?: 0.0) > 0.0
                         )
                     }
-                }
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            if (isLent) "Record Money Received Back" else "Record Repayment",
+                            color = Pf.Text,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Edit Details",
+                            color = Pf.Accent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clickable { isEditing = true }
+                        )
+                    }
 
-                Spacer(Modifier.height(Space.s2))
-
-                // Actions
-                val settleAmt = vm.debtSettleAmountText.toDoubleOrNull() ?: 0.0
-                val canSettle = settleAmt > 0.0
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Space.s2)
-                ) {
-                    GhostButton("Delete", {
-                        vm.deleteDebt(debt.id)
-                    }, Modifier.weight(0.8f))
-
-                    PrimaryButton(
-                        if (settleAmt >= debt.remainingAmount - 0.01) "Settle in Full" else "Record ${inr(settleAmt)}",
-                        {
-                            vm.settleDebt(
-                                debtId = debt.id,
-                                settleAmount = settleAmt,
-                                accountId = vm.debtSettleAccountId,
-                                createTxn = vm.debtSettleRecordTxn
-                            )
-                            vm.dismissDebtAction()
-                        },
-                        Modifier.weight(1.2f),
-                        enabled = canSettle
+                    // Settle amount (pre-filled with remaining amount, fully customizable)
+                    PfField(
+                        label = "Amount to Settle (₹)",
+                        value = vm.debtSettleAmountText,
+                        onValueChange = { vm.debtSettleAmountText = it },
+                        placeholder = "Amount",
+                        numeric = true
                     )
+
+                    // Account selection
+                    Column {
+                        Muted(if (isLent) "Deposit Return Into (Optional)" else "Pay Return From (Optional)", size = 12)
+                        Spacer(Modifier.height(4.dp))
+                        PfSelect(
+                            value = selectedAccountName,
+                            options = accountOptions,
+                            onSelect = { chosen ->
+                                val accId = accounts.firstOrNull { it.name == chosen }?.id.orEmpty()
+                                vm.debtSettleAccountId = accId
+                                vm.debtSettleRecordTxn = accId.isNotEmpty()
+                            }
+                        )
+                    }
+
+                    if (vm.debtSettleAccountId.isNotEmpty()) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { vm.debtSettleRecordTxn = !vm.debtSettleRecordTxn }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(18.dp)
+                                    .border(1.5.dp, if (vm.debtSettleRecordTxn) Pf.Accent else Pf.Muted, Radius.Sm)
+                                    .background(if (vm.debtSettleRecordTxn) Pf.Accent else Color.Transparent, Radius.Sm),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (vm.debtSettleRecordTxn) {
+                                    Icon(Icons.Default.CheckCircle, null, Modifier.size(14.dp), tint = Color.White)
+                                }
+                            }
+                            Text(
+                                if (isLent) "Credit $selectedAccountName now" else "Debit $selectedAccountName now",
+                                color = Pf.Text,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(Space.s2))
+
+                    // Actions
+                    val settleAmt = vm.debtSettleAmountText.toDoubleOrNull() ?: 0.0
+                    val canSettle = settleAmt > 0.0
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Space.s2)
+                    ) {
+                        GhostButton("Delete", {
+                            vm.deleteDebt(debt.id)
+                        }, Modifier.weight(0.8f))
+
+                        PrimaryButton(
+                            if (settleAmt >= debt.remainingAmount - 0.01) "Settle in Full" else "Record ${inr(settleAmt)}",
+                            {
+                                vm.settleDebt(
+                                    debtId = debt.id,
+                                    settleAmount = settleAmt,
+                                    accountId = vm.debtSettleAccountId,
+                                    createTxn = vm.debtSettleRecordTxn
+                                )
+                                vm.dismissDebtAction()
+                            },
+                            Modifier.weight(1.2f),
+                            enabled = canSettle
+                        )
+                    }
                 }
             }
         }

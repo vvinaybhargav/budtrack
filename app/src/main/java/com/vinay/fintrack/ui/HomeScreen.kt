@@ -76,34 +76,34 @@ import com.vinay.fintrack.data.ordinal
 import com.vinay.fintrack.data.today
 import com.vinay.fintrack.data.normalizeDateToIso
 import com.vinay.fintrack.data.Entry
+import com.vinay.fintrack.data.Card
+import com.vinay.fintrack.data.Loan
+import com.vinay.fintrack.data.Debt
 import com.vinay.fintrack.data.DetectedAccountParser
 
 private const val ALERT_PCT = 0.90f
 
 @Composable
 fun HomeScreen(vm: FinTrackViewModel) {
+    val currentCalMonth = today().split("-").getOrNull(1)?.toIntOrNull() ?: 1
+    val nextCalMonth = ((currentCalMonth % 12) + 1)
+    val nextCalMonthStr = nextCalMonth.toString()
+    val rollingMonthNums = (0..11).map { offset -> ((currentCalMonth - 1 + offset) % 12) + 1 }
+
     val totalBankBalances = vm.scopedAccounts.sumOf { vm.balanceOf(it) }
     val pendingCards = vm.scopedCards.filter { it.balance > 0.0 }
     val totalCardDues = pendingCards.sumOf { it.balance }
+
     val pendingLoans = vm.scopedLoans.filter { vm.isLoanActiveThisMonth(it) && !vm.isLoanConfirmed(it.id) }
-    val totalLoanEmis = pendingLoans.sumOf { it.monthlyEmi }
+    val currentPendingLoanEmis = pendingLoans.sumOf { it.monthlyEmi }
+
     val pendingRecurring = vm.commitments.filter { !vm.isConfirmed(it.id) }
-    val totalRecurring = pendingRecurring.sumOf { it.monthly }
+    val currentPendingRecurring = pendingRecurring.sumOf { it.monthly }
 
     // All unclosed sinking funds
     val allSinkingFunds = vm.annualSetAsides.filter { !it.closed }
     val pendingSetAsidesThisMonth = allSinkingFunds.filter { vm.isSetAsideActiveThisMonth(it) && vm.setAsideLeft(it) > 0.0 }
-    val totalNormalSetAsidePending = pendingSetAsidesThisMonth.sumOf { vm.setAsideLeft(it) }
-    val totalLentPendingToReceive = vm.totalLentPending
-
-    val upcomingSalary = if (vm.bucketView == "JOINT") {
-        vm.profileNames.sumOf { vm.upcomingSalaryFor(it, 1) }
-    } else {
-        vm.upcomingSalaryFor(vm.activeProfile.orEmpty(), 1)
-    }
-
-    val otherExpenses = totalCardDues + totalLoanEmis + totalRecurring + totalNormalSetAsidePending
-    val netBalance = totalBankBalances - otherExpenses + upcomingSalary + totalLentPendingToReceive
+    val currentPendingSetAside = pendingSetAsidesThisMonth.sumOf { vm.setAsideLeft(it) }
 
     // Helper: determine target calendar month (1..12) for any sinking fund entry
     fun getSetAsideMonthNum(e: Entry): Int {
@@ -121,8 +121,106 @@ fun HomeScreen(vm: FinTrackViewModel) {
         return todayParts.getOrNull(1)?.toIntOrNull() ?: 1
     }
 
-    // State for Sinking Funds month filtering and Progressive Disclosure expansion
-    var sinkingFundFilter by remember { mutableStateOf("ALL") }
+    // Helper: determine month for credit card
+    fun getCardMonthNum(c: Card): Int {
+        if (c.nextDue.isNotEmpty()) {
+            val m = c.nextDue.split("-").getOrNull(1)?.toIntOrNull()
+            if (m != null && m in 1..12) return m
+        }
+        if (c.dueDate.isNotEmpty()) {
+            val iso = normalizeDateToIso(c.dueDate) ?: c.dueDate
+            val m = iso.split("-").getOrNull(1)?.toIntOrNull()
+            if (m != null && m in 1..12) return m
+        }
+        val dueTextLower = (c.dueText + " " + c.due).lowercase()
+        val monthNames = listOf("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+        monthNames.forEachIndexed { index, name ->
+            if (dueTextLower.contains(name)) return index + 1
+        }
+        val todayDay = today().split("-").getOrNull(2)?.toIntOrNull() ?: 1
+        if (c.dueDay > 0) {
+            return if (todayDay <= c.dueDay) currentCalMonth else ((currentCalMonth % 12) + 1)
+        }
+        return currentCalMonth
+    }
+
+    // Helper: is loan active in target calendar month
+    fun isLoanInMonth(l: Loan, targetMonth: Int, offsetFromNow: Int = -1): Boolean {
+        if (l.remainingMonths <= 0) return false
+        val offset = if (offsetFromNow >= 0) offsetFromNow else ((targetMonth - currentCalMonth + 12) % 12)
+        if (offset >= l.remainingMonths) return false
+        val resetDay = vm.salaryResetDayFor(l.person)
+        if (offset == 0) {
+            return l.isStarted(today(), resetDay)
+        }
+        if (l.isStarted(today(), resetDay)) return true
+        if (l.startMonth.isNotEmpty()) {
+            val parts = l.startMonth.split("-")
+            val sYear = parts.getOrNull(0)?.toIntOrNull() ?: 2026
+            val sMonth = parts.getOrNull(1)?.toIntOrNull() ?: 1
+            val curYear = today().split("-").getOrNull(0)?.toIntOrNull() ?: 2026
+            val targetYear = if (targetMonth < currentCalMonth) curYear + 1 else curYear
+            return (targetYear > sYear) || (targetYear == sYear && targetMonth >= sMonth)
+        }
+        return true
+    }
+
+    // Debts & helper: determine month for debt (lent / borrow)
+    val pendingDebts = vm.pendingDebts
+    fun getDebtMonthNum(d: Debt): Int {
+        if (d.dueDate.isNotBlank()) {
+            val iso = normalizeDateToIso(d.dueDate) ?: d.dueDate
+            val parts = iso.split("-")
+            if (parts.size >= 2) {
+                val m = parts[1].toIntOrNull()
+                if (m != null && m in 1..12) return m
+            }
+            val textLower = d.dueDate.lowercase()
+            val monthNames = listOf("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+            monthNames.forEachIndexed { index, name ->
+                if (textLower.contains(name)) return index + 1
+            }
+        }
+        if (d.createdAt > 0L) {
+            val createdIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(d.createdAt))
+            val m = createdIso.split("-").getOrNull(1)?.toIntOrNull()
+            if (m != null && m in 1..12) return m
+        }
+        return nextCalMonth
+    }
+
+    // Top Card Calculations:
+    // 1. Current Month Dues: card balances + current unconfirmed recurring bills + current unconfirmed loan EMIs + current active sinking fund shares
+    val currentMonthDues = totalCardDues + currentPendingRecurring + currentPendingLoanEmis + currentPendingSetAside
+
+    // 2. Next Month Expenses: loan EMIs for next month + recurring commitments for next month + monthly sinking funds
+    val nextMonthLoanEmis = vm.scopedLoans.filter { isLoanInMonth(it, nextCalMonth, 1) }.sumOf { it.monthlyEmi }
+    val nextMonthRecurring = vm.commitments.sumOf { it.monthly }
+    val nextMonthSinkingFunds = allSinkingFunds.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
+    val nextMonthExpenses = nextMonthLoanEmis + nextMonthRecurring + nextMonthSinkingFunds
+
+    // 3. Next Month Salary
+    val nextMonthSalary = if (vm.bucketView == "JOINT") {
+        vm.profileNames.sumOf { vm.upcomingSalaryFor(it, 1) }
+    } else {
+        vm.upcomingSalaryFor(vm.activeProfile.orEmpty(), 1)
+    }
+
+    // 4. Next Month Lent & Borrow
+    val nextMonthLent = pendingDebts.filter { it.isLent && (getDebtMonthNum(it) == nextCalMonth || it.dueDate.isBlank()) }.sumOf { it.remainingAmount }
+    val nextMonthBorrowed = pendingDebts.filter { it.isBorrowed && (getDebtMonthNum(it) == nextCalMonth || it.dueDate.isBlank()) }.sumOf { it.remainingAmount }
+    val nextMonthNetDebt = nextMonthLent - nextMonthBorrowed
+
+    // Net Balance = Bank Balances - Current Month Dues - Next Month Expenses + Next Month Salary + Next Month Net Debt
+    val netBalance = totalBankBalances - currentMonthDues - nextMonthExpenses + nextMonthSalary + nextMonthNetDebt
+    val totalHeroExpenses = currentMonthDues + nextMonthExpenses
+
+    // Filter states (all defaulting to NEXT CALENDAR MONTH)
+    var sinkingFundFilter by remember { mutableStateOf(nextCalMonthStr) }
+    var cardFilter by remember { mutableStateOf(nextCalMonthStr) }
+    var loanFilter by remember { mutableStateOf(nextCalMonthStr) }
+    var debtFilter by remember { mutableStateOf(nextCalMonthStr) }
+
     var expandedBanks by remember { mutableStateOf(false) }
     var expandedPast by remember { mutableStateOf(false) }
     var expandedSinkingFunds by remember { mutableStateOf(false) }
@@ -131,26 +229,79 @@ fun HomeScreen(vm: FinTrackViewModel) {
     var expandedRecurring by remember { mutableStateOf(false) }
     var expandedLoans by remember { mutableStateOf(false) }
 
-    // Sinking Fund Filter Pills in chronological month order (omits months with 0 items)
-    val currentCalMonth = today().split("-").getOrNull(1)?.toIntOrNull() ?: 1
-    val rollingMonthNums = (0..11).map { offset -> ((currentCalMonth - 1 + offset) % 12) + 1 }
-
+    // Sinking Fund Pills
     val sinkingPills = remember(allSinkingFunds, currentCalMonth) {
         buildList {
             add(Triple("ALL", "All", allSinkingFunds.size))
             rollingMonthNums.forEach { m ->
                 val count = allSinkingFunds.count { getSetAsideMonthNum(it) == m }
-                if (count > 0) {
+                if (m == nextCalMonth || count > 0) {
                     val monthName = Ledger.fullMonthName("2026-%02d-01".format(m)).take(3)
                     add(Triple(m.toString(), monthName, count))
                 }
             }
         }
     }
-
     LaunchedEffect(sinkingPills) {
         if (sinkingPills.none { it.first == sinkingFundFilter }) {
-            sinkingFundFilter = "ALL"
+            sinkingFundFilter = if (sinkingPills.any { it.first == nextCalMonthStr }) nextCalMonthStr else "ALL"
+        }
+    }
+
+    // Card Pills
+    val cardPills = remember(pendingCards, currentCalMonth) {
+        buildList {
+            add(Triple("ALL", "All", pendingCards.size))
+            rollingMonthNums.forEach { m ->
+                val count = pendingCards.count { getCardMonthNum(it) == m }
+                if (m == nextCalMonth || count > 0) {
+                    val monthName = Ledger.fullMonthName("2026-%02d-01".format(m)).take(3)
+                    add(Triple(m.toString(), monthName, count))
+                }
+            }
+        }
+    }
+    LaunchedEffect(cardPills) {
+        if (cardPills.none { it.first == cardFilter }) {
+            cardFilter = if (cardPills.any { it.first == nextCalMonthStr }) nextCalMonthStr else "ALL"
+        }
+    }
+
+    // Loan Pills
+    val loanPills = remember(pendingLoans, currentCalMonth) {
+        buildList {
+            add(Triple("ALL", "All", pendingLoans.size))
+            rollingMonthNums.forEach { m ->
+                val count = pendingLoans.count { isLoanInMonth(it, m) }
+                if (m == nextCalMonth || count > 0) {
+                    val monthName = Ledger.fullMonthName("2026-%02d-01".format(m)).take(3)
+                    add(Triple(m.toString(), monthName, count))
+                }
+            }
+        }
+    }
+    LaunchedEffect(loanPills) {
+        if (loanPills.none { it.first == loanFilter }) {
+            loanFilter = if (loanPills.any { it.first == nextCalMonthStr }) nextCalMonthStr else "ALL"
+        }
+    }
+
+    // Debt Pills
+    val debtPills = remember(pendingDebts, currentCalMonth) {
+        buildList {
+            add(Triple("ALL", "All", pendingDebts.size))
+            rollingMonthNums.forEach { m ->
+                val count = pendingDebts.count { getDebtMonthNum(it) == m || (it.dueDate.isBlank() && m == nextCalMonth) }
+                if (m == nextCalMonth || count > 0) {
+                    val monthName = Ledger.fullMonthName("2026-%02d-01".format(m)).take(3)
+                    add(Triple(m.toString(), monthName, count))
+                }
+            }
+        }
+    }
+    LaunchedEffect(debtPills) {
+        if (debtPills.none { it.first == debtFilter }) {
+            debtFilter = if (debtPills.any { it.first == nextCalMonthStr }) nextCalMonthStr else "ALL"
         }
     }
 
@@ -165,14 +316,14 @@ fun HomeScreen(vm: FinTrackViewModel) {
         // Alert if SMS transactions need account link
         item { UnmatchedAccountAlert(vm) }
 
-        // 2. HERO CARD: Net Balance (Bank Balances - Current Month Expenses + Upcoming 1 Salary + Lent Return)
+        // 2. HERO CARD: Net Balance (Bank Balances - Current Month Dues - Next Month Expenses + Next Month Salary + Next Month Net Debt)
         item {
             AfterAllExpensesCard(
                 netBalance = netBalance,
                 bankBalances = totalBankBalances,
-                otherExpenses = otherExpenses,
-                upcomingSalary = upcomingSalary,
-                lentToReceive = totalLentPendingToReceive,
+                otherExpenses = totalHeroExpenses,
+                upcomingSalary = nextMonthSalary,
+                lentToReceive = nextMonthNetDebt,
                 balanceHidden = vm.balanceHidden,
                 onToggleVisibility = vm::toggleBalanceVisible,
                 onBankBalancesClick = {
@@ -453,7 +604,6 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
 
         // 3c. LENT & BORROW (DEBTS) ELEVATED CARD
-        val pendingDebts = vm.pendingDebts
         if (pendingDebts.isNotEmpty()) {
             item {
                 PfCard(
@@ -461,6 +611,14 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
                     shape = Radius.Lg
                 ) {
+                    val filteredDebts = if (debtFilter == "ALL") {
+                        pendingDebts
+                    } else {
+                        val filterM = debtFilter.toIntOrNull()
+                        pendingDebts.filter { getDebtMonthNum(it) == filterM || (it.dueDate.isBlank() && filterM == nextCalMonth) }
+                    }
+                    val totalDebtCount = filteredDebts.size
+
                     val net = vm.netDebt
                     val netLabel = if (net >= 0) "Net +${inr(net)}" else "Net -${inr(-net)}"
                     HomeListHeaderLabel(
@@ -471,7 +629,40 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         expandedDebts = !expandedDebts
                     }
 
-                    val visibleDebts = if (expandedDebts) pendingDebts else pendingDebts.take(3)
+                    // Horizontal Month Filter Pills
+                    if (debtPills.size > 1) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            debtPills.forEach { (id, label, count) ->
+                                val isSelected = debtFilter == id
+                                Box(
+                                    Modifier
+                                        .clip(Radius.Pill)
+                                        .background(if (isSelected) Pf.Accent400 else Pf.Surface2)
+                                        .clickable {
+                                            debtFilter = id
+                                            expandedDebts = false
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        "$label ($count)",
+                                        color = if (isSelected) Color.Black else Pf.Text,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                    }
+
+                    val visibleDebts = if (expandedDebts) filteredDebts else filteredDebts.take(3)
                     visibleDebts.forEachIndexed { idx, d ->
                         if (idx > 0) Hairline()
                         val isLent = d.isLent
@@ -497,8 +688,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         )
                     }
 
-                    if (pendingDebts.size > 3) {
-                        ExpandCollapseButton(expandedDebts, pendingDebts.size - 3) {
+                    if (totalDebtCount > 3) {
+                        ExpandCollapseButton(expandedDebts, totalDebtCount - 3) {
                             expandedDebts = !expandedDebts
                         }
                     }
@@ -514,15 +705,57 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
                     shape = Radius.Lg
                 ) {
+                    val filteredCards = if (cardFilter == "ALL") {
+                        pendingCards
+                    } else {
+                        val filterM = cardFilter.toIntOrNull()
+                        pendingCards.filter { getCardMonthNum(it) == filterM }
+                    }
+                    val totalCardFilterDues = filteredCards.sumOf { it.balance }
+                    val totalCardCount = filteredCards.size
+
                     HomeListHeaderLabel(
-                        label = "CREDIT CARDS · ${inr(totalCardDues)}",
+                        label = "CREDIT CARDS · ${inr(totalCardFilterDues)}",
                         icon = Icons.Default.CreditCard,
                         iconTint = Color(0xFFF59E0B)
                     ) {
                         expandedCards = !expandedCards
                     }
 
-                    val visibleCards = if (expandedCards) pendingCards else pendingCards.take(3)
+                    // Horizontal Month Filter Pills
+                    if (cardPills.size > 1) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            cardPills.forEach { (id, label, count) ->
+                                val isSelected = cardFilter == id
+                                Box(
+                                    Modifier
+                                        .clip(Radius.Pill)
+                                        .background(if (isSelected) Color(0xFFF59E0B) else Pf.Surface2)
+                                        .clickable {
+                                            cardFilter = id
+                                            expandedCards = false
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        "$label ($count)",
+                                        color = if (isSelected) Color.Black else Pf.Text,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                    }
+
+                    val visibleCards = if (expandedCards) filteredCards else filteredCards.take(3)
                     visibleCards.forEachIndexed { idx, c ->
                         if (idx > 0) Hairline()
                         val cleanName = if (c.name.contains("••") && c.numberTail.isNotBlank()) {
@@ -603,8 +836,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         }
                     }
 
-                    if (pendingCards.size > 3) {
-                        ExpandCollapseButton(expandedCards, pendingCards.size - 3) {
+                    if (totalCardCount > 3) {
+                        ExpandCollapseButton(expandedCards, totalCardCount - 3) {
                             expandedCards = !expandedCards
                         }
                     }
@@ -661,15 +894,57 @@ fun HomeScreen(vm: FinTrackViewModel) {
                     padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
                     shape = Radius.Lg
                 ) {
+                    val filteredLoans = if (loanFilter == "ALL") {
+                        pendingLoans
+                    } else {
+                        val filterM = loanFilter.toIntOrNull() ?: nextCalMonth
+                        pendingLoans.filter { isLoanInMonth(it, filterM) }
+                    }
+                    val totalLoanFilterEmis = filteredLoans.sumOf { it.monthlyEmi }
+                    val totalLoanCount = filteredLoans.size
+
                     HomeListHeaderLabel(
-                        label = "LOANS · ${inr(totalLoanEmis)}/mo",
+                        label = "LOANS · ${inr(totalLoanFilterEmis)}/mo",
                         icon = Icons.Default.AccountBalance,
                         iconTint = Color(0xFF3B82F6)
                     ) {
                         expandedLoans = !expandedLoans
                     }
 
-                    val visibleLoans = if (expandedLoans) pendingLoans else pendingLoans.take(3)
+                    // Horizontal Month Filter Pills
+                    if (loanPills.size > 1) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            loanPills.forEach { (id, label, count) ->
+                                val isSelected = loanFilter == id
+                                Box(
+                                    Modifier
+                                        .clip(Radius.Pill)
+                                        .background(if (isSelected) Color(0xFF3B82F6) else Pf.Surface2)
+                                        .clickable {
+                                            loanFilter = id
+                                            expandedLoans = false
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        "$label ($count)",
+                                        color = if (isSelected) Color.White else Pf.Text,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                    }
+
+                    val visibleLoans = if (expandedLoans) filteredLoans else filteredLoans.take(3)
                     visibleLoans.forEachIndexed { idx, l ->
                         if (idx > 0) Hairline()
                         val duePart = if (l.dueDay > 0) "Due ${ordinal(l.dueDay)}" else if (l.nextDue.isNotEmpty()) formatDueDisplay(l.nextDue) else ""
@@ -685,8 +960,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                         )
                     }
 
-                    if (pendingLoans.size > 3) {
-                        ExpandCollapseButton(expandedLoans, pendingLoans.size - 3) {
+                    if (totalLoanCount > 3) {
+                        ExpandCollapseButton(expandedLoans, totalLoanCount - 3) {
                             expandedLoans = !expandedLoans
                         }
                     }
@@ -1353,7 +1628,7 @@ private fun AfterAllExpensesCard(
                     ) {
                         Text("💳", fontSize = 11.sp)
                         Text(
-                            "Expenses (Dues) ↗",
+                            "Dues & Next Exp ↗",
                             color = Color(0xFF9CA3AF),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
@@ -1412,7 +1687,7 @@ private fun AfterAllExpensesCard(
                     )
                 }
 
-                // Lent to Receive (Right)
+                // Lent to Receive / Borrow Repayment (Right)
                 Column(Modifier.weight(1f)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -1420,8 +1695,8 @@ private fun AfterAllExpensesCard(
                     ) {
                         Text("🤝", fontSize = 11.sp)
                         Text(
-                            "Lent Return",
-                            color = Pf.Amber,
+                            "Next Lent/Borrow",
+                            color = if (lentToReceive >= 0) Pf.Amber else Color(0xFFF87171),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
@@ -1429,9 +1704,18 @@ private fun AfterAllExpensesCard(
                         )
                     }
                     Spacer(Modifier.height(2.dp))
+                    val lentText = when {
+                        lentToReceive > 0 -> "+${inr(lentToReceive)}"
+                        lentToReceive < 0 -> "-${inr(-lentToReceive)}"
+                        else -> "₹0.00"
+                    }
                     Text(
-                        if (balanceHidden) "••••••" else if (lentToReceive > 0) "+${inr(lentToReceive)}" else "₹0.00",
-                        color = if (lentToReceive > 0) Pf.Amber else Color(0xFF9CA3AF),
+                        if (balanceHidden) "••••••" else lentText,
+                        color = when {
+                            lentToReceive > 0 -> Pf.Amber
+                            lentToReceive < 0 -> Color(0xFFF87171)
+                            else -> Color(0xFF9CA3AF)
+                        },
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,

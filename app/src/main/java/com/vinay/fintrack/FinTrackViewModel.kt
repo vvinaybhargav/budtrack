@@ -2208,6 +2208,31 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun updateDebt(
+        debtId: String,
+        peerName: String,
+        amount: Double,
+        dueDate: String = "",
+        note: String = ""
+    ) {
+        val target = persisted.debts.firstOrNull { it.id == debtId } ?: return
+        val newRemaining = (amount - target.settledAmount).coerceAtLeast(0.0)
+        val updated = target.copy(
+            peerName = peerName.trim().ifEmpty { target.peerName },
+            amount = amount,
+            dueDate = dueDate.trim(),
+            note = note.trim(),
+            settled = newRemaining <= 0.0
+        )
+        update { s ->
+            s.copy(debts = s.debts.map { if (it.id == debtId) updated else it })
+        }
+        if (selectedDebtForAction?.id == debtId) {
+            selectedDebtForAction = updated
+            debtSettleAmountText = if (updated.remainingAmount > 0) updated.remainingAmount.toLong().toString() else updated.amount.toLong().toString()
+        }
+    }
+
     fun debtNamed(name: String): Debt? {
         val trimmed = name.trim()
         return persisted.debts.firstOrNull {
