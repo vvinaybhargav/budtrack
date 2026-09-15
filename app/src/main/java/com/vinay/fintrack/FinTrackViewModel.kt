@@ -2695,10 +2695,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             val on = upcomingPaydayDate(person, ahead)
             val onYm = on.take(7)
 
-            val normalSetAsides = annualSetAsides.filter { !it.isLent }
-            val lentSetAsides = annualSetAsides.filter { it.isLent }
-
-            val setAside = normalSetAsides.sumOf { e ->
+            val setAside = annualSetAsides.sumOf { e ->
                 if (e.dueDate.isEmpty()) {
                     Ledger.monthlyShare(e.amount, e.everyMonths)
                 } else {
@@ -2714,9 +2711,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            val lentReturn = lentSetAsides.sumOf { e ->
-                if (e.dueDate.isNotEmpty() && e.dueDate.take(7) == onYm) {
-                    e.amount
+            val lentReturn = scopedDebts.filter { it.isLent && !it.settled && it.remainingAmount > 0.0 }.sumOf { d ->
+                if (d.dueDate.isNotEmpty() && d.dueDate.take(7) == onYm) {
+                    d.remainingAmount
                 } else {
                     0.0
                 }
@@ -3793,10 +3790,35 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         if (!isLocked) draft = Draft(person = activeProfile ?: "Me")
         migrateOneTimeEntries()
         migrateDuplicateEmiEntries()
+        migrateLentEntries()
         migratePlainPins()
         addStandardCategories()
         reconcileUnmatchedTxns()
         if (persisted.firebaseConfigText.isNotBlank()) connectSync()
+    }
+
+    private fun migrateLentEntries() {
+        val lentEntries = persisted.entries.filter { it.isLent }
+        if (lentEntries.isEmpty()) return
+        val newDebts = lentEntries.map { e ->
+            Debt(
+                id = "debt_migrated_${e.id}",
+                person = e.person,
+                peerName = e.note.ifEmpty { e.category },
+                amount = e.amount,
+                type = "LENT",
+                dueDate = e.dueDate.ifEmpty { e.nextDue },
+                settled = e.closed,
+                note = if (e.note.isNotEmpty() && e.category.isNotEmpty() && e.note != e.category) "${e.category} · ${e.note}" else e.note
+            )
+        }
+        val doomed = lentEntries.map { it.id }.toSet()
+        update { s ->
+            s.copy(
+                entries = s.entries.filterNot { it.id in doomed },
+                debts = s.debts + newDebts.filterNot { nd -> s.debts.any { d -> d.id == nd.id } }
+            )
+        }
     }
 
     /**

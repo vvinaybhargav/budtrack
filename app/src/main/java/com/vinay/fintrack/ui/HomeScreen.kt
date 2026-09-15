@@ -90,15 +90,11 @@ fun HomeScreen(vm: FinTrackViewModel) {
     val pendingRecurring = vm.commitments.filter { !vm.isConfirmed(it.id) }
     val totalRecurring = pendingRecurring.sumOf { it.monthly }
 
-    // All unclosed sinking funds (excluding lent money which is tracked in its own card below)
-    val allSinkingFunds = vm.annualSetAsides.filter { !it.isLent && !it.closed }
-    val lentSetAsides = vm.annualSetAsides.filter { it.isLent && !it.closed }
-
+    // All unclosed sinking funds
+    val allSinkingFunds = vm.annualSetAsides.filter { !it.closed }
     val pendingSetAsidesThisMonth = allSinkingFunds.filter { vm.isSetAsideActiveThisMonth(it) && vm.setAsideLeft(it) > 0.0 }
-    val lentSetAsidesThisMonth = lentSetAsides.filter { vm.isSetAsideActiveThisMonth(it) && vm.setAsideLeft(it) > 0.0 }
-
     val totalNormalSetAsidePending = pendingSetAsidesThisMonth.sumOf { vm.setAsideLeft(it) }
-    val totalLentPendingToReceive = lentSetAsidesThisMonth.sumOf { vm.setAsideLeft(it) }
+    val totalLentPendingToReceive = vm.totalLentPending
 
     val upcomingSalary = if (vm.bucketView == "JOINT") {
         vm.profileNames.sumOf { vm.upcomingSalaryFor(it, 1) }
@@ -130,7 +126,6 @@ fun HomeScreen(vm: FinTrackViewModel) {
     var expandedBanks by remember { mutableStateOf(false) }
     var expandedPast by remember { mutableStateOf(false) }
     var expandedSinkingFunds by remember { mutableStateOf(false) }
-    var expandedLent by remember { mutableStateOf(false) }
     var expandedDebts by remember { mutableStateOf(false) }
     var expandedCards by remember { mutableStateOf(false) }
     var expandedRecurring by remember { mutableStateOf(false) }
@@ -456,52 +451,6 @@ fun HomeScreen(vm: FinTrackViewModel) {
             }
         }
 
-        // 3b. LENT MONEY (TO RECEIVE) ELEVATED CARD
-        if (lentSetAsidesThisMonth.isNotEmpty()) {
-            item {
-                PfCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    padding = PaddingValues(horizontal = Space.s4, vertical = Space.s3),
-                    shape = Radius.Lg
-                ) {
-                    HomeListHeaderLabel(
-                        label = "🤝 LENT MONEY (TO RECEIVE) · +${inr(totalLentPendingToReceive)}",
-                        icon = Icons.Default.ArrowDownward,
-                        iconTint = Color(0xFF10B981)
-                    ) {
-                        expandedLent = !expandedLent
-                    }
-
-                    val visibleLent = if (expandedLent) lentSetAsidesThisMonth else lentSetAsidesThisMonth.take(3)
-                    visibleLent.forEachIndexed { idx, e ->
-                        if (idx > 0) Hairline()
-                        val left = vm.setAsideLeft(e)
-                        val pot = vm.setAsidePot(e)
-                        val fraction = safeFraction(pot, e.amount)
-                        val pct = (fraction * 100).toInt()
-                        val dueDisplay = formatDueDisplay(e.dueDate)
-                        val subtitle = "Target return on $dueDisplay · Lump sum to receive in this cycle"
-
-                        HomeCompactSetAsideRow(
-                            index = idx + 1,
-                            title = (e.note.ifEmpty { e.category }) + if (e.formula.isNotEmpty()) " · ${e.formula}" else "",
-                            subtitle = subtitle,
-                            amount = "+${inr(left)}",
-                            fraction = fraction,
-                            pct = pct,
-                            accentColor = Color(0xFF10B981),
-                            onClick = { vm.requestConfirm(e) }
-                        )
-                    }
-
-                    if (lentSetAsidesThisMonth.size > 3) {
-                        ExpandCollapseButton(expandedLent, lentSetAsidesThisMonth.size - 3) {
-                            expandedLent = !expandedLent
-                        }
-                    }
-                }
-            }
-        }
 
         // 3c. LENT & BORROW (DEBTS) ELEVATED CARD
         val pendingDebts = vm.pendingDebts
@@ -747,7 +696,6 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
         // 3g. ALL CLEAR EMPTY STATE
         val hasAnyCommitments = hasSinkingFunds ||
-            lentSetAsidesThisMonth.isNotEmpty() ||
             pendingDebts.isNotEmpty() ||
             pendingCards.isNotEmpty() ||
             pendingRecurring.isNotEmpty() ||

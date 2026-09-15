@@ -75,6 +75,7 @@ private val ADD_KINDS = listOf(
     AddKindItem("ONE_TIME", "One-time", Icons.Default.Receipt),
     AddKindItem("RECURRING", "Recurring", Icons.Default.Repeat),
     AddKindItem("SET_ASIDE", "Set aside", Icons.Default.Bookmark),
+    AddKindItem("DEBT", "Lent / Borrow", Icons.Default.SwapHoriz),
     AddKindItem("EMI_LOAN", "EMI / Loan", Icons.Default.AccountBalance),
     AddKindItem("INVESTMENT", "Investment", Icons.Default.TrendingUp),
     AddKindItem("BANK_ACCOUNT", "Account", Icons.Default.AccountBalanceWallet),
@@ -106,7 +107,7 @@ fun AddScreen(vm: FinTrackViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Editing entry", color = Pf.Text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("EDIT COMMITMENT", color = Pf.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     GhostButton("Cancel", vm::cancelEdit)
                 }
             }
@@ -155,7 +156,8 @@ fun AddScreen(vm: FinTrackViewModel) {
                     }
                     val hint = when (vm.addKind) {
                         "ONE_TIME" -> "Already paid or received. Goes straight into Transactions."
-                        "SET_ASIDE" -> "Paid periodically or lent to others. Set aside a share each month."
+                        "SET_ASIDE" -> "Paid periodically. Set aside a share each month towards a goal."
+                        "DEBT" -> "Track money lent to friends or borrowed from others."
                         "RECURRING" -> "Monthly fixed commitment. Confirm it each month on Home."
                         "EMI_LOAN" -> "Track loan tenure, EMI schedule, and interest payments."
                         "INVESTMENT" -> "Track mutual funds, SIPs, gold, or recurring market assets."
@@ -173,12 +175,14 @@ fun AddScreen(vm: FinTrackViewModel) {
         val showLoan = !isEditing && vm.addKind == "EMI_LOAN"
         val showAccount = !isEditing && vm.addKind == "BANK_ACCOUNT"
         val showCard = !isEditing && vm.addKind == "CREDIT_CARD"
+        val showDebt = !isEditing && vm.addKind == "DEBT"
         val showOneTime = !isEditing && vm.addKind == "ONE_TIME"
-        val showGeneric = isEditing || (vm.addKind !in listOf("EMI_LOAN", "BANK_ACCOUNT", "CREDIT_CARD", "ONE_TIME"))
+        val showGeneric = isEditing || (vm.addKind !in listOf("EMI_LOAN", "BANK_ACCOUNT", "CREDIT_CARD", "ONE_TIME", "DEBT"))
 
         if (showLoan) item { LoanForm(vm) }
         if (showAccount) item { AccountForm(vm) }
         if (showCard) item { CardForm(vm) }
+        if (showDebt) item { DebtForm(vm) }
         if (showOneTime) item { OneTimePaymentForm(vm) }
         if (showGeneric) item { GenericForm(vm, isEditing) }
     }
@@ -908,65 +912,28 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             )
         }
 
-        val isSetAsideKind = vm.addKind == "SET_ASIDE" || (isEditing && (vm.draft.isLent || vm.draft.type == "SAVINGS" || vm.draft.dueText.isNotEmpty() || vm.draft.startDateText.isNotEmpty() || vm.draft.startMonth.isNotEmpty() || vm.draft.periodMonths > 1 || vm.draft.frequency == "ANNUAL"))
+        val isSetAsideKind = vm.addKind == "SET_ASIDE" || (isEditing && (vm.draft.type == "SAVINGS" || vm.draft.dueText.isNotEmpty() || vm.draft.startDateText.isNotEmpty() || vm.draft.startMonth.isNotEmpty() || vm.draft.periodMonths > 1 || vm.draft.frequency == "ANNUAL"))
 
         if (isSetAsideKind) {
-            // Option to choose between Normal Set Aside and Lent Money
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Space.s2)
-            ) {
-                listOf(
-                    false to "📌 Set Aside",
-                    true to "🤝 Lent Money"
-                ).forEach { (lent, label) ->
-                    val isSel = vm.draft.isLent == lent
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .clip(Radius.Pill)
-                            .background(if (isSel) (if (lent) Pf.Amber.copy(alpha = 0.2f) else Pf.Accent.copy(alpha = 0.2f)) else Pf.Surface2)
-                            .border(1.5.dp, if (isSel) (if (lent) Pf.Amber else Pf.Accent) else Pf.Hairline, Radius.Pill)
-                            .clickable {
-                                vm.draft = vm.draft.copy(
-                                    isLent = lent,
-                                    category = if (lent && vm.draft.category.isEmpty()) "Lent" else vm.draft.category
-                                )
-                            }
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            label,
-                            color = if (isSel) (if (lent) Pf.Amber else Pf.Accent400) else Pf.Text,
-                            fontSize = 13.sp,
-                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
             val payMonthOptions = vm.startPayMonthOptions
             val selectedStartMonthKey = vm.draft.startMonth.ifEmpty { today().take(7) }
             val selectedStartMonthLabel = payMonthOptions.firstOrNull { it.key == selectedStartMonthKey }?.label
                 ?: payMonthOptions.firstOrNull()?.label.orEmpty()
 
-            if (!vm.draft.isLent) {
-                PfSelect(
-                    label = "Start Pay Month",
-                    value = selectedStartMonthLabel,
-                    options = payMonthOptions.map { it.label },
-                    onSelect = { label ->
-                        val opt = payMonthOptions.firstOrNull { it.label == label }
-                        if (opt != null) {
-                            vm.draft = vm.draft.copy(startMonth = opt.key)
-                        }
+            PfSelect(
+                label = "Start Pay Month",
+                value = selectedStartMonthLabel,
+                options = payMonthOptions.map { it.label },
+                onSelect = { label ->
+                    val opt = payMonthOptions.firstOrNull { it.label == label }
+                    if (opt != null) {
+                        vm.draft = vm.draft.copy(startMonth = opt.key)
                     }
-                )
-            }
+                }
+            )
 
             PfField(
-                label = if (vm.draft.isLent) "Target / Return Date" else "Target / End Date",
+                label = "Target / End Date",
                 value = vm.draft.dueText,
                 onValueChange = { vm.draft = vm.draft.copy(dueText = it) },
                 placeholder = "dd-mm-yyyy",
@@ -975,8 +942,8 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
                     IconButton(onClick = { dueDatePickerDialog.show() }) {
                         Icon(
                             imageVector = Icons.Default.DateRange,
-                            contentDescription = if (vm.draft.isLent) "Return Date" else "End Date",
-                            tint = if (vm.draft.isLent) Pf.Amber else Pf.Accent400
+                            contentDescription = "End Date",
+                            tint = Pf.Accent400
                         )
                     }
                 }
@@ -987,49 +954,7 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean) {
             val instalments = vm.draftInstalments
             val evaluatedDraftAmount = MathEvaluator.evaluate(vm.draft.amountText) ?: vm.draft.amountText.toDoubleOrNull() ?: 0.0
 
-            if (vm.draft.isLent) {
-                if (vm.draftDueIso.isNotEmpty()) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(Radius.Md)
-                            .background(Pf.Surface2)
-                            .border(1.dp, Pf.Amber.copy(alpha = 0.3f), Radius.Md)
-                            .padding(Space.s3)
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "🤝 Lent Money (No Split)",
-                                    color = Pf.Amber,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Tag("Full Lump Sum", Pf.AmberBg, Pf.Amber)
-                            }
-                            if (evaluatedDraftAmount > 0.0) {
-                                Text(
-                                    "Full amount to receive: ${inr(evaluatedDraftAmount)}",
-                                    color = Pf.Text,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                            }
-                            Text(
-                                "Target return on ${prettyDate(vm.draftDueIso)} (${vm.draftDueIn}) · Received in that pay cycle",
-                                color = Pf.Muted,
-                                fontSize = 11.5.sp
-                            )
-                        }
-                    }
-                } else {
-                    Muted("Select expected return date. Tracked as a single full lump sum (not split across months).")
-                }
-            } else if (vm.draftDueIso.isNotEmpty()) {
+            if (vm.draftDueIso.isNotEmpty()) {
                 Box(
                     Modifier
                         .fillMaxWidth()

@@ -361,12 +361,12 @@ private fun OverdueDuesSection(
                     OverdueItemRow(
                         icon = Icons.Default.Bookmark,
                         title = sa.note.ifEmpty { sa.category },
-                        badge = if (sa.isLent) "Lent" else "Set Aside",
-                        badgeBg = if (sa.isLent) Pf.AmberBg else Pf.Accent100,
-                        badgeColor = if (sa.isLent) Pf.Amber else Pf.Accent800,
+                        badge = "Set Aside",
+                        badgeBg = Pf.Accent100,
+                        badgeColor = Pf.Accent800,
                         dueDayText = overdueDaysText(sa.dueDate, sa.dueDay, todayDay),
                         amountText = inr(left),
-                        actionText = if (sa.isLent) "Received" else "Put Aside",
+                        actionText = "Put Aside",
                         onAction = { vm.requestConfirm(sa) }
                     )
                 }
@@ -1008,18 +1008,9 @@ private fun ManageRecurringSection(vm: FinTrackViewModel) {
 @Composable
 private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
     val items = vm.annualSetAsides
-    val normalItems = items.filter { !it.isLent }
-    val lentItems = items.filter { it.isLent }
-    val normalNeeded = normalItems.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { it.monthly }
-    val lentNeeded = lentItems.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { it.amount }
-    val normalDone = normalItems.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { vm.setAsideDone(it).coerceAtMost(it.monthly) }
-    val lentDone = lentItems.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { vm.setAsideDone(it).coerceAtMost(it.amount) }
-
-    val badge = if (lentNeeded > 0.0) {
-        "(${inr(normalNeeded)}) · +${inr(lentNeeded)}"
-    } else {
-        "(${inr(normalNeeded)})/mo"
-    }
+    val needed = items.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { it.monthly }
+    val done = items.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { vm.setAsideDone(it).coerceAtMost(it.monthly) }
+    val badge = "(${inr(needed)})/mo"
 
     Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
         SectionHeader(
@@ -1111,10 +1102,6 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
                                             Spacer(Modifier.width(6.dp))
                                             Tag(e.formula, Pf.Surface, Pf.Accent400)
                                         }
-                                        if (e.isLent) {
-                                            Spacer(Modifier.width(6.dp))
-                                            Tag("Lent", Pf.AmberBg, Pf.Amber)
-                                        }
                                     }
                                     Spacer(Modifier.width(Space.s2))
                                     Text(
@@ -1138,35 +1125,21 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(Modifier.weight(1f).padding(end = Space.s2)) {
-                                        if (e.isLent) {
-                                            Text(
-                                                "Lent: ${inr(e.amount)} · Return by ${if (e.dueDate.isNotEmpty()) prettyDate(e.dueDate) else "target date"}",
-                                                color = Pf.Amber,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                            Muted(
-                                                if (left <= 0.0) "Fully received back"
-                                                else "+${inr(left)} remaining to be returned",
-                                                size = 11
-                                            )
-                                        } else {
-                                            Muted(
-                                                "(${inr(e.monthly(vm.salaryResetDayFor(e.person)))})/mo · " +
-                                                    if (put > 0) "${inr(put)} put by, (${inr(left)}) left"
-                                                    else "none put by yet",
-                                                size = 11
-                                            )
-                                            Muted(
-                                                if (e.nextDue.isNotEmpty()) {
-                                                    val n = Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))
-                                                    "${inr(pot)} of ${inr(e.amount)} saved · due ${prettyDate(e.nextDue)}, $n mo to go"
-                                                } else {
-                                                    "${inr(pot)} of ${inr(e.amount)} saved · every ${e.everyMonths} mo"
-                                                },
-                                                size = 11
-                                            )
-                                        }
+                                        Muted(
+                                            "(${inr(e.monthly(vm.salaryResetDayFor(e.person)))})/mo · " +
+                                                if (put > 0) "${inr(put)} put by, (${inr(left)}) left"
+                                                else "none put by yet",
+                                            size = 11
+                                        )
+                                        Muted(
+                                            if (e.nextDue.isNotEmpty()) {
+                                                val n = Ledger.instalmentsUntil(today(), e.nextDue, vm.salaryResetDayFor(e.person))
+                                                "${inr(pot)} of ${inr(e.amount)} saved · due ${prettyDate(e.nextDue)}, $n mo to go"
+                                            } else {
+                                                "${inr(pot)} of ${inr(e.amount)} saved · every ${e.everyMonths} mo"
+                                            },
+                                            size = 11
+                                        )
                                     }
 
                                     Row(
@@ -1178,7 +1151,7 @@ private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
                                         } else if (left <= 0.0) {
                                             SecondaryButton("Undo", { vm.requestConfirm(e) })
                                         } else {
-                                            PrimaryButton(if (put > 0) "Add" else (if (e.isLent) "Received" else "Set aside"), { vm.requestConfirm(e) })
+                                            PrimaryButton(if (put > 0) "Add" else "Set aside", { vm.requestConfirm(e) })
                                         }
                                         IconButton(onClick = { vm.deleteEntry(e.id) }, modifier = Modifier.size(28.dp)) {
                                             Icon(Icons.Default.Delete, "Delete", Modifier.size(15.dp), tint = Pf.Accent400)
