@@ -75,6 +75,7 @@ import com.vinay.fintrack.data.formatInstalmentsLeft
 import com.vinay.fintrack.data.ordinal
 import com.vinay.fintrack.data.today
 import com.vinay.fintrack.data.normalizeDateToIso
+import com.vinay.fintrack.data.Entry
 import com.vinay.fintrack.data.DetectedAccountParser
 
 private const val ALERT_PCT = 0.90f
