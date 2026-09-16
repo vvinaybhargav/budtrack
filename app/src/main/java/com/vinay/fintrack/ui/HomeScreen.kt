@@ -89,17 +89,17 @@ fun HomeScreen(vm: FinTrackViewModel) {
     val activeResetDay = vm.salaryResetDayFor(vm.activeProfile.orEmpty())
     val currentCycleIso = Ledger.cycleOf(today(), activeResetDay)
     val currentCycleMonth = currentCycleIso.split("-").getOrNull(1)?.toIntOrNull() ?: today().split("-").getOrNull(1)?.toIntOrNull() ?: 1
+    val currentCycleMonthStr = currentCycleMonth.toString()
     val nextCycleMonth = ((currentCycleMonth % 12) + 1)
     val nextCycleMonthStr = nextCycleMonth.toString()
+    val curYear = today().split("-").getOrNull(0)?.toIntOrNull() ?: 2026
+    val curYearStr = curYear.toString()
     val rollingMonthNums = (0..11).map { offset -> ((currentCycleMonth - 1 + offset) % 12) + 1 }
 
     val totalBankBalances = vm.scopedAccounts.sumOf { vm.balanceOf(it) }
     val pendingCards = vm.scopedCards.filter { it.balance > 0.0 }
-    val totalCardDues = pendingCards.sumOf { it.balance }
-
     val pendingLoans = vm.scopedLoans.filter { vm.isLoanActiveThisMonth(it) && !vm.isLoanConfirmed(it.id) }
     val currentPendingLoanEmis = pendingLoans.sumOf { it.monthlyEmi }
-    val totalLoanEmis = currentPendingLoanEmis
 
     val pendingRecurring = vm.commitments.filter { !vm.isConfirmed(it.id) }
     val currentPendingRecurring = pendingRecurring.sumOf { it.monthly }
@@ -126,6 +126,33 @@ fun HomeScreen(vm: FinTrackViewModel) {
             if (m != null && m in 1..12) return m
         }
         return currentCycleMonth
+    }
+
+    // Helper: is set aside active in target calendar/cycle month
+    fun isSetAsideInMonth(e: Entry, targetMonth: Int): Boolean {
+        if (e.closed) return false
+        val resetDay = vm.salaryResetDayFor(e.person)
+        if (e.frequency == "ONE_TIME" || e.isLent) {
+            val rawDue = if (e.dueDate.isNotBlank()) e.dueDate else e.nextDue
+            val dueIso = normalizeDateToIso(rawDue) ?: rawDue
+            if (dueIso.contains("-")) {
+                val cycle = Ledger.cycleOf(dueIso, resetDay)
+                val m = cycle.split("-").getOrNull(1)?.toIntOrNull()
+                return m == targetMonth
+            }
+            return targetMonth == currentCycleMonth
+        }
+        val rawStart = if (e.startDate.isNotBlank()) e.startDate else vm.firstPaydayOf(e)
+        val startIso = normalizeDateToIso(rawStart) ?: rawStart
+        val startCycle = Ledger.cycleOf(startIso.ifEmpty { today() }, resetDay)
+
+        val rawDue = if (e.dueDate.isNotBlank()) e.dueDate else e.nextDue
+        val dueIso = normalizeDateToIso(rawDue) ?: rawDue
+        val dueCycle = if (dueIso.isNotBlank() && dueIso.contains("-")) Ledger.cycleOf(dueIso, resetDay) else "9999-12"
+
+        val targetYear = if (targetMonth < currentCycleMonth) curYear + 1 else curYear
+        val targetCycle = "%04d-%02d".format(targetYear, targetMonth)
+        return targetCycle >= startCycle && targetCycle <= dueCycle
     }
 
     // Helper: determine target salary cycle month (1..12) for credit card
@@ -164,7 +191,6 @@ fun HomeScreen(vm: FinTrackViewModel) {
             val parts = l.startMonth.split("-")
             val sYear = parts.getOrNull(0)?.toIntOrNull() ?: 2026
             val sMonth = parts.getOrNull(1)?.toIntOrNull() ?: 1
-            val curYear = today().split("-").getOrNull(0)?.toIntOrNull() ?: 2026
             val targetYear = if (targetMonth < currentCycleMonth) curYear + 1 else curYear
             return (targetYear > sYear) || (targetYear == sYear && targetMonth >= sMonth)
         }
@@ -196,20 +222,27 @@ fun HomeScreen(vm: FinTrackViewModel) {
         }
         return nextCycleMonth
     }
-    val currentMonthName = Ledger.fullMonthName("2026-%02d-01".format(currentCycleMonth))
-    val nextMonthName = Ledger.fullMonthName("2026-%02d-01".format(nextCycleMonth))
+    val currentMonthName = Ledger.fullMonthName("$curYearStr-%02d-01".format(currentCycleMonth))
+    val nextMonthName = Ledger.fullMonthName("$curYearStr-%02d-01".format(nextCycleMonth))
     val nextPaydayIso = resolveNextDueDate(activeResetDay, today())
     val daysUntilPayday = Ledger.daysBetween(today(), nextPaydayIso).coerceAtLeast(0)
 
-    // Top Card Calculations:
-    // 1. Current Month Dues: card balances + current unconfirmed recurring bills + current unconfirmed loan EMIs + current active Set a Side shares
-    val currentMonthDues = totalCardDues + currentPendingRecurring + currentPendingLoanEmis + currentPendingSetAside
+    // Credit Cards split by cycle:
+    val currentMonthCards = pendingCards.filter { getCardMonthNum(it) == currentCycleMonth }
+    val currentMonthCardDues = currentMonthCards.sumOf { it.balance }
 
-    // 2. Next Month Expenses: loan EMIs for next month + recurring commitments for next month + monthly Set a Side shares
+    val nextMonthCards = pendingCards.filter { getCardMonthNum(it) == nextCycleMonth }
+    val nextMonthCardDues = nextMonthCards.sumOf { it.balance }
+
+    // Top Card Calculations:
+    // 1. Current Month Dues: card balances due in current cycle + current unconfirmed recurring bills + current unconfirmed loan EMIs + current active Set a Side shares
+    val currentMonthDues = currentMonthCardDues + currentPendingRecurring + currentPendingLoanEmis + currentPendingSetAside
+
+    // 2. Next Month Expenses: next month cards + loan EMIs for next month + recurring commitments for next month + monthly Set a Side shares
     val nextMonthLoanEmis = vm.scopedLoans.filter { isLoanInMonth(it, nextCycleMonth, 1) }.sumOf { it.monthlyEmi }
     val nextMonthRecurring = vm.commitments.sumOf { it.monthly }
-    val nextMonthSetAsides = allSetAsides.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
-    val nextMonthExpenses = nextMonthLoanEmis + nextMonthRecurring + nextMonthSetAsides
+    val nextMonthSetAsides = allSetAsides.filter { isSetAsideInMonth(it, nextCycleMonth) }.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
+    val nextMonthExpenses = nextMonthCardDues + nextMonthLoanEmis + nextMonthRecurring + nextMonthSetAsides
 
     // 3. Next Month Salary
     val nextMonthSalary = if (vm.bucketView == "JOINT") {
@@ -236,11 +269,22 @@ fun HomeScreen(vm: FinTrackViewModel) {
     // 3. Projected End Balance (Cash after current dues + next salary + next expenses)
     val projectedEndBalance = totalBankBalances - currentMonthDues + nextCycleSurplus
 
-    // Filter states (all defaulting to NEXT FINANCIAL CYCLE MONTH)
-    var setAsideFilter by remember { mutableStateOf(nextCycleMonthStr) }
-    var cardFilter by remember { mutableStateOf(nextCycleMonthStr) }
-    var loanFilter by remember { mutableStateOf(nextCycleMonthStr) }
-    var debtFilter by remember { mutableStateOf(nextCycleMonthStr) }
+    var heroCycleMode by remember { mutableStateOf("CURRENT") }
+
+    // Filter states (defaulting to CURRENT FINANCIAL CYCLE MONTH so current unpaid bills are immediately visible)
+    var setAsideFilter by remember { mutableStateOf(currentCycleMonthStr) }
+    var cardFilter by remember { mutableStateOf(currentCycleMonthStr) }
+    var loanFilter by remember { mutableStateOf(currentCycleMonthStr) }
+    var debtFilter by remember { mutableStateOf(currentCycleMonthStr) }
+
+    val onHeroCycleModeChange: (String) -> Unit = { mode ->
+        heroCycleMode = mode
+        val targetMonthStr = if (mode == "CURRENT") currentCycleMonthStr else nextCycleMonthStr
+        setAsideFilter = targetMonthStr
+        cardFilter = targetMonthStr
+        loanFilter = targetMonthStr
+        debtFilter = targetMonthStr
+    }
 
     var expandedBanks by remember { mutableStateOf(false) }
     var expandedPast by remember { mutableStateOf(false) }
@@ -255,9 +299,9 @@ fun HomeScreen(vm: FinTrackViewModel) {
         buildList {
             add(Triple("ALL", "All", allSetAsides.size))
             rollingMonthNums.forEach { m ->
-                val count = allSetAsides.count { getSetAsideMonthNum(it) == m }
-                if (m == nextCycleMonth || count > 0) {
-                    val monthName = Ledger.fullMonthName("2026-%02d-01".format(m)).take(3)
+                val count = allSetAsides.count { isSetAsideInMonth(it, m) }
+                if (m == currentCycleMonth || m == nextCycleMonth || count > 0) {
+                    val monthName = Ledger.fullMonthName("$curYearStr-%02d-01".format(m)).take(3)
                     add(Triple(m.toString(), monthName, count))
                 }
             }
@@ -265,7 +309,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
     }
     LaunchedEffect(setAsidePills) {
         if (setAsidePills.none { it.first == setAsideFilter }) {
-            setAsideFilter = if (setAsidePills.any { it.first == nextCycleMonthStr }) nextCycleMonthStr else "ALL"
+            setAsideFilter = if (setAsidePills.any { it.first == currentCycleMonthStr }) currentCycleMonthStr else "ALL"
         }
     }
 
@@ -275,8 +319,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
             add(Triple("ALL", "All", pendingCards.size))
             rollingMonthNums.forEach { m ->
                 val count = pendingCards.count { getCardMonthNum(it) == m }
-                if (m == nextCycleMonth || count > 0) {
-                    val monthName = Ledger.fullMonthName("2026-%02d-01".format(m)).take(3)
+                if (m == currentCycleMonth || m == nextCycleMonth || count > 0) {
+                    val monthName = Ledger.fullMonthName("$curYearStr-%02d-01".format(m)).take(3)
                     add(Triple(m.toString(), monthName, count))
                 }
             }
@@ -284,7 +328,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
     }
     LaunchedEffect(cardPills) {
         if (cardPills.none { it.first == cardFilter }) {
-            cardFilter = if (cardPills.any { it.first == nextCycleMonthStr }) nextCycleMonthStr else "ALL"
+            cardFilter = if (cardPills.any { it.first == currentCycleMonthStr }) currentCycleMonthStr else "ALL"
         }
     }
 
@@ -294,8 +338,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
             add(Triple("ALL", "All", pendingLoans.size))
             rollingMonthNums.forEach { m ->
                 val count = pendingLoans.count { isLoanInMonth(it, m) }
-                if (m == nextCycleMonth || count > 0) {
-                    val monthName = Ledger.fullMonthName("2026-%02d-01".format(m)).take(3)
+                if (m == currentCycleMonth || m == nextCycleMonth || count > 0) {
+                    val monthName = Ledger.fullMonthName("$curYearStr-%02d-01".format(m)).take(3)
                     add(Triple(m.toString(), monthName, count))
                 }
             }
@@ -303,7 +347,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
     }
     LaunchedEffect(loanPills) {
         if (loanPills.none { it.first == loanFilter }) {
-            loanFilter = if (loanPills.any { it.first == nextCycleMonthStr }) nextCycleMonthStr else "ALL"
+            loanFilter = if (loanPills.any { it.first == currentCycleMonthStr }) currentCycleMonthStr else "ALL"
         }
     }
 
@@ -313,8 +357,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
             add(Triple("ALL", "All", pendingDebts.size))
             rollingMonthNums.forEach { m ->
                 val count = pendingDebts.count { getDebtMonthNum(it) == m || (it.dueDate.isBlank() && m == nextCycleMonth) }
-                if (m == nextCycleMonth || count > 0) {
-                    val monthName = Ledger.fullMonthName("2026-%02d-01".format(m)).take(3)
+                if (m == currentCycleMonth || m == nextCycleMonth || count > 0) {
+                    val monthName = Ledger.fullMonthName("$curYearStr-%02d-01".format(m)).take(3)
                     add(Triple(m.toString(), monthName, count))
                 }
             }
@@ -322,7 +366,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
     }
     LaunchedEffect(debtPills) {
         if (debtPills.none { it.first == debtFilter }) {
-            debtFilter = if (debtPills.any { it.first == nextCycleMonthStr }) nextCycleMonthStr else "ALL"
+            debtFilter = if (debtPills.any { it.first == currentCycleMonthStr }) currentCycleMonthStr else "ALL"
         }
     }
 
@@ -355,6 +399,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                 projectedEndBalance = projectedEndBalance,
                 balanceHidden = vm.balanceHidden,
                 onToggleVisibility = vm::toggleBalanceVisible,
+                cycleMode = heroCycleMode,
+                onCycleModeChange = onHeroCycleModeChange,
                 onBankBalancesClick = {
                     expandedBanks = !expandedBanks
                 },
@@ -527,8 +573,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             (m - currentCycleMonth + 12) % 12
                         }
                     } else {
-                        val filterM = setAsideFilter.toIntOrNull()
-                        allSetAsides.filter { getSetAsideMonthNum(it) == filterM }
+                        val filterM = setAsideFilter.toIntOrNull() ?: currentCycleMonth
+                        allSetAsides.filter { isSetAsideInMonth(it, filterM) }
                     }
 
                     val totalItemCount = filteredSetAsides.size
@@ -610,7 +656,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
                                 val n = Ledger.instalmentsBetween(start, e.nextDue, resetDay)
                                 val monthlyAmt = e.monthly(resetDay)
                                 val monthNum = getSetAsideMonthNum(e)
-                                val monthTitle = Ledger.fullMonthName("2026-%02d-01".format(monthNum))
+                                val monthTitle = Ledger.fullMonthName("$curYearStr-%02d-01".format(monthNum))
                                 val subtitle = "Starts in $monthTitle · Due ${ordinal(resetDay)} · ${formatInstalmentsLeft(n)} · Total: ${inr(e.amount)}"
 
                                 HomeCompactRow(
@@ -1567,11 +1613,12 @@ private fun AfterAllExpensesCard(
     projectedEndBalance: Double,
     balanceHidden: Boolean,
     onToggleVisibility: () -> Unit,
+    cycleMode: String = "CURRENT",
+    onCycleModeChange: (String) -> Unit = {},
     onBankBalancesClick: (() -> Unit)? = null,
     onCurrentDuesClick: (() -> Unit)? = null,
     onNextExpensesClick: (() -> Unit)? = null
 ) {
-    var cycleMode by remember { mutableStateOf("CURRENT") }
     val isCurrent = cycleMode == "CURRENT"
 
     Column(
@@ -1599,7 +1646,7 @@ private fun AfterAllExpensesCard(
                     .weight(1f)
                     .clip(Radius.Pill)
                     .background(if (currentSelected) Color(0xFF3B82F6) else Color.Transparent)
-                    .clickable { cycleMode = "CURRENT" }
+                    .clickable { onCycleModeChange("CURRENT") }
                     .padding(vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -1617,7 +1664,7 @@ private fun AfterAllExpensesCard(
                     .weight(1f)
                     .clip(Radius.Pill)
                     .background(if (nextSelected) Color(0xFF10B981) else Color.Transparent)
-                    .clickable { cycleMode = "NEXT" }
+                    .clickable { onCycleModeChange("NEXT") }
                     .padding(vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -3535,8 +3582,8 @@ private fun MonthPlan(vm: FinTrackViewModel) {
     val totalLoans = vm.scopedLoans.sumOf { it.monthlyEmi }
     val confirmedLoans = vm.scopedLoans.filter { vm.isLoanConfirmed(it.id) }.sumOf { it.monthlyEmi }
     
-    val totalSetAside = vm.annualSetAsides.sumOf { it.monthly }
-    val confirmedSetAside = vm.annualSetAsides.sumOf { vm.setAsideDone(it).coerceAtMost(it.monthly) }
+    val totalSetAside = vm.annualSetAsides.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
+    val confirmedSetAside = vm.annualSetAsides.sumOf { vm.setAsideDone(it).coerceAtMost(it.monthly(vm.salaryResetDayFor(it.person))) }
     
     val totalRecurring = vm.plannedRecurring
     val confirmedRecurring = vm.scopedEntries

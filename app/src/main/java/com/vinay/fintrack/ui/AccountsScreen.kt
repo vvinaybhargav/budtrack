@@ -1010,8 +1010,8 @@ private fun ManageRecurringSection(vm: FinTrackViewModel) {
 @Composable
 private fun ManageSetAsidesSection(vm: FinTrackViewModel) {
     val items = vm.annualSetAsides
-    val needed = items.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { it.monthly }
-    val done = items.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { vm.setAsideDone(it).coerceAtMost(it.monthly) }
+    val needed = items.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { it.monthly(vm.salaryResetDayFor(it.person)) }
+    val done = items.filter { vm.isSetAsideActiveThisMonth(it) }.sumOf { vm.setAsideDone(it).coerceAtMost(it.monthly(vm.salaryResetDayFor(it.person))) }
     val badge = "(${inr(needed)})/mo"
 
     Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {

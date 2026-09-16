@@ -951,7 +951,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun setAsideDone(e: Entry): Double =
         Ledger.setAsideDone(persisted.txns, e.id, cycleFor(e.person))
 
-    fun setAsideLeft(e: Entry): Double = (e.monthly - setAsideDone(e)).coerceAtLeast(0.0)
+    fun setAsideLeft(e: Entry): Double = (e.monthly(salaryResetDayFor(e.person)) - setAsideDone(e)).coerceAtLeast(0.0)
 
     /** Everything put by for this so far, across all months, less anything paid
      *  out of it. */
@@ -1151,7 +1151,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             removeTxns { it.entryId == e.id && it.month == cycleFor(e.person) }
             return
         }
-        val left = if (partial) setAsideLeft(e) else e.monthly
+        val left = if (partial) setAsideLeft(e) else e.monthly(salaryResetDayFor(e.person))
         if (partial && left <= 0.0) {
             removeTxns { it.entryId == e.id && it.month == cycleFor(e.person) }
             return
@@ -2617,7 +2617,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             .sumOf { it.monthly }
 
     fun plannedSetAsideFor(view: String): Double =
-        annualSetAsidesFor(view).filter { isSetAsideActiveThisMonth(it) }.sumOf { it.monthly }
+        annualSetAsidesFor(view).filter { isSetAsideActiveThisMonth(it) }.sumOf { it.monthly(salaryResetDayFor(it.person)) }
 
     fun plannedLoansFor(view: String): Double =
         scopedLoansFor(view).filter { isLoanActiveThisMonth(it) }.sumOf { it.monthlyEmi }
