@@ -762,7 +762,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
          *  viewer's, so a joint bill is not owed twice on two cycles. */
         val period: String = ""
     ) {
-        val enteredAmount: Double get() = amountText.toDoubleOrNull() ?: amount
+        val enteredAmount: Double get() = com.vinay.fintrack.data.MathEvaluator.evaluate(amountText) ?: amountText.toDoubleOrNull() ?: amount
         val needsFrom: Boolean get() = kind == "EXPENSE" || kind == "TRANSFER"
         val needsTo: Boolean get() = kind == "INCOME" || kind == "TRANSFER"
         val isReady: Boolean
@@ -3302,16 +3302,20 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         category: String,
         loanId: String?,
         entryId: String?,
-        cardPaymentId: String? = null
+        cardPaymentId: String? = null,
+        dateIso: String = ""
     ) {
         val t = txns.firstOrNull { it.id == txnId } ?: return
         val isIncome = t.kind == "INCOME"
         val fromAcc = if (isIncome || (t.cardId.isNotEmpty() && cardPaymentId.isNullOrEmpty() && t.category != "Credit Card Bill")) "" else accountId
         val toAcc = if (isIncome && t.cardId.isEmpty()) accountId else ""
+        val newDate = if (dateIso.isNotBlank()) dateIso else t.date
 
         val updated = t.copy(
             note = note.trim(),
             amount = if (amount > 0) amount else t.amount,
+            date = newDate,
+            period = newDate.take(7),
             fromAccountId = fromAcc,
             toAccountId = toAcc,
             category = category,

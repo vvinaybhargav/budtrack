@@ -58,6 +58,9 @@ import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DirectionsCar
+import com.vinay.fintrack.data.dayFirstOf
+import com.vinay.fintrack.data.isoFromDayFirst
+import com.vinay.fintrack.data.todayDayFirst
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.PlayCircle
@@ -590,6 +593,7 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
     val txn = vm.editingTxn ?: return
     var note by remember(txn.id) { mutableStateOf(txn.note) }
     var amountText by remember(txn.id) { mutableStateOf(if (txn.amount > 0) com.vinay.fintrack.data.MathEvaluator.formatResult(txn.amount) else "") }
+    var dateText by remember(txn.id) { mutableStateOf(if (txn.date.isNotEmpty()) dayFirstOf(txn.date) else todayDayFirst()) }
     var selectedAccountId by remember(txn.id) { mutableStateOf(txn.fromAccountId.ifEmpty { txn.toAccountId }) }
     var selectedCategory by remember(txn.id) { mutableStateOf(txn.category) }
     var selectedLoanId by remember(txn.id) { mutableStateOf(txn.loanId) }
@@ -647,6 +651,13 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                 label = "Amount (₹)",
                 isAmount = true,
                 placeholder = "Amount"
+            )
+
+            PfField(
+                value = dateText,
+                onValueChange = { dateText = it },
+                label = "Date (DD/MM/YYYY)",
+                placeholder = "DD/MM/YYYY"
             )
 
             Column {
@@ -785,6 +796,7 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                         val amt = com.vinay.fintrack.data.MathEvaluator.evaluate(amountText)
                             ?: amountText.toDoubleOrNull()
                             ?: txn.amount
+                        val resolvedDateIso = isoFromDayFirst(dateText) ?: txn.date
                         vm.saveTxnDetails(
                             txnId = txn.id,
                             note = note,
@@ -793,7 +805,8 @@ private fun EditTxnSheet(vm: FinTrackViewModel) {
                             category = selectedCategory,
                             loanId = selectedLoanId,
                             entryId = selectedEntryId,
-                            cardPaymentId = selectedCardPaymentId
+                            cardPaymentId = selectedCardPaymentId,
+                            dateIso = resolvedDateIso
                         )
                     },
                     Modifier.weight(1.2f)

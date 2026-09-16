@@ -155,8 +155,10 @@ fun HomeScreen(vm: FinTrackViewModel) {
         return targetCycle >= startCycle && targetCycle <= dueCycle
     }
 
-    // Helper: determine target salary cycle month (1..12) for credit card
-    fun getCardMonthNum(c: Card): Int {
+    val nextCycleYear = if (nextCycleMonth == 1) curYear + 1 else curYear
+    val nextCycleIso = "%04d-%02d".format(nextCycleYear, nextCycleMonth)
+
+    fun getCardCycle(c: Card): String {
         val resetDay = vm.salaryResetDayFor(c.owner)
         val dueIso = when {
             c.nextDue.isNotEmpty() -> c.nextDue
@@ -165,16 +167,25 @@ fun HomeScreen(vm: FinTrackViewModel) {
             else -> ""
         }
         if (dueIso.isNotEmpty() && dueIso.contains("-")) {
-            val cycle = Ledger.cycleOf(dueIso, resetDay)
-            val m = cycle.split("-").getOrNull(1)?.toIntOrNull()
-            if (m != null && m in 1..12) return m
+            return Ledger.cycleOf(dueIso, resetDay)
         }
         val dueTextLower = (c.dueText + " " + c.due).lowercase()
         val monthNames = listOf("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
         monthNames.forEachIndexed { index, name ->
-            if (dueTextLower.contains(name)) return index + 1
+            if (dueTextLower.contains(name)) {
+                val targetMonth = index + 1
+                val targetYear = if (targetMonth < currentCycleMonth) curYear + 1 else curYear
+                return "%04d-%02d".format(targetYear, targetMonth)
+            }
         }
-        return currentCycleMonth
+        return currentCycleIso
+    }
+
+    // Helper: determine target salary cycle month (1..12) for credit card (overdue maps to current cycle)
+    fun getCardMonthNum(c: Card): Int {
+        val cycle = getCardCycle(c)
+        if (cycle <= currentCycleIso) return currentCycleMonth
+        return cycle.split("-").getOrNull(1)?.toIntOrNull() ?: currentCycleMonth
     }
 
     // Helper: is loan active in target calendar/cycle month
@@ -205,18 +216,23 @@ fun HomeScreen(vm: FinTrackViewModel) {
             val iso = normalizeDateToIso(d.dueDate) ?: d.dueDate
             if (iso.contains("-")) {
                 val cycle = Ledger.cycleOf(iso, resetDay)
+                if (cycle <= currentCycleIso) return currentCycleMonth
                 val m = cycle.split("-").getOrNull(1)?.toIntOrNull()
                 if (m != null && m in 1..12) return m
             }
             val textLower = d.dueDate.lowercase()
             val monthNames = listOf("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
             monthNames.forEachIndexed { index, name ->
-                if (textLower.contains(name)) return index + 1
+                if (textLower.contains(name)) {
+                    val m = index + 1
+                    return if (m <= currentCycleMonth) currentCycleMonth else m
+                }
             }
         }
         if (d.createdAt > 0L) {
             val createdIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(d.createdAt))
             val cycle = Ledger.cycleOf(createdIso, resetDay)
+            if (cycle <= currentCycleIso) return currentCycleMonth
             val m = cycle.split("-").getOrNull(1)?.toIntOrNull()
             if (m != null && m in 1..12) return m
         }
@@ -227,11 +243,11 @@ fun HomeScreen(vm: FinTrackViewModel) {
     val nextPaydayIso = resolveNextDueDate(activeResetDay, today())
     val daysUntilPayday = Ledger.daysBetween(today(), nextPaydayIso).coerceAtLeast(0)
 
-    // Credit Cards split by cycle:
-    val currentMonthCards = pendingCards.filter { getCardMonthNum(it) == currentCycleMonth }
+    // Credit Cards split by cycle (any overdue past cycle balance is payable in current cycle!):
+    val currentMonthCards = pendingCards.filter { getCardCycle(it) <= currentCycleIso }
     val currentMonthCardDues = currentMonthCards.sumOf { it.balance }
 
-    val nextMonthCards = pendingCards.filter { getCardMonthNum(it) == nextCycleMonth }
+    val nextMonthCards = pendingCards.filter { getCardCycle(it) == nextCycleIso }
     val nextMonthCardDues = nextMonthCards.sumOf { it.balance }
 
     // Top Card Calculations:
@@ -2716,7 +2732,7 @@ fun CardSettleSheet(vm: FinTrackViewModel) {
                     "Settle",
                     vm::confirmSettleCard,
                     Modifier.weight(1f),
-                    enabled = (vm.settleAmountDraft.toDoubleOrNull() ?: 0.0) > 0.0 && vm.settleAccountNameDraft.isNotBlank()
+                    enabled = ((com.vinay.fintrack.data.MathEvaluator.evaluate(vm.settleAmountDraft) ?: vm.settleAmountDraft.toDoubleOrNull() ?: 0.0) > 0.0) && vm.settleAccountNameDraft.isNotBlank()
                 )
             }
         }

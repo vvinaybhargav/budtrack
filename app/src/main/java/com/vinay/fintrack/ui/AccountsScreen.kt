@@ -1875,6 +1875,12 @@ fun SetupFixDialog(vm: FinTrackViewModel) {
                             onValueChange = { vm.accountDraft = vm.accountDraft.copy(name = it) },
                             placeholder = "e.g. HDFC Salary Account"
                         )
+                        PfSelect(
+                            label = "Belongs To",
+                            value = vm.accountDraft.owner,
+                            options = vm.draftPersonOptions,
+                            onSelect = { vm.accountDraft = vm.accountDraft.copy(owner = it) }
+                        )
                         PfField(
                             label = "Current Balance (₹)",
                             value = vm.accountDraft.balanceText,
@@ -1894,6 +1900,12 @@ fun SetupFixDialog(vm: FinTrackViewModel) {
                             label = "Card Name",
                             value = vm.cardDraft.name,
                             onValueChange = { vm.cardDraft = vm.cardDraft.copy(name = it) }
+                        )
+                        PfSelect(
+                            label = "Belongs To",
+                            value = vm.cardDraft.owner,
+                            options = vm.draftPersonOptions,
+                            onSelect = { vm.cardDraft = vm.cardDraft.copy(owner = it) }
                         )
                         PfField(
                             label = "Last 4 Digits (for SMS auto-sync)",
