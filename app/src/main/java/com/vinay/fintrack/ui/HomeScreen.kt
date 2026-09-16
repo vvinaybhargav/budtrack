@@ -196,6 +196,10 @@ fun HomeScreen(vm: FinTrackViewModel) {
         }
         return nextCycleMonth
     }
+    val currentMonthName = Ledger.fullMonthName("2026-%02d-01".format(currentCycleMonth))
+    val nextMonthName = Ledger.fullMonthName("2026-%02d-01".format(nextCycleMonth))
+    val nextPaydayIso = resolveNextDueDate(activeResetDay, today())
+    val daysUntilPayday = Ledger.daysBetween(today(), nextPaydayIso).coerceAtLeast(0)
 
     // Top Card Calculations:
     // 1. Current Month Dues: card balances + current unconfirmed recurring bills + current unconfirmed loan EMIs + current active Set a Side shares
@@ -214,14 +218,23 @@ fun HomeScreen(vm: FinTrackViewModel) {
         vm.upcomingSalaryFor(vm.activeProfile.orEmpty(), 1)
     }
 
-    // 4. Next Month Lent & Borrow
+    // 4. Lent & Borrow
+    val currentMonthLent = pendingDebts.filter { it.isLent && getDebtMonthNum(it) == currentCycleMonth }.sumOf { it.remainingAmount }
+    val currentMonthBorrowed = pendingDebts.filter { it.isBorrowed && getDebtMonthNum(it) == currentCycleMonth }.sumOf { it.remainingAmount }
+    val currentMonthNetDebt = currentMonthLent - currentMonthBorrowed
+
     val nextMonthLent = pendingDebts.filter { it.isLent && (getDebtMonthNum(it) == nextCycleMonth || it.dueDate.isBlank()) }.sumOf { it.remainingAmount }
     val nextMonthBorrowed = pendingDebts.filter { it.isBorrowed && (getDebtMonthNum(it) == nextCycleMonth || it.dueDate.isBlank()) }.sumOf { it.remainingAmount }
     val nextMonthNetDebt = nextMonthLent - nextMonthBorrowed
 
-    // Net Balance = Bank Balances - Current Month Dues - Next Month Expenses + Next Month Salary + Next Month Net Debt
-    val netBalance = totalBankBalances - currentMonthDues - nextMonthExpenses + nextMonthSalary + nextMonthNetDebt
-    val totalHeroExpenses = currentMonthDues + nextMonthExpenses
+    // 1. Current Cycle Safe to Spend (Liquid bank balance after paying current dues)
+    val currentCycleSurplus = totalBankBalances - currentMonthDues + currentMonthNetDebt
+
+    // 2. Next Cycle Planned Surplus (Next salary minus next month expenses)
+    val nextCycleSurplus = nextMonthSalary - nextMonthExpenses + nextMonthNetDebt
+
+    // 3. Projected End Balance (Cash after current dues + next salary + next expenses)
+    val projectedEndBalance = totalBankBalances - currentMonthDues + nextCycleSurplus
 
     // Filter states (all defaulting to NEXT FINANCIAL CYCLE MONTH)
     var setAsideFilter by remember { mutableStateOf(nextCycleMonthStr) }
@@ -324,23 +337,37 @@ fun HomeScreen(vm: FinTrackViewModel) {
         // Alert if SMS transactions need account link
         item { UnmatchedAccountAlert(vm) }
 
-        // 2. HERO CARD: Net Balance (Bank Balances - Current Month Dues - Next Month Expenses + Next Month Salary + Next Month Net Debt)
+        // 2. HERO CARD: Month Switcher (Current Cycle vs Next Cycle)
         item {
             AfterAllExpensesCard(
-                netBalance = netBalance,
+                currentMonthName = currentMonthName,
+                nextMonthName = nextMonthName,
+                activeResetDay = activeResetDay,
+                daysUntilPayday = daysUntilPayday,
                 bankBalances = totalBankBalances,
-                otherExpenses = totalHeroExpenses,
-                upcomingSalary = nextMonthSalary,
-                lentToReceive = nextMonthNetDebt,
+                currentMonthDues = currentMonthDues,
+                currentMonthNetDebt = currentMonthNetDebt,
+                currentCycleSurplus = currentCycleSurplus,
+                nextMonthSalary = nextMonthSalary,
+                nextMonthExpenses = nextMonthExpenses,
+                nextMonthNetDebt = nextMonthNetDebt,
+                nextCycleSurplus = nextCycleSurplus,
+                projectedEndBalance = projectedEndBalance,
                 balanceHidden = vm.balanceHidden,
                 onToggleVisibility = vm::toggleBalanceVisible,
                 onBankBalancesClick = {
                     expandedBanks = !expandedBanks
                 },
-                onExpensesClick = {
+                onCurrentDuesClick = {
                     expandedCards = true
                     expandedLoans = true
                     expandedRecurring = true
+                    expandedSetAsides = true
+                },
+                onNextExpensesClick = {
+                    expandedLoans = true
+                    expandedRecurring = true
+                    expandedSetAsides = true
                 }
             )
         }
@@ -1125,7 +1152,7 @@ fun HomeScreen(vm: FinTrackViewModel) {
 
         // 5. UPCOMING MONTHS 2 & 3 FORECAST (Cash Flow Projection)
         item {
-            UpcomingMonths2And3Section(vm, netBalance)
+            UpcomingMonths2And3Section(vm, projectedEndBalance)
         }
     }
 
@@ -1525,16 +1552,28 @@ private fun HomeCompactDebtRow(
 
 @Composable
 private fun AfterAllExpensesCard(
-    netBalance: Double,
+    currentMonthName: String,
+    nextMonthName: String,
+    activeResetDay: Int,
+    daysUntilPayday: Int,
     bankBalances: Double,
-    otherExpenses: Double,
-    upcomingSalary: Double = 0.0,
-    lentToReceive: Double = 0.0,
+    currentMonthDues: Double,
+    currentMonthNetDebt: Double,
+    currentCycleSurplus: Double,
+    nextMonthSalary: Double,
+    nextMonthExpenses: Double,
+    nextMonthNetDebt: Double,
+    nextCycleSurplus: Double,
+    projectedEndBalance: Double,
     balanceHidden: Boolean,
     onToggleVisibility: () -> Unit,
     onBankBalancesClick: (() -> Unit)? = null,
-    onExpensesClick: (() -> Unit)? = null
+    onCurrentDuesClick: (() -> Unit)? = null,
+    onNextExpensesClick: (() -> Unit)? = null
 ) {
+    var cycleMode by remember { mutableStateOf("CURRENT") }
+    val isCurrent = cycleMode == "CURRENT"
+
     Column(
         Modifier
             .fillMaxWidth()
@@ -1546,17 +1585,70 @@ private fun AfterAllExpensesCard(
             .border(1.dp, if (Pf.isDark) Color(0xFF262833) else Pf.Hairline, Radius.Lg)
             .padding(horizontal = Space.s4, vertical = Space.s4)
     ) {
+        // Month Cycle Switcher Toggle (Current Cycle vs Next Cycle)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(Color.White.copy(alpha = 0.08f), Radius.Pill)
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            val currentSelected = isCurrent
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(Radius.Pill)
+                    .background(if (currentSelected) Color(0xFF3B82F6) else Color.Transparent)
+                    .clickable { cycleMode = "CURRENT" }
+                    .padding(vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "${currentMonthName.take(3)} Cycle (Current)",
+                    color = if (currentSelected) Color.White else Color(0xFF9CA3AF),
+                    fontSize = 11.5.sp,
+                    fontWeight = if (currentSelected) FontWeight.Bold else FontWeight.Medium
+                )
+            }
+
+            val nextSelected = !isCurrent
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(Radius.Pill)
+                    .background(if (nextSelected) Color(0xFF10B981) else Color.Transparent)
+                    .clickable { cycleMode = "NEXT" }
+                    .padding(vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "${nextMonthName.take(3)} Cycle (Next)",
+                    color = if (nextSelected) Color.White else Color(0xFF9CA3AF),
+                    fontSize = 11.5.sp,
+                    fontWeight = if (nextSelected) FontWeight.Bold else FontWeight.Medium
+                )
+            }
+        }
+
+        Spacer(Modifier.height(Space.s3))
+
+        // Header Title + Visibility Toggle
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val headerTitle = if (isCurrent) {
+                "SAFE TO SPEND (UNTIL ${ordinal(activeResetDay).uppercase()})"
+            } else {
+                "PLANNED SURPLUS (${nextMonthName.take(3).uppercase()} SALARY)"
+            }
             Text(
-                "ESTIMATED NET (AFTER EXPENSES & SALARY)",
+                headerTitle,
                 color = Color(0xFF9CA3AF),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp
+                letterSpacing = 1.1.sp
             )
             IconButton(onClick = onToggleVisibility, modifier = Modifier.size(28.dp)) {
                 Icon(
@@ -1568,14 +1660,35 @@ private fun AfterAllExpensesCard(
             }
         }
 
+        // Hero Big Number
+        val mainAmount = if (isCurrent) currentCycleSurplus else nextCycleSurplus
+        val amountColor = if (isCurrent) {
+            if (currentCycleSurplus >= 0) Color.White else Color(0xFFF87171)
+        } else {
+            if (nextCycleSurplus >= 0) Color(0xFF10B981) else Color(0xFFF87171)
+        }
+
         Text(
-            if (balanceHidden) "••••••" else inr(netBalance),
-            Modifier.padding(top = 4.dp, bottom = 10.dp),
-            color = Color.White,
+            if (balanceHidden) "••••••" else inr(mainAmount),
+            Modifier.padding(top = 2.dp, bottom = 2.dp),
+            color = amountColor,
             fontSize = 32.sp,
             fontWeight = FontWeight.ExtraBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
+        )
+
+        // Subtitle hint
+        val subtitleHint = if (isCurrent) {
+            "Bank balance minus all dues payable before next payday"
+        } else {
+            "Expected leftover from next salary after next month obligations"
+        }
+        Text(
+            subtitleHint,
+            Modifier.padding(bottom = 10.dp),
+            color = Color(0xFF9CA3AF),
+            fontSize = 11.5.sp
         )
 
         // Clean 2x2 Data Grid (Category icons, dedicated width, never truncates!)
@@ -1586,149 +1699,299 @@ private fun AfterAllExpensesCard(
                 .padding(horizontal = Space.s3, vertical = Space.s3),
             verticalArrangement = Arrangement.spacedBy(Space.s2)
         ) {
-            // Row 1: Bank Balances & Current Expenses
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Space.s3)
-            ) {
-                // Bank Balances (Left)
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .clip(Radius.Sm)
-                        .then(if (onBankBalancesClick != null) Modifier.clickable { onBankBalancesClick() } else Modifier)
+            if (isCurrent) {
+                // CURRENT CYCLE GRID
+                // Row 1: Bank Balances & Current Dues
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s3)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    // Bank Balances (Left)
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clip(Radius.Sm)
+                            .then(if (onBankBalancesClick != null) Modifier.clickable { onBankBalancesClick() } else Modifier)
                     ) {
-                        Text("🏦", fontSize = 11.sp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text("🏦", fontSize = 11.sp)
+                            Text(
+                                "Bank Balances ↗",
+                                color = Color(0xFF9CA3AF),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
                         Text(
-                            "Bank Balances ↗",
-                            color = Color(0xFF9CA3AF),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
+                            if (balanceHidden) "••••••" else inr(bankBalances),
+                            color = Color.White,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        if (balanceHidden) "••••••" else inr(bankBalances),
-                        color = Color.White,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+
+                    // Current Dues (Right)
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clip(Radius.Sm)
+                            .then(if (onCurrentDuesClick != null) Modifier.clickable { onCurrentDuesClick() } else Modifier)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text("💳", fontSize = 11.sp)
+                            Text(
+                                "${currentMonthName.take(3)} Dues ↗",
+                                color = Color(0xFF9CA3AF),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            if (balanceHidden) "••••••" else "(${inr(currentMonthDues)})",
+                            color = Color(0xFFF87171),
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
-                // Expenses (Right)
-                Column(
+                Box(
                     Modifier
-                        .weight(1f)
-                        .clip(Radius.Sm)
-                        .then(if (onExpensesClick != null) Modifier.clickable { onExpensesClick() } else Modifier)
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(Color.White.copy(alpha = 0.08f))
+                )
+
+                // Row 2: Payday Countdown & Current Lent/Borrow
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s3)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Text("💳", fontSize = 11.sp)
+                    // Payday Countdown (Left)
+                    Column(Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text("⏳", fontSize = 11.sp)
+                            Text(
+                                "Payday (${ordinal(activeResetDay)})",
+                                color = Color(0xFF9CA3AF),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
                         Text(
-                            "Dues & Next Exp ↗",
-                            color = Color(0xFF9CA3AF),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
+                            "$daysUntilPayday days left",
+                            color = Color(0xFF60A5FA),
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        if (balanceHidden) "••••••" else "(${inr(otherExpenses)})",
-                        color = Color(0xFFF87171),
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+
+                    // Lent / Borrow (Right)
+                    Column(Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text("🤝", fontSize = 11.sp)
+                            Text(
+                                "${currentMonthName.take(3)} Lent/Borrow",
+                                color = if (currentMonthNetDebt >= 0) Pf.Amber else Color(0xFFF87171),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        val debtText = when {
+                            currentMonthNetDebt > 0 -> "+${inr(currentMonthNetDebt)}"
+                            currentMonthNetDebt < 0 -> "-${inr(-currentMonthNetDebt)}"
+                            else -> "₹0.00"
+                        }
+                        Text(
+                            if (balanceHidden) "••••••" else debtText,
+                            color = when {
+                                currentMonthNetDebt > 0 -> Pf.Amber
+                                currentMonthNetDebt < 0 -> Color(0xFFF87171)
+                                else -> Color(0xFF9CA3AF)
+                            },
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
-            }
-
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(Color.White.copy(alpha = 0.08f))
-            )
-
-            // Row 2: Expected Salary & Lent Return
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Space.s3)
-            ) {
-                // Expected Salary (Left)
-                Column(Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Text("💰", fontSize = 11.sp)
+            } else {
+                // NEXT CYCLE GRID
+                // Row 1: Next Salary & Next Expenses
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s3)
+                ) {
+                    // Next Salary (Left)
+                    Column(Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text("💰", fontSize = 11.sp)
+                            Text(
+                                "${nextMonthName.take(3)} Salary",
+                                color = Color(0xFF10B981),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
                         Text(
-                            "Next Salary",
-                            color = Color(0xFF10B981),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
+                            if (balanceHidden) "••••••" else if (nextMonthSalary > 0) "+${inr(nextMonthSalary)}" else "Not set",
+                            color = if (nextMonthSalary > 0) Color(0xFF10B981) else Color(0xFF9CA3AF),
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        if (balanceHidden) "••••••" else if (upcomingSalary > 0) "+${inr(upcomingSalary)}" else "Not set",
-                        color = if (upcomingSalary > 0) Color(0xFF10B981) else Color(0xFF9CA3AF),
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+
+                    // Next Expenses (Right)
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clip(Radius.Sm)
+                            .then(if (onNextExpensesClick != null) Modifier.clickable { onNextExpensesClick() } else Modifier)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text("📅", fontSize = 11.sp)
+                            Text(
+                                "${nextMonthName.take(3)} Expenses ↗",
+                                color = Color(0xFF9CA3AF),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            if (balanceHidden) "••••••" else "(${inr(nextMonthExpenses)})",
+                            color = Color(0xFFF87171),
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
-                // Lent to Receive / Borrow Repayment (Right)
-                Column(Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Text("🤝", fontSize = 11.sp)
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(Color.White.copy(alpha = 0.08f))
+                )
+
+                // Row 2: Next Lent/Borrow & Projected End Bank
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s3)
+                ) {
+                    // Next Lent / Borrow (Left)
+                    Column(Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text("🤝", fontSize = 11.sp)
+                            Text(
+                                "${nextMonthName.take(3)} Lent/Borrow",
+                                color = if (nextMonthNetDebt >= 0) Pf.Amber else Color(0xFFF87171),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        val lentText = when {
+                            nextMonthNetDebt > 0 -> "+${inr(nextMonthNetDebt)}"
+                            nextMonthNetDebt < 0 -> "-${inr(-nextMonthNetDebt)}"
+                            else -> "₹0.00"
+                        }
                         Text(
-                            "Next Lent/Borrow",
-                            color = if (lentToReceive >= 0) Pf.Amber else Color(0xFFF87171),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
+                            if (balanceHidden) "••••••" else lentText,
+                            color = when {
+                                nextMonthNetDebt > 0 -> Pf.Amber
+                                nextMonthNetDebt < 0 -> Color(0xFFF87171)
+                                else -> Color(0xFF9CA3AF)
+                            },
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Spacer(Modifier.height(2.dp))
-                    val lentText = when {
-                        lentToReceive > 0 -> "+${inr(lentToReceive)}"
-                        lentToReceive < 0 -> "-${inr(-lentToReceive)}"
-                        else -> "₹0.00"
+
+                    // Projected End Bank Balance (Right)
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clip(Radius.Sm)
+                            .then(if (onBankBalancesClick != null) Modifier.clickable { onBankBalancesClick() } else Modifier)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text("🏦", fontSize = 11.sp)
+                            Text(
+                                "Projected Bank",
+                                color = Color(0xFF9CA3AF),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            if (balanceHidden) "••••••" else inr(projectedEndBalance),
+                            color = Color.White,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
-                    Text(
-                        if (balanceHidden) "••••••" else lentText,
-                        color = when {
-                            lentToReceive > 0 -> Pf.Amber
-                            lentToReceive < 0 -> Color(0xFFF87171)
-                            else -> Color(0xFF9CA3AF)
-                        },
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
                 }
             }
         }
