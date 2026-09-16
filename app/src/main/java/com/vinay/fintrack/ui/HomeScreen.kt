@@ -648,7 +648,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                                     fraction = fraction,
                                     pct = pct,
                                     accentColor = Color(0xFF14B8A6),
-                                    onClick = { vm.requestConfirm(e) }
+                                    onClick = { vm.requestConfirm(e) },
+                                    onEditClick = { vm.openEditEntry(e) }
                                 )
                             } else {
                                 val rawStart = if (e.startDate.isNotEmpty()) e.startDate else vm.firstPaydayOf(e)
@@ -666,7 +667,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                                     amountColor = Pf.Muted,
                                     icon = Icons.Default.Bookmark,
                                     iconTint = Color(0xFF14B8A6),
-                                    onClick = { vm.openEditEntry(e) }
+                                    onClick = { vm.openEditEntry(e) },
+                                    onEditClick = { vm.openEditEntry(e) }
                                 )
                             }
                             displayedCount++
@@ -765,7 +767,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             typeColor = tagColor,
                             subtitle = dueSubtitle,
                             amount = inr(d.remainingAmount),
-                            onClick = { vm.openDebtAction(d) }
+                            onClick = { vm.openDebtAction(d) },
+                            onEditClick = { vm.openDebtAction(d) }
                         )
                     }
 
@@ -954,7 +957,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             amountColor = Pf.Text,
                             icon = Icons.Default.DateRange,
                             iconTint = Color(0xFF8B5CF6),
-                            onClick = { vm.requestConfirm(e) }
+                            onClick = { vm.requestConfirm(e) },
+                            onEditClick = { vm.openEditEntry(e) }
                         )
                     }
 
@@ -1037,7 +1041,8 @@ fun HomeScreen(vm: FinTrackViewModel) {
                             amountColor = Pf.Text,
                             icon = Icons.Default.AccountBalance,
                             iconTint = Color(0xFF3B82F6),
-                            onClick = { vm.startConfirmLoan(l) }
+                            onClick = { vm.startConfirmLoan(l) },
+                            onEditClick = { vm.editLoanById(l.id) }
                         )
                     }
 
@@ -1145,7 +1150,18 @@ fun HomeScreen(vm: FinTrackViewModel) {
                                         Text(l.name, color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                                         Text("Cleared Loan · EMI ${inr(l.monthlyEmi)}", color = Pf.Muted, fontSize = 11.5.sp)
                                     }
-                                    Tag("Cleared", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Tag("Cleared", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+                                        IconButton(
+                                            onClick = { vm.editLoanById(l.id) },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(Icons.Default.Edit, "Edit Loan", tint = Pf.Muted, modifier = Modifier.size(14.dp))
+                                        }
+                                    }
                                 }
                             }
 
@@ -1167,6 +1183,12 @@ fun HomeScreen(vm: FinTrackViewModel) {
                                     ) {
                                         Tag("Closed", Pf.Muted.copy(alpha = 0.15f), Pf.Muted)
                                         SecondaryButton("Reopen", { vm.closeEntry(e.id, false) })
+                                        IconButton(
+                                            onClick = { vm.openEditEntry(e) },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(Icons.Default.Edit, "Edit Entry", tint = Pf.Muted, modifier = Modifier.size(14.dp))
+                                        }
                                     }
                                 }
                             }
@@ -1182,7 +1204,18 @@ fun HomeScreen(vm: FinTrackViewModel) {
                                         Text(d.peerName, color = Pf.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                                         Text("Settled · ${if (d.isLent) "Lent" else "Borrowed"} ${inr(d.amount)}", color = Pf.Muted, fontSize = 11.5.sp)
                                     }
-                                    Tag("Settled", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Tag("Settled", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+                                        IconButton(
+                                            onClick = { vm.openDebtAction(d) },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(Icons.Default.Edit, "View/Edit Debt", tint = Pf.Muted, modifier = Modifier.size(14.dp))
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1377,12 +1410,12 @@ private fun HomeCompactRow(
     amountColor: Color,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     iconTint: Color = Pf.Accent400,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    onEditClick: (() -> Unit)? = null
 ) {
     Column(
         Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(vertical = 8.dp)
     ) {
         Row(
@@ -1391,7 +1424,10 @@ private fun HomeCompactRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                Modifier.weight(1f).padding(end = Space.s2),
+                Modifier
+                    .weight(1f)
+                    .padding(end = Space.s2)
+                    .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -1419,12 +1455,25 @@ private fun HomeCompactRow(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(
-                amount,
-                color = amountColor,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    amount,
+                    color = amountColor,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                if (onEditClick != null) {
+                    IconButton(
+                        onClick = onEditClick,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(Icons.Default.Edit, "Edit", tint = Pf.Muted, modifier = Modifier.size(14.dp))
+                    }
+                }
+            }
         }
         if (subtitle.isNotBlank()) {
             Spacer(Modifier.height(3.dp))
@@ -1449,12 +1498,12 @@ private fun HomeCompactSetAsideRow(
     fraction: Float,
     pct: Int,
     accentColor: Color = Color(0xFF14B8A6),
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    onEditClick: (() -> Unit)? = null
 ) {
     Column(
         Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(vertical = 8.dp)
     ) {
         Row(
@@ -1463,7 +1512,10 @@ private fun HomeCompactSetAsideRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                Modifier.weight(1f).padding(end = Space.s2),
+                Modifier
+                    .weight(1f)
+                    .padding(end = Space.s2)
+                    .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -1489,18 +1541,31 @@ private fun HomeCompactSetAsideRow(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    amount,
-                    color = Pf.Text,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "this mo",
-                    color = Pf.Muted,
-                    fontSize = 10.sp
-                )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        amount,
+                        color = Pf.Text,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "this mo",
+                        color = Pf.Muted,
+                        fontSize = 10.sp
+                    )
+                }
+                if (onEditClick != null) {
+                    IconButton(
+                        onClick = onEditClick,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(Icons.Default.Edit, "Edit", tint = Pf.Muted, modifier = Modifier.size(14.dp))
+                    }
+                }
             }
         }
         Spacer(Modifier.height(3.dp))
@@ -1530,12 +1595,12 @@ private fun HomeCompactDebtRow(
     typeColor: Color,
     subtitle: String,
     amount: String,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    onEditClick: (() -> Unit)? = null
 ) {
     Column(
         Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(vertical = 8.dp)
     ) {
         Row(
@@ -1544,7 +1609,10 @@ private fun HomeCompactDebtRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                Modifier.weight(1f).padding(end = Space.s2),
+                Modifier
+                    .weight(1f)
+                    .padding(end = Space.s2)
+                    .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -1575,12 +1643,25 @@ private fun HomeCompactDebtRow(
                     typeColor
                 )
             }
-            Text(
-                amount,
-                color = typeColor,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    amount,
+                    color = typeColor,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                if (onEditClick != null) {
+                    IconButton(
+                        onClick = onEditClick,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(Icons.Default.Edit, "Edit Debt", tint = Pf.Muted, modifier = Modifier.size(14.dp))
+                    }
+                }
+            }
         }
         if (subtitle.isNotBlank()) {
             Spacer(Modifier.height(3.dp))

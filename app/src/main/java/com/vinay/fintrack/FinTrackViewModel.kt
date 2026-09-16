@@ -2929,20 +2929,24 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             "Loan" -> loans.firstOrNull { it.id == item.entityId }?.let { startEditLoan(it) }
             else -> entries.firstOrNull { it.id == item.entityId }?.let { e ->
                 val startFormatted = if (e.startDate.isNotEmpty()) dayFirstOf(e.startDate) else todayDayFirst()
-                val dueFormatted = if (e.dueDate.isNotEmpty()) dayFirstOf(e.dueDate) else ""
+                val dueFormatted = if (e.dueDate.isNotEmpty()) {
+                    if (e.dueDate.length == 10 && e.dueDate[4] == '-') dayFirstOf(e.dueDate) else e.dueDate
+                } else ""
                 val startMonthKey = if (e.startDate.isNotEmpty()) e.startDate.take(7) else today().take(7)
                 draft = Draft(
                     person = e.person,
                     type = e.type,
                     category = e.category,
-                    amountText = if (e.amount > 0) e.amount.toLong().toString() else "",
+                    amountText = com.vinay.fintrack.data.MathEvaluator.formatResult(e.amount),
                     frequency = e.frequency,
                     note = e.note,
                     accountId = e.accountId,
                     periodMonths = e.everyMonths,
                     startMonth = startMonthKey,
                     startDateText = startFormatted,
-                    dueText = dueFormatted
+                    dueText = dueFormatted,
+                    isLent = e.isLent,
+                    formula = e.formula
                 )
             }
         }
@@ -2956,14 +2960,17 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveSetupEntry(id: String) {
-        val amt = draft.amountText.toDoubleOrNull() ?: 0.0
+        val amt = com.vinay.fintrack.data.MathEvaluator.evaluate(draft.amountText) ?: draft.amountText.toDoubleOrNull() ?: 0.0
+        val resolvedDue = draftDueIso
         update { s ->
             s.copy(entries = s.entries.map {
                 if (it.id == id) it.copy(
+                    note = draft.note.ifEmpty { it.note },
+                    person = draft.person.ifEmpty { it.person },
                     category = draft.category.ifEmpty { it.category },
                     amount = if (amt > 0) amt else it.amount,
-                    dueDate = draftDueIso.ifEmpty { it.dueDate },
-                    accountId = draft.accountId.ifEmpty { it.accountId }
+                    dueDate = if (resolvedDue.isNotEmpty()) resolvedDue else it.dueDate,
+                    accountId = draft.accountId
                 ) else it
             })
         }
@@ -2983,7 +2990,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun editEntryById(id: String) {
-        entries.firstOrNull { it.id == id }?.let { openSetupFix(MissingConfigItem("Recurring", it.id, it.category, emptyList())) }
+        entries.firstOrNull { it.id == id }?.let { openEditEntry(it) }
     }
 
     fun getSixMonthOutlook(): SixMonthOutlook {

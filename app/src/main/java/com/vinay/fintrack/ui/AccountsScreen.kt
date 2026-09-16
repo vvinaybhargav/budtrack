@@ -1935,6 +1935,12 @@ fun SetupFixDialog(vm: FinTrackViewModel) {
                             value = vm.loanDraft.name,
                             onValueChange = { vm.loanDraft = vm.loanDraft.copy(name = it) }
                         )
+                        PfSelect(
+                            label = "Belongs To",
+                            value = vm.loanDraft.person,
+                            options = vm.draftPersonOptions,
+                            onSelect = { vm.loanDraft = vm.loanDraft.copy(person = it) }
+                        )
                         PfField(
                             label = "Monthly EMI Amount (₹)",
                             value = vm.loanDraft.emiText,
@@ -1959,24 +1965,38 @@ fun SetupFixDialog(vm: FinTrackViewModel) {
                                 )
                             }
                         }
-                        Column {
-                            Muted("Payment Account", size = 12)
-                            Spacer(Modifier.height(4.dp))
-                            PfSelect(
-                                value = vm.accounts.firstOrNull { it.id == vm.loanDraft.accountId }?.name.orEmpty().ifEmpty { "Select Account" },
-                                options = vm.accounts.map { it.name },
-                                onSelect = { selName ->
-                                    val selAcc = vm.accounts.firstOrNull { it.name == selName }
-                                    vm.loanDraft = vm.loanDraft.copy(accountId = selAcc?.id.orEmpty(), cardId = "")
-                                }
-                            )
-                        }
+                        PfSelect(
+                            label = "Paid From",
+                            value = vm.editLoanSourceName,
+                            options = vm.emiSourceOptions,
+                            onSelect = vm::setEditLoanSource
+                        )
+                        PfField(
+                            label = "Payment Due Day of Month (1-31)",
+                            value = vm.loanDraft.dueText,
+                            onValueChange = { vm.loanDraft = vm.loanDraft.copy(dueText = it) },
+                            placeholder = "e.g. 5",
+                            numeric = true
+                        )
                     }
                     else -> {
                         PfField(
-                            label = "Category / Note",
+                            label = "Description / Note",
+                            value = vm.draft.note,
+                            onValueChange = { vm.draft = vm.draft.copy(note = it) },
+                            placeholder = "e.g. Netflix, Rent, Electricity"
+                        )
+                        PfField(
+                            label = "Category",
                             value = vm.draft.category,
-                            onValueChange = { vm.draft = vm.draft.copy(category = it) }
+                            onValueChange = { vm.draft = vm.draft.copy(category = it) },
+                            placeholder = "e.g. Subscriptions, Utilities"
+                        )
+                        PfSelect(
+                            label = "Person",
+                            value = vm.draft.person,
+                            options = vm.draftPersonOptions,
+                            onSelect = { vm.draft = vm.draft.copy(person = it) }
                         )
                         PfField(
                             label = "Amount (₹)",
@@ -1985,10 +2005,10 @@ fun SetupFixDialog(vm: FinTrackViewModel) {
                             numeric = true
                         )
                         PfField(
-                            label = "Target Date (DD/MM/YYYY)",
+                            label = "Due Day (1-31) or Date (DD/MM/YYYY)",
                             value = vm.draft.dueText,
                             onValueChange = { vm.draft = vm.draft.copy(dueText = it) },
-                            placeholder = "e.g. 15/10/2026"
+                            placeholder = "e.g. 15 or 15/10/2026"
                         )
                         Column {
                             Muted("Payment Account", size = 12)
@@ -2002,6 +2022,15 @@ fun SetupFixDialog(vm: FinTrackViewModel) {
                                 }
                             )
                         }
+                        SecondaryButton(
+                            text = "Open in Full Screen Editor ↗",
+                            onClick = {
+                                val ent = vm.entries.firstOrNull { it.id == item.entityId }
+                                vm.closeSetupFix()
+                                if (ent != null) vm.openEditEntry(ent)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
 

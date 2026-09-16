@@ -68,7 +68,7 @@ data class ParsedSms(
 private val AMOUNT_PREFIX = Regex("""(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
 private val AMOUNT_SUFFIX = Regex("""\b([\d,]+(?:\.\d{1,2})?)\s*(?:rs\.?|inr|₹|rupees?|/-)""", RegexOption.IGNORE_CASE)
 private val AMOUNT_ACTION = Regex(
-    """\b(?:debited(?:\s+(?:by|for|with|of))?|credited(?:\s+(?:by|for|with|of))?|paid|sent|received|spent|transferred(?:\s+(?:by|for|to))?|payment(?:\s+(?:of|to|for))?)\s*(?:of\s+)?(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)\b""",
+    """\b(?:debited(?:\s+(?:by|for|with|of))?|credited(?:\s+(?:by|for|with|of))?|paid|sent|received|spent|transferred(?:\s+(?:by|for|to))?|payment(?:\s+(?:of|to|for))?|dr\.?|cr\.?)\s*(?:of\s+)?(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)\b""",
     RegexOption.IGNORE_CASE
 )
 
