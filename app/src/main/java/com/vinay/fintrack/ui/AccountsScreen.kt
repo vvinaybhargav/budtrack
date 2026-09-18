@@ -1277,9 +1277,12 @@ private fun ManageLentBorrowSection(vm: FinTrackViewModel) {
                                             append(if (isLent) "To receive" else "To pay back")
                                         }
                                     }
-                                    Muted(subText, size = 12)
-
-                                    GhostButton(if (isLent) "Received" else "Repay", { vm.openDebtAction(d) })
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        IconButton(onClick = { vm.openEditDebt(d) }, modifier = Modifier.size(28.dp)) {
+                                            Icon(Icons.Default.Edit, contentDescription = "Edit Debt", tint = Pf.Accent400, modifier = Modifier.size(15.dp))
+                                        }
+                                        GhostButton(if (isLent) "Received" else "Repay", { vm.openDebtAction(d) })
+                                    }
                                 }
                             }
                         }
@@ -2411,11 +2414,14 @@ fun DebtActionSheet(vm: FinTrackViewModel) {
                         }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { isEditing = !isEditing }, modifier = Modifier.size(28.dp)) {
+                        IconButton(onClick = {
+                            vm.dismissDebtAction()
+                            vm.openEditDebt(debt)
+                        }, modifier = Modifier.size(28.dp)) {
                             Icon(
-                                if (isEditing) Icons.Default.Check else Icons.Default.Edit,
-                                contentDescription = if (isEditing) "Done" else "Edit Details",
-                                tint = if (isEditing) Pf.Accent else Pf.Muted,
+                                Icons.Default.Edit,
+                                contentDescription = "Edit Details",
+                                tint = Pf.Muted,
                                 modifier = Modifier.size(18.dp)
                             )
                         }

@@ -54,6 +54,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import com.vinay.fintrack.FinTrackViewModel
+import com.vinay.fintrack.Tab
 import com.vinay.fintrack.data.INVEST_PICKABLE
 import com.vinay.fintrack.data.inr
 import com.vinay.fintrack.data.today
@@ -94,30 +95,52 @@ private fun periodFromLabel(label: String) =
 
 @Composable
 fun AddScreen(vm: FinTrackViewModel) {
-    val isEditing = vm.editingEntryId != null
-    var showDeleteEntryConfirm by remember(vm.editingEntryId) { mutableStateOf(false) }
+    val isEditing = vm.editingEntryId != null || vm.editingLoanId != null || vm.editingAccountId != null || vm.editingCardId != null || vm.editingDebtId != null
+    var showDeleteConfirm by remember(isEditing) { mutableStateOf(false) }
 
-    if (showDeleteEntryConfirm) {
-        Dialog(onDismissRequest = { showDeleteEntryConfirm = false }) {
+    val editTitle = when {
+        vm.editingEntryId != null -> "EDIT ENTRY"
+        vm.editingLoanId != null -> "EDIT LOAN / EMI"
+        vm.editingAccountId != null -> "EDIT BANK ACCOUNT"
+        vm.editingCardId != null -> "EDIT CREDIT CARD"
+        vm.editingDebtId != null -> "EDIT DEBT"
+        else -> "EDIT"
+    }
+
+    val deleteDescription = when {
+        vm.editingLoanId != null -> "This will permanently remove this loan and its EMI schedule."
+        vm.editingAccountId != null -> "This will permanently remove this bank account."
+        vm.editingCardId != null -> "This will permanently remove this credit card."
+        vm.editingDebtId != null -> "This will permanently remove this debt record."
+        else -> "This will permanently remove this commitment/entry."
+    }
+
+    if (showDeleteConfirm) {
+        Dialog(onDismissRequest = { showDeleteConfirm = false }) {
             PfCard(
                 modifier = Modifier.fillMaxWidth().padding(Space.s3),
                 padding = PaddingValues(Space.s4),
                 shape = Radius.Lg
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-                    Text("Delete Entry?", color = Pf.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Text("This will permanently remove this commitment/entry.", color = Pf.Muted, fontSize = 13.sp)
+                    Text("Delete Item?", color = Pf.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(deleteDescription, color = Pf.Muted, fontSize = 13.sp)
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(Space.s2)
                     ) {
-                        SecondaryButton("Cancel", { showDeleteEntryConfirm = false }, modifier = Modifier.weight(1f))
+                        SecondaryButton("Cancel", { showDeleteConfirm = false }, modifier = Modifier.weight(1f))
                         PrimaryButton("Delete", {
-                            vm.editingEntryId?.let { id ->
-                                vm.deleteEntry(id)
-                                vm.cancelEdit()
+                            when {
+                                vm.editingLoanId != null -> vm.editingLoanId?.let { vm.deleteLoan(it) }
+                                vm.editingAccountId != null -> vm.editingAccountId?.let { vm.deleteAccount(it) }
+                                vm.editingCardId != null -> vm.editingCardId?.let { vm.deleteCard(it) }
+                                vm.editingDebtId != null -> vm.deleteEditedDebt()
+                                vm.editingEntryId != null -> vm.editingEntryId?.let { vm.deleteEntry(it) }
                             }
-                            showDeleteEntryConfirm = false
+                            vm.cancelAllEdits()
+                            vm.tab = Tab.HOME
+                            showDeleteConfirm = false
                         }, modifier = Modifier.weight(1f))
                     }
                 }
@@ -137,10 +160,13 @@ fun AddScreen(vm: FinTrackViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("EDIT ENTRY", color = Pf.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(editTitle, color = Pf.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        GhostButton("Delete", onClick = { showDeleteEntryConfirm = true })
-                        GhostButton("Cancel", vm::cancelEdit)
+                        GhostButton("Delete", onClick = { showDeleteConfirm = true })
+                        GhostButton("Cancel", {
+                            vm.cancelAllEdits()
+                            vm.tab = Tab.HOME
+                        })
                     }
                 }
             }
@@ -205,19 +231,19 @@ fun AddScreen(vm: FinTrackViewModel) {
             }
         }
 
-        val showLoan = !isEditing && vm.addKind == "EMI_LOAN"
-        val showAccount = !isEditing && vm.addKind == "BANK_ACCOUNT"
-        val showCard = !isEditing && vm.addKind == "CREDIT_CARD"
-        val showDebt = !isEditing && vm.addKind == "DEBT"
+        val showLoan = vm.addKind == "EMI_LOAN"
+        val showAccount = vm.addKind == "BANK_ACCOUNT"
+        val showCard = vm.addKind == "CREDIT_CARD"
+        val showDebt = vm.addKind == "DEBT"
         val showOneTime = !isEditing && vm.addKind == "ONE_TIME"
-        val showGeneric = isEditing || (vm.addKind !in listOf("EMI_LOAN", "BANK_ACCOUNT", "CREDIT_CARD", "ONE_TIME", "DEBT"))
+        val showGeneric = vm.addKind in listOf("RECURRING", "SET_ASIDE", "INVESTMENT") || (!showLoan && !showAccount && !showCard && !showDebt && !showOneTime)
 
-        if (showLoan) item { LoanForm(vm) }
-        if (showAccount) item { AccountForm(vm) }
-        if (showCard) item { CardForm(vm) }
-        if (showDebt) item { DebtForm(vm) }
+        if (showLoan) item { LoanForm(vm, isEditing = vm.editingLoanId != null, onDeleteClick = { showDeleteConfirm = true }) }
+        if (showAccount) item { AccountForm(vm, isEditing = vm.editingAccountId != null, onDeleteClick = { showDeleteConfirm = true }) }
+        if (showCard) item { CardForm(vm, isEditing = vm.editingCardId != null, onDeleteClick = { showDeleteConfirm = true }) }
+        if (showDebt) item { DebtForm(vm, isEditing = vm.editingDebtId != null, onDeleteClick = { showDeleteConfirm = true }) }
         if (showOneTime) item { OneTimePaymentForm(vm) }
-        if (showGeneric) item { GenericForm(vm, isEditing, onDeleteClick = { showDeleteEntryConfirm = true }) }
+        if (showGeneric) item { GenericForm(vm, isEditing = vm.editingEntryId != null, onDeleteClick = { showDeleteConfirm = true }) }
     }
 }
 
@@ -377,7 +403,15 @@ private fun HeroAmountInput(
 // reads and writes everything, so this screen is just the forms now.
 
 @Composable
-private fun LoanForm(vm: FinTrackViewModel) {
+private fun LoanForm(
+    vm: FinTrackViewModel,
+    isEditing: Boolean = false,
+    onDeleteClick: (() -> Unit)? = null
+) {
+    val isValid = vm.newLoanDraft.name.isNotBlank() &&
+        (MathEvaluator.evaluate(vm.newLoanDraft.emiText) ?: vm.newLoanDraft.emiText.toDoubleOrNull() ?: 0.0) > 0 &&
+        (vm.newLoanDraft.totalMonthsText.toIntOrNull() ?: 0) > 0
+
     Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
         PfField("Loan name", vm.newLoanDraft.name, { vm.newLoanDraft = vm.newLoanDraft.copy(name = it) }, placeholder = "e.g. Car loan — Me")
         PfSelect("Person", vm.newLoanDraft.person, vm.draftPersonOptions, { vm.newLoanDraft = vm.newLoanDraft.copy(person = it) })
@@ -417,19 +451,42 @@ private fun LoanForm(vm: FinTrackViewModel) {
                     "your bank until you settle the card bill."
             else "Debited from this account each month when you confirm it."
         )
-        PrimaryButton(
-            "Add loan",
-            vm::addNewLoan,
-            Modifier.fillMaxWidth(),
-            enabled = vm.newLoanDraft.name.isNotBlank() &&
-                (vm.newLoanDraft.emiText.toDoubleOrNull() ?: 0.0) > 0 &&
-                (vm.newLoanDraft.totalMonthsText.toIntOrNull() ?: 0) > 0
-        )
+        if (isEditing) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                if (onDeleteClick != null) {
+                    SecondaryButton(
+                        "Delete",
+                        onClick = onDeleteClick,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                PrimaryButton(
+                    "Save changes",
+                    vm::saveLoan,
+                    Modifier.weight(2f),
+                    enabled = isValid
+                )
+            }
+        } else {
+            PrimaryButton(
+                "Add loan",
+                vm::addNewLoan,
+                Modifier.fillMaxWidth(),
+                enabled = isValid
+            )
+        }
     }
 }
 
 @Composable
-private fun DebtForm(vm: FinTrackViewModel) {
+private fun DebtForm(
+    vm: FinTrackViewModel,
+    isEditing: Boolean = false,
+    onDeleteClick: (() -> Unit)? = null
+) {
     val draft = vm.newDebtDraft
     val isLent = draft.type == "LENT"
     val accounts = vm.scopedAccounts
@@ -503,7 +560,7 @@ private fun DebtForm(vm: FinTrackViewModel) {
             )
         }
 
-        if (draft.accountId.isNotEmpty()) {
+        if (!isEditing && draft.accountId.isNotEmpty()) {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -538,18 +595,35 @@ private fun DebtForm(vm: FinTrackViewModel) {
             placeholder = "e.g. Dinner split, Emergency loan"
         )
 
-        val isValid = draft.peerName.isNotBlank() && (draft.amountText.toDoubleOrNull() ?: 0.0) > 0.0
-        PrimaryButton(
-            "Save Record",
-            { vm.saveNewDebt(navigateHome = true) },
-            Modifier.fillMaxWidth(),
-            enabled = isValid
-        )
+        val evalAmt = MathEvaluator.evaluate(draft.amountText) ?: draft.amountText.toDoubleOrNull() ?: 0.0
+        val isValid = draft.peerName.isNotBlank() && evalAmt > 0.0
+        if (isEditing) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                if (onDeleteClick != null) {
+                    SecondaryButton("Delete", onClick = onDeleteClick, modifier = Modifier.weight(1f))
+                }
+                PrimaryButton("Save changes", vm::saveEditedDebt, Modifier.weight(2f), enabled = isValid)
+            }
+        } else {
+            PrimaryButton(
+                "Save Record",
+                { vm.saveNewDebt(navigateHome = true) },
+                Modifier.fillMaxWidth(),
+                enabled = isValid
+            )
+        }
     }
 }
 
 @Composable
-private fun AccountForm(vm: FinTrackViewModel) {
+private fun AccountForm(
+    vm: FinTrackViewModel,
+    isEditing: Boolean = false,
+    onDeleteClick: (() -> Unit)? = null
+) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
         PfField("Account name", vm.newAccountDraft.name, { vm.newAccountDraft = vm.newAccountDraft.copy(name = it) }, placeholder = "e.g. HDFC Savings")
         PfSelect("Belongs to", vm.newAccountDraft.owner, vm.ownerOptions, { vm.newAccountDraft = vm.newAccountDraft.copy(owner = it) })
@@ -562,12 +636,28 @@ private fun AccountForm(vm: FinTrackViewModel) {
             numeric = true
         )
         Muted("Three is enough, as long as no two accounts end the same.")
-        PrimaryButton("Add account", vm::addNewAccount, Modifier.fillMaxWidth(), enabled = vm.newAccountDraft.name.isNotBlank())
+        if (isEditing) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                if (onDeleteClick != null) {
+                    SecondaryButton("Delete", onClick = onDeleteClick, modifier = Modifier.weight(1f))
+                }
+                PrimaryButton("Save changes", vm::saveAccount, Modifier.weight(2f), enabled = vm.newAccountDraft.name.isNotBlank())
+            }
+        } else {
+            PrimaryButton("Add account", vm::addNewAccount, Modifier.fillMaxWidth(), enabled = vm.newAccountDraft.name.isNotBlank())
+        }
     }
 }
 
 @Composable
-private fun CardForm(vm: FinTrackViewModel) {
+private fun CardForm(
+    vm: FinTrackViewModel,
+    isEditing: Boolean = false,
+    onDeleteClick: (() -> Unit)? = null
+) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.s3)) {
         PfField("Card name", vm.newCardDraft.name, { vm.newCardDraft = vm.newCardDraft.copy(name = it) }, placeholder = "e.g. HDFC Regalia")
         PfSelect("Belongs to", vm.newCardDraft.owner, vm.ownerOptions, { vm.newCardDraft = vm.newCardDraft.copy(owner = it) })
@@ -591,12 +681,29 @@ private fun CardForm(vm: FinTrackViewModel) {
             numeric = true
         )
         Muted("A spend on this card is added to the card, not taken from an account.")
-        PrimaryButton(
-            "Add card",
-            vm::addNewCard,
-            Modifier.fillMaxWidth(),
-            enabled = vm.newCardDraft.name.isNotBlank()
-        )
+        if (isEditing) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s2)
+            ) {
+                if (onDeleteClick != null) {
+                    SecondaryButton("Delete", onClick = onDeleteClick, modifier = Modifier.weight(1f))
+                }
+                PrimaryButton(
+                    "Save changes",
+                    vm::saveCard,
+                    Modifier.weight(2f),
+                    enabled = vm.newCardDraft.name.isNotBlank()
+                )
+            }
+        } else {
+            PrimaryButton(
+                "Add card",
+                vm::addNewCard,
+                Modifier.fillMaxWidth(),
+                enabled = vm.newCardDraft.name.isNotBlank()
+            )
+        }
     }
 }
 
@@ -945,7 +1052,7 @@ private fun GenericForm(vm: FinTrackViewModel, isEditing: Boolean, onDeleteClick
             )
         }
 
-        val isSetAsideKind = vm.addKind == "SET_ASIDE" || (isEditing && (vm.draft.type == "SAVINGS" || vm.draft.dueText.isNotEmpty() || vm.draft.startDateText.isNotEmpty() || vm.draft.startMonth.isNotEmpty() || vm.draft.periodMonths > 1 || vm.draft.frequency == "ANNUAL"))
+        val isSetAsideKind = vm.addKind == "SET_ASIDE"
 
         if (isSetAsideKind) {
             val payMonthOptions = vm.startPayMonthOptions

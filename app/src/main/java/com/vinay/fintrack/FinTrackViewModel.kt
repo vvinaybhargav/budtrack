@@ -507,6 +507,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     var loanDraft by mutableStateOf(NewLoanDraft())
     var editingCardId by mutableStateOf<String?>(null); private set
     var cardDraft by mutableStateOf(NewCardDraft())
+    var editingDebtId by mutableStateOf<String?>(null); private set
 
     var newCategoryText by mutableStateOf("")
     var editingCategory by mutableStateOf<String?>(null); private set
@@ -1319,11 +1320,19 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteEntry(id: String) = update { s -> s.copy(entries = s.entries.filterNot { it.id == id }) }
 
     fun openEditEntry(e: Entry) {
+        cancelAllEdits()
         editingEntryId = e.id
         tab = Tab.ADD
-        addKind = if (e.isSetAside) "SET_ASIDE" else if (e.type == "SAVINGS") "INVESTMENT" else "RECURRING"
+        val isSetAside = e.isSetAside
+        addKind = if (isSetAside) "SET_ASIDE" else if (e.type == "SAVINGS") "INVESTMENT" else "RECURRING"
         val startFormatted = if (e.startDate.isNotEmpty()) dayFirstOf(e.startDate) else todayDayFirst()
-        val dueFormatted = if (e.dueDate.isNotEmpty()) dayFirstOf(e.dueDate) else ""
+        val dueFormatted = if (isSetAside) {
+            if (e.dueDate.isNotEmpty()) dayFirstOf(e.dueDate) else ""
+        } else {
+            if (e.dueDate.isNotEmpty()) {
+                e.dueDate.split("-").getOrNull(2)?.toIntOrNull()?.toString() ?: e.dueDate
+            } else ""
+        }
         val startMonthKey = if (e.startDate.isNotEmpty()) e.startDate.take(7) else today().take(7)
         draft = Draft(
             person = e.person,
@@ -1342,10 +1351,22 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    fun cancelEdit() {
+    fun cancelAllEdits() {
         editingEntryId = null
+        editingLoanId = null
+        editingAccountId = null
+        editingCardId = null
+        editingDebtId = null
         draft = Draft(person = scopePerson)
+        newLoanDraft = NewLoanDraft(person = scopePerson)
+        newAccountDraft = NewAccountDraft(owner = scopePerson)
+        newCardDraft = NewCardDraft(owner = scopePerson)
+        newDebtDraft = NewDebtDraft()
         addKind = "ONE_TIME"
+    }
+
+    fun cancelEdit() {
+        cancelAllEdits()
     }
 
     fun setCategoryFilter(c: String?) {
@@ -1972,31 +1993,43 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         reconcileUnmatchedTxns()
     }
 
-    // ── inline editors ─────────────────────────────────────────────────
-    fun startEditAccount(a: Account) {
+    fun openEditAccount(a: Account) {
+        cancelAllEdits()
         editingAccountId = a.id
+        tab = Tab.ADD
+        addKind = "BANK_ACCOUNT"
         val curBal = balanceOf(a)
-        accountDraft = NewAccountDraft(
-            a.name, a.person, curBal.toLong().toString(), a.numberTail
+        val d = NewAccountDraft(
+            name = a.name,
+            owner = a.person,
+            balanceText = com.vinay.fintrack.data.MathEvaluator.formatResult(curBal),
+            numberTail = a.numberTail
         )
+        newAccountDraft = d
+        accountDraft = d
     }
+
+    fun startEditAccount(a: Account) = openEditAccount(a)
 
     fun cancelEditAccount() { editingAccountId = null }
 
     fun saveAccount() {
         val id = editingAccountId ?: return
-        val tail = accountDraft.numberTail.trim()
+        val draftToUse = if (tab == Tab.ADD) newAccountDraft else accountDraft
+        val tail = draftToUse.numberTail.trim()
         val a = accounts.firstOrNull { it.id == id }
-        val targetBal = accountDraft.balanceText.toDoubleOrNull() ?: 0.0
+        val targetBal = com.vinay.fintrack.data.MathEvaluator.evaluate(draftToUse.balanceText)
+            ?: draftToUse.balanceText.toDoubleOrNull()
+            ?: 0.0
         val curBal = if (a != null) balanceOf(a) else 0.0
         val netTxns = if (a != null) curBal - a.openingBalance else 0.0
         val newOpeningBal = targetBal - netTxns
         update { s ->
             val updatedAccounts = s.accounts.map {
                 if (it.id == id) it.copy(
-                    name = accountDraft.name,
-                    person = accountDraft.owner,
-                    owner = ownerLabel(accountDraft.owner),
+                    name = draftToUse.name,
+                    person = draftToUse.owner,
+                    owner = ownerLabel(draftToUse.owner),
                     openingBalance = newOpeningBal,
                     numberTail = tail
                 ) else it
@@ -2013,6 +2046,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
         editingAccountId = null
         reconcileUnmatchedTxns()
+        if (tab == Tab.ADD) tab = Tab.HOME
     }
 
     /**
@@ -2043,12 +2077,15 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         editingAccountId = null
     }
 
-    fun startEditLoan(l: Loan) {
+    fun openEditLoan(l: Loan) {
+        cancelAllEdits()
         editingLoanId = l.id
-        loanDraft = NewLoanDraft(
+        tab = Tab.ADD
+        addKind = "EMI_LOAN"
+        val d = NewLoanDraft(
             name = l.name,
             person = l.person,
-            emiText = l.monthlyEmi.toLong().toString(),
+            emiText = com.vinay.fintrack.data.MathEvaluator.formatResult(l.monthlyEmi),
             totalMonthsText = l.totalMonths.toString(),
             remainingMonthsText = l.remainingMonths.toString(),
             accountId = l.accountId,
@@ -2056,26 +2093,37 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             startMonth = l.startMonth.ifEmpty { if (l.startDate.isNotEmpty()) l.startDate.take(7) else today().take(7) },
             dueText = if (l.dueDay > 0) l.dueDay.toString() else ""
         )
+        newLoanDraft = d
+        loanDraft = d
     }
+
+    fun startEditLoan(l: Loan) = openEditLoan(l)
 
     fun cancelEditLoan() { editingLoanId = null }
 
     fun saveLoan() {
         val id = editingLoanId ?: return
-        val dueDay = loanDraft.dueText.toIntOrNull() ?: 0
+        val draftToUse = if (tab == Tab.ADD) newLoanDraft else loanDraft
+        val dueDay = draftToUse.dueText.toIntOrNull() ?: 0
         val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
-        val startMonth = loanDraft.startMonth.ifEmpty { today().take(7) }
-        val startDay = (dueDay.takeIf { it in 1..28 } ?: salaryResetDayFor(loanDraft.person)).toString().padStart(2, '0')
+        val startMonth = draftToUse.startMonth.ifEmpty { today().take(7) }
+        val startDay = (dueDay.takeIf { it in 1..28 } ?: salaryResetDayFor(draftToUse.person)).toString().padStart(2, '0')
         val startDate = "$startMonth-$startDay"
+        val emi = com.vinay.fintrack.data.MathEvaluator.evaluate(draftToUse.emiText)
+            ?: draftToUse.emiText.toDoubleOrNull()
+            ?: 0.0
+        val total = draftToUse.totalMonthsText.toIntOrNull() ?: 1
+        val remaining = draftToUse.remainingMonthsText.toIntOrNull() ?: total
         update { s ->
             s.copy(loans = s.loans.map {
                 if (it.id == id) it.copy(
-                    name = loanDraft.name, person = loanDraft.person,
-                    monthlyEmi = loanDraft.emiText.toDoubleOrNull() ?: 0.0,
-                    totalMonths = loanDraft.totalMonthsText.toIntOrNull() ?: 1,
-                    remainingMonths = loanDraft.remainingMonthsText.toIntOrNull() ?: 0,
-                    accountId = if (loanDraft.cardId.isNotEmpty()) "" else loanDraft.accountId,
-                    cardId = loanDraft.cardId,
+                    name = draftToUse.name,
+                    person = draftToUse.person,
+                    monthlyEmi = emi,
+                    totalMonths = total,
+                    remainingMonths = remaining,
+                    accountId = if (draftToUse.cardId.isNotEmpty()) "" else draftToUse.accountId,
+                    cardId = draftToUse.cardId,
                     startMonth = startMonth,
                     startDate = startDate,
                     dueDate = resolvedDueDate,
@@ -2084,6 +2132,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
             })
         }
         editingLoanId = null
+        if (tab == Tab.ADD) tab = Tab.HOME
     }
 
     fun deleteLoan(id: String) {
@@ -2242,7 +2291,9 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveNewDebt(navigateHome: Boolean = false) {
-        val amount = newDebtDraft.amountText.toDoubleOrNull() ?: return
+        val amount = com.vinay.fintrack.data.MathEvaluator.evaluate(newDebtDraft.amountText)
+            ?: newDebtDraft.amountText.toDoubleOrNull()
+            ?: return
         val peer = newDebtDraft.peerName.trim()
         if (amount <= 0.0 || peer.isEmpty()) return
         addDebt(
@@ -2260,40 +2311,113 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         if (navigateHome) tab = Tab.HOME
     }
 
-    fun startEditCard(c: Card) {
-        editingCardId = c.id
-        cardDraft = NewCardDraft(
-            name = c.name,
-            owner = c.owner,
-            limitText = c.limit.toLong().toString(),
-            balanceText = c.balance.toLong().toString(),
-            minDueText = c.minDue.toLong().toString(),
-            numberTail = c.numberTail,
-            dueText = if (c.dueDate.isEmpty()) "" else c.dueDate.split("-").getOrNull(2)?.toIntOrNull()?.toString() ?: "",
-            statementDayText = c.statementDay.toString(),
-            statementAmountText = if (c.statementAmount > 0.0) c.statementAmount.toLong().toString() else ""
+    fun openEditDebt(d: Debt) {
+        cancelAllEdits()
+        editingDebtId = d.id
+        tab = Tab.ADD
+        addKind = "DEBT"
+        newDebtDraft = NewDebtDraft(
+            type = d.type,
+            peerName = d.peerName,
+            amountText = com.vinay.fintrack.data.MathEvaluator.formatResult(d.amount),
+            dueDateText = d.dueDate,
+            accountId = d.accountId,
+            note = d.note,
+            recordTxn = false
         )
     }
+
+    fun cancelEditDebt() {
+        editingDebtId = null
+    }
+
+    fun saveEditedDebt() {
+        val id = editingDebtId ?: return
+        val amount = com.vinay.fintrack.data.MathEvaluator.evaluate(newDebtDraft.amountText)
+            ?: newDebtDraft.amountText.toDoubleOrNull()
+            ?: return
+        val peer = newDebtDraft.peerName.trim()
+        if (amount <= 0.0 || peer.isEmpty()) return
+        val target = persisted.debts.firstOrNull { it.id == id } ?: return
+        val newRemaining = (amount - target.settledAmount).coerceAtLeast(0.0)
+        val updated = target.copy(
+            type = newDebtDraft.type,
+            peerName = peer,
+            amount = amount,
+            dueDate = newDebtDraft.dueDateText.trim(),
+            accountId = newDebtDraft.accountId,
+            note = newDebtDraft.note.trim(),
+            settled = newRemaining <= 0.0
+        )
+        update { s ->
+            s.copy(debts = s.debts.map { if (it.id == id) updated else it })
+        }
+        editingDebtId = null
+        newDebtDraft = NewDebtDraft()
+        if (tab == Tab.ADD) tab = Tab.HOME
+    }
+
+    fun deleteEditedDebt() {
+        val id = editingDebtId ?: return
+        deleteDebt(id)
+        editingDebtId = null
+        newDebtDraft = NewDebtDraft()
+        if (tab == Tab.ADD) tab = Tab.HOME
+    }
+
+    fun openEditCard(c: Card) {
+        cancelAllEdits()
+        editingCardId = c.id
+        tab = Tab.ADD
+        addKind = "CREDIT_CARD"
+        val d = NewCardDraft(
+            name = c.name,
+            owner = c.owner,
+            limitText = if (c.limit > 0) com.vinay.fintrack.data.MathEvaluator.formatResult(c.limit) else "",
+            balanceText = com.vinay.fintrack.data.MathEvaluator.formatResult(c.balance),
+            minDueText = if (c.minDue > 0) com.vinay.fintrack.data.MathEvaluator.formatResult(c.minDue) else "",
+            numberTail = c.numberTail,
+            dueText = if (c.dueDate.isEmpty()) "" else c.dueDate.split("-").getOrNull(2)?.toIntOrNull()?.toString() ?: "",
+            statementDayText = if (c.statementDay > 0) c.statementDay.toString() else "",
+            statementAmountText = if (c.statementAmount > 0.0) com.vinay.fintrack.data.MathEvaluator.formatResult(c.statementAmount) else ""
+        )
+        newCardDraft = d
+        cardDraft = d
+    }
+
+    fun startEditCard(c: Card) = openEditCard(c)
 
     fun cancelEditCard() { editingCardId = null }
 
     fun saveCard() {
         val id = editingCardId ?: return
-        val dueDay = cardDraft.dueText.toIntOrNull() ?: 0
+        val draftToUse = if (tab == Tab.ADD) newCardDraft else cardDraft
+        val dueDay = draftToUse.dueText.toIntOrNull() ?: 0
         val resolvedDueDate = if (dueDay in 1..31) resolveNextDueDate(dueDay, today()) else ""
-        val statementDay = cardDraft.statementDayText.toIntOrNull() ?: 20
-        val statementAmount = cardDraft.statementAmountText.toDoubleOrNull() ?: 0.0
-        val newBal = cardDraft.balanceText.toDoubleOrNull() ?: 0.0
-        val isPaid = if (newBal > 0.0) false else true
-        val tail = cardDraft.numberTail.trim()
+        val statementDay = draftToUse.statementDayText.toIntOrNull() ?: 20
+        val statementAmount = com.vinay.fintrack.data.MathEvaluator.evaluate(draftToUse.statementAmountText)
+            ?: draftToUse.statementAmountText.toDoubleOrNull()
+            ?: 0.0
+        val newBal = com.vinay.fintrack.data.MathEvaluator.evaluate(draftToUse.balanceText)
+            ?: draftToUse.balanceText.toDoubleOrNull()
+            ?: 0.0
+        val limit = com.vinay.fintrack.data.MathEvaluator.evaluate(draftToUse.limitText)
+            ?: draftToUse.limitText.toDoubleOrNull()
+            ?: 50000.0
+        val minDue = com.vinay.fintrack.data.MathEvaluator.evaluate(draftToUse.minDueText)
+            ?: draftToUse.minDueText.toDoubleOrNull()
+            ?: 0.0
+        val isPaid = newBal <= 0.0
+        val tail = draftToUse.numberTail.trim()
         update { s ->
             val updatedCards = s.cards.map {
                 if (it.id == id) it.copy(
-                    name = cardDraft.name, owner = cardDraft.owner,
-                    limit = cardDraft.limitText.toDoubleOrNull() ?: 0.0,
+                    name = draftToUse.name,
+                    owner = draftToUse.owner,
+                    limit = if (limit > 0) limit else 50000.0,
                     balance = newBal,
-                    minDue = cardDraft.minDueText.toDoubleOrNull() ?: 0.0,
-                    due = cardDraft.dueText,
+                    minDue = minDue,
+                    due = draftToUse.dueText,
                     numberTail = tail,
                     dueDate = resolvedDueDate,
                     statementDay = statementDay,
@@ -2312,6 +2436,7 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
         }
         editingCardId = null
         reconcileUnmatchedTxns()
+        if (tab == Tab.ADD) tab = Tab.HOME
     }
 
     /**
@@ -2978,15 +3103,15 @@ class FinTrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun editAccountById(id: String) {
-        accounts.firstOrNull { it.id == id }?.let { openSetupFix(MissingConfigItem("Account", it.id, it.name, emptyList())) }
+        accounts.firstOrNull { it.id == id }?.let { openEditAccount(it) }
     }
 
     fun editCardById(id: String) {
-        cards.firstOrNull { it.id == id }?.let { openSetupFix(MissingConfigItem("Card", it.id, it.name, emptyList())) }
+        cards.firstOrNull { it.id == id }?.let { openEditCard(it) }
     }
 
     fun editLoanById(id: String) {
-        loans.firstOrNull { it.id == id }?.let { openSetupFix(MissingConfigItem("Loan", it.id, it.name, emptyList())) }
+        loans.firstOrNull { it.id == id }?.let { openEditLoan(it) }
     }
 
     fun editEntryById(id: String) {

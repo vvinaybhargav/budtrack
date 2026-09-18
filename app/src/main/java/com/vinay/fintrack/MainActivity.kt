@@ -159,6 +159,7 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
         vm.editingCardId != null ||
         vm.editingLoanId != null ||
         vm.editingEntryId != null ||
+        vm.editingDebtId != null ||
         vm.settlingCardId != null ||
         vm.pendingConfirm != null ||
         vm.pendingDeletion != null
@@ -172,13 +173,14 @@ private fun UnlockedShell(vm: FinTrackViewModel) {
             vm.selectedDebtForAction != null -> vm.dismissDebtAction()
             vm.pendingDeletion != null -> vm.cancelDeletion()
             vm.editingTxnId != null -> vm.cancelEditTxn()
-            vm.editingAccountId != null -> vm.cancelEditAccount()
-            vm.editingCardId != null -> vm.cancelEditCard()
-            vm.editingLoanId != null -> vm.cancelEditLoan()
-            vm.editingEntryId != null -> vm.cancelEdit()
+            vm.editingDebtId != null -> { vm.cancelEditDebt(); if (vm.tab == Tab.ADD) vm.tab = Tab.HOME }
+            vm.editingAccountId != null -> { vm.cancelEditAccount(); if (vm.tab == Tab.ADD) vm.tab = Tab.HOME }
+            vm.editingCardId != null -> { vm.cancelEditCard(); if (vm.tab == Tab.ADD) vm.tab = Tab.HOME }
+            vm.editingLoanId != null -> { vm.cancelEditLoan(); if (vm.tab == Tab.ADD) vm.tab = Tab.HOME }
+            vm.editingEntryId != null -> { vm.cancelEdit(); if (vm.tab == Tab.ADD) vm.tab = Tab.HOME }
             vm.settlingCardId != null -> vm.cancelSettleCard()
             vm.pendingConfirm != null -> vm.cancelConfirm()
-            vm.tab != Tab.HOME -> vm.tab = Tab.HOME
+            vm.tab != Tab.HOME -> { vm.cancelAllEdits(); vm.tab = Tab.HOME }
         }
     }
 
